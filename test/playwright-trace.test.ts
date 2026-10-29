@@ -610,6 +610,26 @@ test('copyShots writes the named screen pictures of a trace into a folder and sk
   }
 });
 
+test('a step on a page that has no screen picture yet, as the first action in a popup, is marked as having none, apart from a line whose picture is the one before', () => {
+  const act = (callId: string, pageId: string, method: string, startTime: number, endTime: number, params = {}) => [
+    { type: 'before', callId, pageId, method, startTime, params },
+    { type: 'after', callId, endTime },
+  ];
+  const lines = inTempDir((dir) => walkOf(traceZip(dir, [
+    ...act('1', 'p', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/home', 20),
+    ...act('2', 'q', 'fill', 30, 40, { selector: 'internal:label="메모"', value: 'a' }),
+    frameSnapshot('before@2', 'http://x/pop', 30), frameSnapshot('after@2', 'http://x/pop', 40),
+    ...act('3', 'q', 'click', 50, 60), frameSnapshot('before@3', 'http://x/pop', 50), frameSnapshot('after@3', 'http://x/pop', 60),
+    { type: 'screencast-frame', pageId: 'p', sha1: 'home.jpeg', timestamp: 22 },
+  ], [], { 'resources/home.jpeg': 'h' })));
+  assert.deepEqual(lines.map((line) => (line.kind === 'request' ? line.url : `${line.kind} ${line.url} ${'shot' in line ? line.shot : 'same'}`)), [
+    'open /home home.jpeg',
+    'open /pop null',
+    'write /pop same',
+    'press /pop same',
+  ]);
+});
+
 test('a page first seen when the next action starts shows the picture from when it was seen, and that action keeps the picture after it', () => {
   const act = (callId: string, method: string, startTime: number, endTime: number, params = {}) => [
     { type: 'before', callId, pageId: 'p', method, startTime, params },

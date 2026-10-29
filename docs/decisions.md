@@ -2856,17 +2856,18 @@ screen picture, and the trace viewer stays under 「trace」.**
 Asked for in #481 (2026-10-29), at the second screen check: the trace viewer played the test too fast to follow, even
 at 0.5×. Measured in `playwright-core` 1.60.0: the viewer's speeds are fixed in its code as 0.5, 1 and 2, and it
 plays the test's own timing at that speed, so a test that ran in a second ends in two. The window steps through the
-lines 「단계」 lists, requests included, so what is shown is what the review page already read; a line without a
-picture of its own, as a request or a line whose picture is the one before, keeps the last picture before it, and a
-line before any picture says there is none yet. It needs only `tests.json` and `test-shots/`, so it still works when
+lines 「단계」 lists, requests included, so what is shown is what the review page already read; a request or a line
+whose picture is the one before keeps the last picture before it. A step on a page that had no picture yet, as the
+first action in a popup, says 「화면 그림 없음」, as the driver asked at that check: `rebuild` writes `shot: null` on
+such a line, apart from a line that leaves the picture off because it is the one before, so the window does not show
+another page's picture there. A trace recorded without screenshots writes no `null`. It needs only `tests.json` and `test-shots/`, so it still works when
 the trace file is gone, and it shows only when at least one step has a picture. Chosen by the driver.
 Alternatives compared:
 - Adding 0.1× and 0.25× to the viewer's speeds: rewriting the bundled viewer, and the test's own timing stays, so a
   fill or a click still passes in a moment.
 - Keeping the viewer and moving through it with its next-action button: not a replay that runs by itself.
 Known limits: two seconds a step is fixed; a step's picture is the one described above for the step lines, with the
-same limits; a line does not keep which page it ran on, so in a test with several pages a line without a picture of
-its own keeps the last picture before it even when that was another page's, as on the first action in a popup.
+same limits.
 
 **A kind of case can list values, each counted as a case of its own and named with `@case:<kind>=<value>`; a tag
 without a value on such a kind fills no value.**

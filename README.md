@@ -1207,8 +1207,9 @@ a trace, with a trace that could not be read, or that was skipped says so instea
 with screenshots (`screenshots` in its `trace` option), a step and an opened page show a small
 picture of the screen after it, and pressing it shows it large; a line whose picture would be the same as the one
 before it shows none. 「재생」 beside 「단계」 shows those steps one at a time in a large window, each for about two
-seconds with the picture of the screen after it, and has 「멈춤」, 「이전」 and 「다음」; the arrow keys move a step, and a
-line without a picture of its own keeps the one before. It shows only when at least one step has a picture.
+seconds with the picture of the screen after it, and has 「멈춤」, 「이전」 and 「다음」; the arrow keys move a step. A
+line whose picture is the one before, or a request, keeps that picture, and a step on a page that had no picture yet,
+as the first in a popup, says 「화면 그림 없음」. It shows only when at least one step has a picture.
 「trace」 opens the test's trace in Playwright's trace viewer in a new tab, served by the review page itself; it is
 greyed out when the trace file is no longer where `rebuild` read it.
 Under 「호출한 테스트」 a test shows, next to 「호출함」, the status it got for that call.

@@ -30,7 +30,7 @@ export interface WalkStep {
   unread?: 'box';
   selector?: string;
   failed?: true;
-  shot?: string;
+  shot?: string | null;
 }
 
 export interface WalkRequest {
@@ -321,7 +321,7 @@ function walkOf(walked: WalkEntry[]) {
   const shown = (shot: string | undefined) => {
     if (shot === lastShot) return {};
     lastShot = shot;
-    return shot ? { shot } : {};
+    return { shot: shot ?? null };
   };
   for (const { page, url, shot, step, request } of walked) {
     if (request) walk.push(request);

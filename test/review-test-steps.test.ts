@@ -205,6 +205,12 @@ test('in a browser, a step line shows a small picture of the screen after it, an
     assert.ok(await width(big) > 1.5 * await width(thumbs.nth(2)));
     await p.keyboard.press('Escape');
     assert.equal(await view.evaluate((d: HTMLDialogElement) => d.open), false);
+
+    await foldOf(row).evaluate((el: HTMLElement) => { el.style.width = '300px'; });
+    const thumb = foldOf(row).locator('button.shot-thumb').first();
+    const right = (box: { x: number; width: number } | null) => box!.x + box!.width;
+    assert.ok(right(await thumb.locator('img').boundingBox()) <= right(await thumb.boundingBox()));
+    assert.ok(right(await thumb.boundingBox()) <= right(await foldOf(row).boundingBox()));
   });
 });
 
@@ -267,6 +273,26 @@ test('in a browser, 「재생」 shows a test\'s steps one at a time in a large 
     await p.keyboard.press('Escape');
     assert.equal(await view.evaluate((d: HTMLDialogElement) => d.open), false);
   }, (page) => page.clock.install());
+});
+
+test('in a browser, 「재생」 says there is no screen picture on a step whose page had none yet, and shows the picture again on the next step that has one', { skip: browserMissing }, async () => {
+  await withSteps(async (p) => {
+    await testLine(p, 'shows the screen after each step').locator('button.replay').click();
+    const view = p.locator('#replay-view');
+    await view.locator('button.pause').click();
+    await view.locator('button.next').click();
+    assert.equal(await view.locator('.replay-count').textContent(), '2/5');
+    assert.ok(await view.locator('img').isHidden());
+    assert.equal(await view.locator('.no-shot').textContent(), '화면 그림 없음');
+    await view.locator('button.next').click();
+    assert.ok(await view.locator('img').isVisible());
+    assert.ok(await view.locator('.no-shot').isHidden());
+  }, changeData((data) => {
+    for (const runs of Object.values(data.testSteps)) {
+      const line = runs.chromium?.[1] as { kind: string; shot?: string | null } | undefined;
+      if (line && line.kind !== 'request' && line.shot) line.shot = null;
+    }
+  }));
 });
 
 test('in a browser, 「trace」 opens the test\'s trace in the Playwright trace viewer in a new tab, and is greyed out once the trace file is gone', { skip: browserMissing }, async () => {
