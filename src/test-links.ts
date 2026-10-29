@@ -205,11 +205,7 @@ export function writeShots(config: any, { walks, traceFiles }: Pick<ReturnType<t
   for (const [key, runs] of Object.entries(walks)) {
     for (const [project, lines] of Object.entries(runs)) {
       const names = lines.flatMap((line) => ('shot' in line && line.shot ? [line.shot] : []));
-      if (!names.length) continue;
-      fs.mkdirSync(dir, { recursive: true });
-      try {
-        copyShots(path.resolve(config.configDir, traceFiles[key][project]), names, dir);
-      } catch {}
+      if (names.length) copyShots(path.resolve(config.configDir, traceFiles[key][project]), names, dir);
     }
   }
 }

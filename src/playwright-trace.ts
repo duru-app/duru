@@ -293,10 +293,21 @@ export function readTrace(file: string): TraceResult {
 }
 
 export function copyShots(file: string, names: Iterable<string>, dir: string) {
-  const entries = zipEntries(fs.readFileSync(file));
+  let entries: Map<string, () => Buffer>;
+  try {
+    entries = zipEntries(fs.readFileSync(file));
+  } catch {
+    return;
+  }
   for (const name of names) {
-    const read = entries.get(`resources/${name}`);
-    if (read) fs.writeFileSync(path.join(dir, name), read());
+    let picture: Buffer;
+    try {
+      picture = entries.get(`resources/${name}`)!();
+    } catch {
+      continue;
+    }
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, name), picture);
   }
 }
 

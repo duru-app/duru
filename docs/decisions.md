@@ -2845,7 +2845,9 @@ Alternatives compared:
 Known limits: a step whose change was painted only after the next step ended shows the screen from before it; a step
 that changed nothing on the screen shows the first picture after it, which can already show what the next step did
 when that was painted before the next step ended, as an `expect` followed by a click; a test with several pages
-shows the pictures of the step's own page only; 「재생」 is greyed out only when the trace file is gone, not when it was
+shows the pictures of the step's own page only; a page first seen as an action started shows the last picture taken
+until then, which is still the old page when the new one was painted later, and none when its page had no picture yet,
+as on the first action in a popup; 「재생」 is greyed out only when the trace file is gone, not when it was
 replaced by another run's trace at the same place; `rebuild` reads each trace a second time to copy its pictures, and
 the review server checks that each trace file is there every time it sends the page's data.
 

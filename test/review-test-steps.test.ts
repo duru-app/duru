@@ -92,6 +92,12 @@ test('in a browser, a test that ran in two projects shows the steps of its own p
     assert.match((await chromium.locator('a.replay').getAttribute('href'))!, /project%3Dchromium$/);
     await fold.locator('.step-project', { hasText: 'firefox' }).click();
     assert.match((await firefox.locator('a.replay').getAttribute('href'))!, /project%3Dfirefox$/);
+    await chromium.locator('.steps-toggle').click();
+    await foldOf(chromium).locator('.step-project', { hasText: 'firefox' }).click();
+    assert.match((await chromium.locator('a.replay').getAttribute('href'))!, /project%3Dfirefox$/);
+    assert.match((await firefox.locator('a.replay').getAttribute('href'))!, /project%3Dfirefox$/);
+    await foldOf(firefox).locator('.step-project', { hasText: 'chromium' }).click();
+    assert.match((await chromium.locator('a.replay').getAttribute('href'))!, /project%3Dfirefox$/);
   });
 });
 

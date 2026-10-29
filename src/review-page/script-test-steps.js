@@ -39,10 +39,11 @@ const shotThumb = (line) => (line.shot ? h('button', {
   onclick: (e) => { e.stopPropagation(); openShot(line.shot); },
 }, h('img', { src: shotUrl(line.shot), alt: '', loading: 'lazy' })) : null);
 
-const shownProject = (node, t) => {
-  const picked = state.openSteps.get(stepsPlace(node, t));
-  return picked !== undefined && Object.hasOwn(stepsRuns(t) ?? {}, picked) ? picked : t.project ?? '';
-};
+function shownProject(node, t) {
+  const runs = stepsRuns(t);
+  const wanted = state.openSteps.get(stepsPlace(node, t)) ?? t.project ?? '';
+  return !runs || Object.hasOwn(runs, wanted) ? wanted : Object.keys(runs)[0];
+}
 
 function replayButton(node, t) {
   if (t.format !== 'playwright' || !t.steps) return null;
@@ -121,8 +122,7 @@ function stepsFold(node, t) {
   const runs = stepsRuns(t);
   if (!runs) return h('div', { class: 'test-steps', 'data-steps': place }, h('p', { class: 'muted' }, noStepsText(t)));
   const projects = Object.keys(runs);
-  const wanted = state.openSteps.get(place);
-  const picked = Object.hasOwn(runs, wanted) ? wanted : projects[0];
+  const picked = shownProject(node, t);
   const lines = runs[picked];
   return h('div', { class: 'test-steps', 'data-steps': place },
     projects.length > 1 ? h('div', { class: 'step-projects', role: 'group', 'aria-label': '프로젝트' }, projects.map((p) => h('button', {

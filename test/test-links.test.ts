@@ -873,6 +873,17 @@ test('writeShots goes on past a trace that is gone and puts in the pictures of t
   }
 });
 
+test('writeShots leaves no folder when every trace with pictures is gone', () => {
+  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'duru-shots-')), 'test-shots');
+  try {
+    const gone = Object.fromEntries(Object.entries(stepLinks.traceFiles).map(([key, runs]) => [key, Object.fromEntries(Object.keys(runs).map((p) => [p, 'results/nowhere/trace.zip']))]));
+    writeShots(STEPS_CONFIG, { walks: stepLinks.walks, traceFiles: gone }, dir);
+    assert.equal(fs.existsSync(dir), false);
+  } finally {
+    fs.rmSync(path.dirname(dir), { recursive: true, force: true });
+  }
+});
+
 test('writeShots leaves no folder when no walk names a picture', () => {
   const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'duru-shots-')), 'test-shots');
   try {

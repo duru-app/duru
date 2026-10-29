@@ -290,8 +290,9 @@ function pageData(config: any, data: ReturnType<typeof reviewData>, baseline: Re
 export type PageData = ReturnType<typeof pageData>;
 
 function sendFile(res: http.ServerResponse, type: string, file: string) {
-  res.writeHead(200, { 'content-type': type, 'content-length': fs.statSync(file).size, 'cache-control': 'no-store' });
-  pipeline(fs.createReadStream(file), res, () => {});
+  const fd = fs.openSync(file, 'r');
+  res.writeHead(200, { 'content-type': type, 'content-length': fs.fstatSync(fd).size, 'cache-control': 'no-store' });
+  pipeline(fs.createReadStream('', { fd }), res, () => {});
 }
 
 function sendTraceViewer(res: http.ServerResponse, config: any, url: URL) {
