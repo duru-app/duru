@@ -239,7 +239,7 @@ export function readTrace(file: string): TraceResult {
   const shotLoaded = (page: string, end: number, url: string) => {
     const next = stepsOn.get(page)?.find((a) => a.startTime > end);
     const touch = next && (snapshots.get(`input@${next.callId}`)?.timestamp ?? (kindOf(next.method) === 'assert' ? ends.get(next.callId)?.endTime : undefined) ?? next.startTime);
-    const moved = touch !== undefined && seenOn.get(page)?.some((e) => e.at > end && e.at <= touch && withoutHash(e.url) !== withoutHash(url));
+    const moved = touch !== undefined && seenOn.get(page)?.some((e) => e.at > end && e.at <= touch && e.url !== url);
     return (touch !== undefined && !moved && framesOn.get(page)?.findLast((f) => f.timestamp >= end && f.timestamp < touch)?.sha1 as string | undefined) || shotAfter(page, end);
   };
   const timeline: TimelineEntry[] = [];
