@@ -234,6 +234,11 @@ export function readTrace(file: string): TraceResult {
     const until = next ? ends.get(next.callId)?.endTime ?? next.startTime : Infinity;
     return (framesOn.get(page)?.find((f) => f.timestamp >= end && f.timestamp <= until)?.sha1 as string | undefined) ?? shotUntil(page, end);
   };
+  const shotLoaded = (page: string, end: number) => {
+    const next = stepsOn.get(page)?.find((a) => a.startTime > end);
+    const touch = next && (snapshots.get(`input@${next.callId}`)?.timestamp ?? (kindOf(next.method) === 'assert' ? ends.get(next.callId)?.endTime : undefined) ?? next.startTime);
+    return (touch !== undefined && framesOn.get(page)?.findLast((f) => f.timestamp >= end && f.timestamp < touch)?.sha1 as string | undefined) || shotAfter(page, end);
+  };
   const timeline: TimelineEntry[] = [];
   const walked: WalkEntry[] = [];
   const sightings: { at: number; page: string; from: number; shot?: string; url: string; navigated: boolean }[] = [];
@@ -246,7 +251,7 @@ export function readTrace(file: string): TraceResult {
       const snapshot = snapshots.get(`${name}@${action.callId}`);
       if (!snapshot) continue;
       timeline.push({ at, page: action.pageId, url: snapshot.frameUrl });
-      const shot = name === 'after' ? shotAfter(action.pageId, endTime) : shotUntil(action.pageId, at);
+      const shot = name !== 'after' ? shotUntil(action.pageId, at) : NAVIGATIONS.has(action.method) ? shotLoaded(action.pageId, endTime) : shotAfter(action.pageId, endTime);
       sightings.push({ at, page: action.pageId, from: action.startTime, shot, url: snapshot.frameUrl, navigated: name === 'after' && NAVIGATIONS.has(action.method) });
     }
     const kind = kindOf(action.method);

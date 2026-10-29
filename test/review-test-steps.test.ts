@@ -342,7 +342,7 @@ test('the review server sends a test\'s trace and screen pictures only for what 
     assert.equal(await status('/trace-viewer/index.html'), 200);
     assert.equal(await status('/trace-viewer/sw.bundle.js'), 200);
     assert.equal(await status('/trace-viewer/..%2F..%2Fpackage.json'), 404);
-    assert.equal(await status('/test-shots/page@191be84288f2d906ed440904919e2f78-1793237455311.jpeg'), 200);
+    assert.equal(await status('/test-shots/page@191be84288f2d906ed440904919e2f78-1793237455323.jpeg'), 200);
     assert.equal(await status('/test-shots/..%2Ftests.json'), 404);
     assert.equal(await status('/test-shots/%E0%A4%A.jpeg'), 404);
     fs.mkdirSync(path.join(config.outDir, 'test-shots', 'page@folder-1.jpeg'));
@@ -351,9 +351,9 @@ test('the review server sends a test\'s trace and screen pictures only for what 
     assert.equal(await status('/trace-viewer/index.html/x'), 404);
     assert.equal(await status(`/test-shots/${'a'.repeat(300)}.jpeg`), 404);
     if (process.getuid?.() !== 0) {
-      const locked = path.join(config.outDir, 'test-shots', 'page@191be84288f2d906ed440904919e2f78-1793237455311.jpeg');
+      const locked = path.join(config.outDir, 'test-shots', 'page@191be84288f2d906ed440904919e2f78-1793237455323.jpeg');
       fs.chmodSync(locked, 0o000);
-      assert.equal(await status('/test-shots/page@191be84288f2d906ed440904919e2f78-1793237455311.jpeg'), 500);
+      assert.equal(await status('/test-shots/page@191be84288f2d906ed440904919e2f78-1793237455323.jpeg'), 500);
     }
   }));
 });

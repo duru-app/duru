@@ -587,10 +587,10 @@ test('a press that only changes the part after # opens when the press ends, even
 
 const SHOWN = path.join(import.meta.dirname, 'fixtures/app/results/playwright-steps/test-results/steps-shows-the-screen-after-each-step-chromium/trace.zip');
 
-test('the walk gives each step and opened page the first screen picture taken after it ended, so a click that moved the page shows the page it moved to, and leaves the picture off a line that would repeat the one before', () => {
+test('the walk gives each step the first screen picture taken after it ended and a page opened at an address the last one before the next step acts, so a click that moved the page shows the page it moved to, and leaves the picture off a line that would repeat the one before', () => {
   const shots = walkOf(SHOWN).map((line) => (line.kind === 'request' ? `${line.method} ${line.url}` : `${line.kind} ${line.url} ${line.shot?.slice(-18) ?? '-'}`));
   assert.deepEqual(shots, [
-    'open /home 1793237455311.jpeg',
+    'open /home 1793237455323.jpeg',
     'write /home 1793237455338.jpeg',
     'press /home 1793237455389.jpeg',
     'GET /api/v1/document/list',
@@ -650,5 +650,28 @@ test('a page first seen when the next action starts shows the picture from when 
     'press /home new.jpeg',
     'open /new -',
     'write /new filled.jpeg',
+  ]);
+});
+
+test('a page opened at an address shows the last picture before the next step on it acts, not the blank one taken as it loaded, and keeps the old picture when none comes before that', () => {
+  const act = (callId: string, method: string, startTime: number, endTime: number, params = {}) => [
+    { type: 'before', callId, pageId: 'p', method, startTime, params },
+    { type: 'after', callId, endTime },
+  ];
+  const frame = (name: string, timestamp: number) => ({ type: 'screencast-frame', pageId: 'p', sha1: name, timestamp });
+  const lines = inTempDir((dir) => walkOf(traceZip(dir, [
+    ...act('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/home', 20),
+    ...act('2', 'fill', 30, 50, { selector: 'internal:label="메모"', value: 'a' }),
+    frameSnapshot('before@2', 'http://x/home', 30), frameSnapshot('input@2', 'http://x/home', 40), frameSnapshot('after@2', 'http://x/home', 50),
+    ...act('3', 'goto', 60, 70), frameSnapshot('after@3', 'http://x/next', 70),
+    ...act('4', 'click', 72, 90),
+    frameSnapshot('before@4', 'http://x/next', 72), frameSnapshot('input@4', 'http://x/next', 74), frameSnapshot('after@4', 'http://x/next', 90),
+    frame('blank.jpeg', 21), frame('drawn.jpeg', 35), frame('filled.jpeg', 45), frame('next.jpeg', 80),
+  ], [], { 'resources/blank.jpeg': 'b', 'resources/drawn.jpeg': 'd', 'resources/filled.jpeg': 'f', 'resources/next.jpeg': 'n' })));
+  assert.deepEqual(lines.map((line) => (line.kind === 'request' ? line.url : `${line.kind} ${line.url} ${line.shot ?? '-'}`)), [
+    'open /home drawn.jpeg',
+    'write /home filled.jpeg',
+    'open /next next.jpeg',
+    'press /next -',
   ]);
 });
