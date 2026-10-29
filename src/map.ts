@@ -18,6 +18,7 @@ type ClientScreen = Client['screens'][number];
 type Access = ReturnType<typeof screenAccess>;
 
 interface MapConfig extends AccessConfig {
+  requestFunction: unknown;
   srcRoot: string;
   outDir?: string;
   marksDir?: string;
@@ -64,6 +65,7 @@ interface ApiFunctions {
 }
 
 type MapApiCall = Omit<ClientScreen['apiCalls'][number], 'request' | 'navigation'> & { direct?: true; endpoints: Endpoint[] | null };
+type CallInputs = NonNullable<ClientScreen['apiCalls'][number]['inputs']>;
 
 export type MapScreen = Omit<ClientScreen, 'apiCalls' | 'links'> & {
   id: string;
@@ -117,6 +119,9 @@ export type ScreenMap = {
   sagas?: NonNullable<Client['sagaRuns']>;
   bodyTypeNotices?: NonNullable<Client['bodyTypeNotices']>;
   deadCalls: { screen: string; fn: string; method: string | null; url: string | null; callSite: string }[];
+  // 화면이 상태에 써서 API 함수에 넘긴 키 가운데 그 함수가 요청에 싣는지 알 수 없는 것과, 키를 알 수 없는 호출.
+  inputsToCheck?: { screen: string; fn: string; key: string; file: string; line: number }[];
+  unknownInputs?: { screen: string; fn: string; callSite: string; reason: string }[];
   duplicateIds: { id: string; places: { file: string; line: number }[] }[];
   calls: MapCall[];
   unknownBodyOptionCalls: string[];
@@ -282,6 +287,41 @@ function buildCalls(apiFunctions: ApiFunctions, screens: any[], appWide: { apiCa
   return { calls: nodes, unknownBodyOptionCalls: unknownBodyOptionCalls.sort(), leftOutBodyTypeFields, keptBodyTypeExclusions, unknownBodyTypeExclusions: unknown };
 }
 
+// 화면이 상태에 써서 넘긴 키를 API 함수가 요청에 싣는지 본다. 실는지 알 수 없으면 확인할 키로, 키를 알 수 없는 호출은 unknownInputs 로 남긴다.
+function checkInputs(screens: { id: string; apiCalls: (ClientScreen['apiCalls'][number] & { inputs?: CallInputs })[] }[], apiFunctions: ApiFunctions) {
+  const toCheck = new Map<string, NonNullable<ScreenMap['inputsToCheck']>[number]>();
+  const unknown = new Map<string, NonNullable<ScreenMap['unknownInputs']>[number]>();
+  const precededBy = (short: string[], long: string[]) => short.length <= long.length && short.every((k, i) => k === long[i]);
+  for (const s of screens) {
+    for (const c of s.apiCalls) {
+      const api = apiFunctions[c.fn];
+      if (!c.inputs || (!api?.inputs && !api?.inputsUnknown)) continue;
+      const callSite = `${c.file}:${c.line}`;
+      const reason = c.inputs.unknown ?? api.inputsUnknown;
+      if (reason) {
+        unknown.set(JSON.stringify([s.id, c.fn, callSite]), { screen: s.id, fn: c.fn, callSite, reason });
+        continue;
+      }
+      for (const { key, file, line } of c.inputs.keys) {
+        const input = ['0', ...c.inputs.argPath, key];
+        if (api.inputs!.sent.some((p) => precededBy(input, p))) continue;
+        // 펼쳐 넘긴 자리 아래의 키는 함수가 키를 읽지 않으므로 키마다가 아니라 호출 하나로 남긴다.
+        const spread = api.inputs!.spread.find((p) => precededBy(p, input));
+        if (spread) {
+          const reason = `the function spreads ${spread.join('.')} without reading its keys`;
+          unknown.set(JSON.stringify([s.id, c.fn, callSite, reason]), { screen: s.id, fn: c.fn, callSite, reason });
+          continue;
+        }
+        toCheck.set(JSON.stringify([s.id, c.fn, key, file, line]), { screen: s.id, fn: c.fn, key, file, line });
+      }
+    }
+  }
+  return {
+    inputsToCheck: [...toCheck.values()].sort((a, b) => compare(a.screen, b.screen) || compare(a.fn, b.fn) || compare(a.key, b.key) || compare(a.file, b.file) || a.line - b.line),
+    unknownInputs: [...unknown.values()].sort((a, b) => compare(a.screen, b.screen) || compare(a.fn, b.fn) || compare(a.callSite, b.callSite)),
+  };
+}
+
 export async function buildMap(config: MapConfig): Promise<ScreenMap> {
   const { screens, appWide, apiFunctions, unreferencedApiFunctions, sagaRuns, unrunApiModules, outsideStandIns, silentApiModules, bodyTypeNotices, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports, unusedListed, madeHistories, emptyRouteFiles, takingAddressesUnder, framesPickingByAddress } = await extractClient(config);
   const server = config.serverEndpoints.flatMap(loadServerEndpoints);
@@ -298,7 +338,7 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
   // 서버 목록은 apiPathPrefix 를 뗀 경로라, 그 접두사 없이 적힌 주소가 목록과 맞는 것은 같은 경로가 아니다.
   const listed = (e: { url: string | null; server: EndpointMatch }) => ['match', 'method-mismatch'].includes(e.server.status) && e.url!.startsWith(apiPathPrefix);
   const goesToServer = (e: { url: string | null; server: EndpointMatch }) => listed(e) || (config.app?.apiPaths ?? []).some((prefix) => e.url!.startsWith(prefix));
-  const withEndpoints = (apiCalls: ClientScreen['apiCalls']): MapApiCall[] => apiCalls.flatMap(({ request, navigation, ...c }) => {
+  const withEndpoints = (apiCalls: ClientScreen['apiCalls']): MapApiCall[] => apiCalls.flatMap(({ request, navigation, inputs, ...c }) => {
     if (!request) return [{ ...c, endpoints: apiFunctions[c.fn]?.endpoints ?? null }];
     const { unresolved, ...sent } = request;
     const e = { ...sent, line: c.line, server: unresolved ? { status: 'unresolved' as const, reason: unresolved } : matchEndpoint(server, sent.method, sent.url, apiPathPrefix), callId: null as string | null };
@@ -333,6 +373,9 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
   }
 
   const bodyTypeExclusions = config.bodyTypeExclusions ?? {};
+  // 입력 키는 지도의 호출에서 빠지므로, 옮기기 전 화면의 호출에서 읽는다.
+  const inputCheck = config.requestFunction ? checkInputs(screens.map((s, i) => ({ id: mapped[i].id, apiCalls: s.apiCalls })), apiFunctions) : null;
+
   const { calls, unknownBodyOptionCalls, leftOutBodyTypeFields, keptBodyTypeExclusions, unknownBodyTypeExclusions } = buildCalls(apiFunctions, mapped, appWideMapped, apiPathPrefix, config.bodyOptions ?? {}, bodyTypeExclusions);
 
   const unreferenced = new Set(unreferencedApiFunctions);
@@ -361,6 +404,7 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
     ...(sagaRuns && { sagas: sagaRuns }),
     ...(bodyTypeNotices && { bodyTypeNotices }),
     deadCalls,
+    ...inputCheck,
     duplicateIds,
     calls,
     unknownBodyOptionCalls,

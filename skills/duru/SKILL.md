@@ -129,6 +129,11 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   `bodyTypeExclusions <call ID> <field> stays an option, given by …` line names an entry the screen code or
   `bodyOptions` overrides, so tell the user it can be removed. A `bodyTypeExclusions` line ending in
   `matches no call` or `matches no on/off option …` names an entry that took nothing out.
+- An `input keys to check N` line lists the state keys a screen writes and hands to an API function that the
+  function's request does not carry, each on its own line as `<screen> <API function> <key> <file>:<line>`; tell
+  the user these are worth a test of what the screen sends and what reaches the server. An `input keys unknown N: …`
+  line counts the calls whose screen argument traces to a state whose keys duru could not read, with the reasons;
+  do not tell the user anything about those calls' keys (`unknownInputs`).
 - A screen's API calls and links are the ones its code reaches, each with the file and line where it is written,
   while its `sourceFiles` hold whole files. A call or link written in one of those files is not the screen's when
   the screen does not use the function or component holding it, so do not write a test of that call or link for

@@ -559,6 +559,14 @@ listing the places whose value the source does not show in full.
 - `bodyTypeExclusions <call ID> <field> stays an option, given by <where>` — a field the config names that is
   still an option of that call, with where it comes from: `the source`, `bodyOptions`, or both joined by `and`. The
   entry can come out of the config (`keptBodyTypeExclusions`).
+- `input keys to check N` — printed when there is `requestFunction`: the screen state keys that a screen writes
+  and passes to an API function, which the function's request does not carry. Each one follows on its own
+  indented line, `<screen> <API function> <key> <file>:<line>`, with the place the key is written. The map lists
+  them under `inputsToCheck`; they are worth a test of what the screen sends and what reaches the server.
+- `input keys unknown N: N <reason>, …` — printed with the line above: the calls of an API function whose screen
+  argument traces to a state whose keys duru could not read, each with the reason, grouped by reason with the
+  count of calls for each. The map lists them under `unknownInputs` with their `callSite`; nothing about the input
+  keys of those calls can be said (`unknownInputs`).
 - `<component> at <file>:<line> is drawn beside routes but draws its own routes in <component file>, so it picks
   what it shows by the address; its links, requests and settings reads are given to no screen beside it` — a
   component drawn beside a group of routes that draws routes of its own, such as a header that shows a different bar

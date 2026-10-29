@@ -17,6 +17,8 @@ import { parseSource } from './parse.ts';
 import { pathParts, routePattern } from './path-values.ts';
 import { importResolver } from './resolve.ts';
 import { sagaFiles, sagaReader, sourceFiles } from './saga-requests.ts';
+import { screenInputReader } from './screen-inputs.ts';
+import type { CallInputs } from './screen-inputs.ts';
 import type { ActionType, Handler, Watch } from './saga-requests.ts';
 import { addresses, FOLLOWED, LINK_ELEMENTS, madeFrom, screenLinkReader } from './screen-links.ts';
 import { importedAs, routerImport, screenRequestReader } from './screen-requests.ts';
@@ -73,7 +75,7 @@ interface Site {
 }
 
 type BodyOption = { key: string; line: number };
-type ApiCallSite = Site & { fn: string; options: BodyOption[]; request?: { method: string | null; url: string | null; unresolved?: UnresolvedReason }; navigation?: true; actions?: DispatchedActions };
+type ApiCallSite = Site & { fn: string; options: BodyOption[]; request?: { method: string | null; url: string | null; unresolved?: UnresolvedReason }; navigation?: true; actions?: DispatchedActions; inputs?: CallInputs };
 type DispatchedActions = { type: string; dispatchedAt: string[] }[];
 type DispatchSite = { line: number; types: () => ActionType[] };
 type WatcherSite = { watches: Watch[] };
@@ -1431,6 +1433,9 @@ export async function extractClient(config: any) {
     },
   });
 
+  // requestFunction 이 있을 때만 인자로 넘긴 상태의 키를 읽는다.
+  const screenInputs = config.requestFunction ? screenInputReader({ srcRoot: config.srcRoot, resolve: imports.resolve }) : null;
+
   const routeFileSet = new Set((config.routeFiles as string[]).map((f) => path.join(config.srcRoot, f)));
   const historyFile = config.history ? exportingFile('history', config.history) : null;
   const historyImports = new Map<string, boolean>();
@@ -1802,6 +1807,11 @@ export async function extractClient(config: any) {
       },
     });
 
+    // 화면이 부른 API 함수에, 인자로 넘긴 상태에 쓴 키를 붙인다.
+    if (screenInputs) {
+      const byStart = screenInputs.callInputs(file);
+      for (const site of facts.apiCalls) if (siteStart.has(site)) site.inputs = byStart.get(siteStart.get(site)!);
+    }
     facts.imports = [...new Set(facts.imports)];
     facts.dynamicOnly = new Set(facts.imports.filter((f) => !staticImports.has(f)));
     factCache.set(file, facts);

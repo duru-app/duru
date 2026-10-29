@@ -325,6 +325,13 @@ if (command === 'tasks') {
     console.log(`  bodyTypeExclusions ${call} ${field} stays an option, given by ${keptBy.map((src: string) => KEPT_BY[src]).join(' and ')}`);
   }
   for (const [name, fn] of Object.entries<any>(map.apiFunctions)) if (fn.error && !fn.endpoints.length) console.log(`  api method ${name} ← ${fn.file ?? '?'}${fn.line ? `:${fn.line}` : ''}: ${fn.error}`);
+  if (map.inputsToCheck) {
+    console.log(`input keys to check ${map.inputsToCheck.length}`);
+    for (const { screen, fn, key, file, line } of map.inputsToCheck) console.log(`  ${screen} ${fn} ${key} ${file}:${line}`);
+    const reasons = new Map<string, number>();
+    for (const { reason } of map.unknownInputs ?? []) reasons.set(reason, (reasons.get(reason) ?? 0) + 1);
+    console.log(`input keys unknown ${map.unknownInputs?.length ?? 0}${reasons.size ? `: ${[...reasons].map(([reason, n]) => `${n} ${reason}`).join('; ')}` : ''}`);
+  }
   console.log(`dead calls reachable from screens: ${map.deadCalls.length}`);
   console.log(`calls ${map.calls.length} | dead screens ${map.screens.filter((s: any) => s.dead).length}`);
   if (map.appWide) {
