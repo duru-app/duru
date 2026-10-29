@@ -234,10 +234,13 @@ export function readTrace(file: string): TraceResult {
     const until = next ? ends.get(next.callId)?.endTime ?? next.startTime : Infinity;
     return (framesOn.get(page)?.find((f) => f.timestamp >= end && f.timestamp <= until)?.sha1 as string | undefined) ?? shotUntil(page, end);
   };
-  const shotLoaded = (page: string, end: number) => {
+  const seenOn = Map.groupBy(actions.flatMap((a) => [['before', a.startTime], ['input', snapshots.get(`input@${a.callId}`)?.timestamp], ['after', ends.get(a.callId)?.endTime ?? a.startTime]]
+    .flatMap(([name, at]) => { const snapshot = snapshots.get(`${name}@${a.callId}`); return snapshot ? [{ page: a.pageId, at, url: snapshot.frameUrl }] : []; })), (e) => e.page);
+  const shotLoaded = (page: string, end: number, url: string) => {
     const next = stepsOn.get(page)?.find((a) => a.startTime > end);
     const touch = next && (snapshots.get(`input@${next.callId}`)?.timestamp ?? (kindOf(next.method) === 'assert' ? ends.get(next.callId)?.endTime : undefined) ?? next.startTime);
-    return (touch !== undefined && framesOn.get(page)?.findLast((f) => f.timestamp >= end && f.timestamp < touch)?.sha1 as string | undefined) || shotAfter(page, end);
+    const moved = touch !== undefined && seenOn.get(page)?.some((e) => e.at > end && e.at <= touch && withoutHash(e.url) !== withoutHash(url));
+    return (touch !== undefined && !moved && framesOn.get(page)?.findLast((f) => f.timestamp >= end && f.timestamp < touch)?.sha1 as string | undefined) || shotAfter(page, end);
   };
   const timeline: TimelineEntry[] = [];
   const walked: WalkEntry[] = [];
@@ -251,7 +254,7 @@ export function readTrace(file: string): TraceResult {
       const snapshot = snapshots.get(`${name}@${action.callId}`);
       if (!snapshot) continue;
       timeline.push({ at, page: action.pageId, url: snapshot.frameUrl });
-      const shot = name !== 'after' ? shotUntil(action.pageId, at) : NAVIGATIONS.has(action.method) ? shotLoaded(action.pageId, endTime) : shotAfter(action.pageId, endTime);
+      const shot = name !== 'after' ? shotUntil(action.pageId, at) : NAVIGATIONS.has(action.method) ? shotLoaded(action.pageId, endTime, snapshot.frameUrl) : shotAfter(action.pageId, endTime);
       sightings.push({ at, page: action.pageId, from: action.startTime, shot, url: snapshot.frameUrl, navigated: name === 'after' && NAVIGATIONS.has(action.method) });
     }
     const kind = kindOf(action.method);

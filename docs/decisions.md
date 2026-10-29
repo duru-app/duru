@@ -2822,20 +2822,23 @@ the first picture of its page taken after its action ended and before the next s
 a check or a move to an address) ended, or, when there is none, the last picture taken before its action ended; a wait
 in between does not count as a step. A page opened takes the picture after the action whose last snapshot showed its
 address, and the last picture until then when it was first seen as an action started, as after a click whose last
-snapshot still shows the old address: the picture after that next action is its own. A page opened at an address
-(`goto`) takes instead the last picture of its page taken after the move ended and before the next step on it acts: at
-its `input` snapshot, at the end of a check, or else as it starts; when there is none, the rule above. Asked for at the
+snapshot still shows the old address: the picture after that next action is its own. A page opened by a move (`goto`,
+`reload`, `goBack`, `goForward`) takes instead the last picture of its page taken after the move ended and before the
+next step on it acts: at its `input` snapshot, at the end of a check, or else as it starts. It takes the rule above
+when there is no such picture or no next step, and when a snapshot in between shows another address, as when the app
+sends `/login` on to `/home`: the trace does not say when the address changed, so a later picture may be the other
+page's. Asked for at the
 second screen check of #481 (2026-10-29), where the first 「열기」 showed a white screen: the first picture after a
 move is taken before the page is drawn. Measured: in that trace the move ends at 265.4, the picture at 268.1 is white
 and the one at 279.6, before the `fill` acts at 284.1, shows the page. In the 28 into-sign traces with screenshots
 in `~/qa/out` (`playwright-core` 1.60.0) there are 50 pages opened at an address: 39 had a blank first picture or a
 loading spinner and now show the page drawn, 7 were drawn and now show a picture taken later, and 4 stay blank, 2
 because the only picture before the next step acts is the blank one and 2 because there is none; the pages reached by
-a click keep their pictures. A line whose picture is the one of the line before shows none, as the 「열기」 after a click that moved
-the page would.
-`rebuild` copies only the pictures the steps name into `test-shots/` under `outDir`, in place of the ones there before, so they show as
-long as the steps do, also when the traces have been moved. In that trace that is 3 of its 4 pictures, 13.5 KB of
-18.1 KB; there is no limit on the folder's size.
+a click keep their pictures. Only `goto` was measured. A line whose picture is the one of the line before shows none,
+as the 「열기」 after a click that moved the page would.
+`rebuild` copies only the pictures the steps name into `test-shots/` under `outDir`, in place of the ones there
+before, so they show as long as the steps do, also when the traces have been moved. In that trace that is 3 of its 4
+pictures, 13.5 KB of 18.1 KB; there is no limit on the folder's size.
 `tests.json` keeps each walk's trace file as `traceFiles` for 「trace」. The review server serves `playwright-core`'s
 `lib/vite/traceViewer/` under `/trace-viewer/`, and a trace at `/trace-viewer/test-trace?steps=<key>&project=<name>`
 only when `traceFiles` names it. The page opens `index.html?trace=test-trace?...`, which the viewer's service worker
@@ -2851,9 +2854,12 @@ Alternatives compared:
   ends.
 - Opening `trace.playwright.dev`: needs the internet, and the trace has to be fetched from the review server by a page
   on another origin.
-Known limits: a page opened at an address still shows a blank screen when no drawn picture was taken before the next
-step on it acts; a step whose change was painted only after the next step ended shows the screen from before it; a step
-that changed nothing on the screen shows the first picture after it, which can already show what the next step did
+Known limits: a page opened by a move still shows a blank screen when no drawn picture was taken before the next step
+on it acts, when it is the last step on its page, or when the app moved it to another address; when a check comes
+next, its picture is the screen the check waited for; when no picture comes before the next step acts, the one after
+that step can show what it did; a step whose change was painted only after the next step ended shows the screen from
+before it; a step that changed nothing on the screen shows the first picture after it, which can already show what
+the next step did
 when that was painted before the next step ended, as an `expect` followed by a click; a test with several pages
 shows the pictures of the step's own page only; a page first seen as an action started shows the last picture taken
 until then, which is still the old page when the new one was painted later, and none when its page had no picture yet,

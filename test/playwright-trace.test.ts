@@ -675,3 +675,26 @@ test('a page opened at an address shows the last picture before the next step on
     'press /next -',
   ]);
 });
+
+test('a page opened at an address keeps the first picture after the move when the app moved it to another address before the next step, and takes the last one before a check ends when a check comes next', () => {
+  const act = (callId: string, method: string, startTime: number, endTime: number, params = {}) => [
+    { type: 'before', callId, pageId: 'p', method, startTime, params },
+    { type: 'after', callId, endTime },
+  ];
+  const frame = (name: string, timestamp: number) => ({ type: 'screencast-frame', pageId: 'p', sha1: name, timestamp });
+  const lines = inTempDir((dir) => walkOf(traceZip(dir, [
+    ...act('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/login', 20),
+    ...act('2', 'fill', 30, 50, { selector: 'internal:label="메모"', value: 'a' }),
+    frameSnapshot('before@2', 'http://x/home', 30), frameSnapshot('input@2', 'http://x/home', 40), frameSnapshot('after@2', 'http://x/home', 50),
+    ...act('3', 'goto', 60, 70), frameSnapshot('after@3', 'http://x/list', 70),
+    ...act('4', 'expect', 72, 90), frameSnapshot('before@4', 'http://x/list', 72), frameSnapshot('after@4', 'http://x/list', 90),
+    frame('login.jpeg', 22), frame('home.jpeg', 25), frame('filled.jpeg', 45), frame('empty.jpeg', 71), frame('rows.jpeg', 85),
+  ], [], { 'resources/login.jpeg': 'l', 'resources/home.jpeg': 'h', 'resources/filled.jpeg': 'f', 'resources/empty.jpeg': 'e', 'resources/rows.jpeg': 'r' })));
+  assert.deepEqual(lines.map((line) => (line.kind === 'request' ? line.url : `${line.kind} ${line.url} ${line.shot ?? '-'}`)), [
+    'open /login login.jpeg',
+    'open /home home.jpeg',
+    'write /home filled.jpeg',
+    'open /list rows.jpeg',
+    'assert /list -',
+  ]);
+});
