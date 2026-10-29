@@ -1,0 +1,50 @@
+diff --git a/docs/decisions.md b/docs/decisions.md
+index e7853db..6cb9604 100644
+--- a/docs/decisions.md
++++ b/docs/decisions.md
+@@ -739,7 +739,7 @@ The limits, left as they were: an array handed to the matcher, a route read by k
+ (`matches(list, pathname)`), a list compared through `map` or `forEach`, and a matcher name that moves. A file
+ that reads an exported list is looked at only when it is drawn on a screen, is a route file or app-wide, or holds a
+ saga run, so a move through the list in a file only a saga handler reaches, or in a file that loads the list with
+-`import()`, is missed and the rows go.
++`import()` or `require`, is missed and the rows go.
+ 
+ **The roles that pass a role guard can be written in the config (`roleGuards`), with the kind of role before
+ the name.**
+diff --git a/src/client.ts b/src/client.ts
+index 7507550..409c533 100644
+--- a/src/client.ts
++++ b/src/client.ts
+@@ -1319,7 +1319,7 @@ export async function extractClient(config: any) {
+     if (parent.isUnaryExpression({ operator: '!' })) return true;
+     if ((parent.isCallExpression() || parent.isOptionalCallExpression()) && parent.node.callee.type === 'Identifier' && parent.node.callee.name === 'Boolean') return true;
+     if ((parent.isIfStatement() || parent.isWhileStatement() || parent.isConditionalExpression()) && at.key === 'test') return true;
+-    if (parent.isLogicalExpression({ operator: '&&' }) && at.key === 'left') return true;
++    if (parent.isLogicalExpression()) return (parent.node.operator === '&&' && at.key === 'left') || comparedValue(parent);
+     return parent.isBinaryExpression() && ['===', '!==', '==', '!=', '>', '>=', '<', '<='].includes(parent.node.operator);
+   }
+ 
+diff --git a/test/screen-links.test.ts b/test/screen-links.test.ts
+index 886a3a7..a465bec 100644
+--- a/test/screen-links.test.ts
++++ b/test/screen-links.test.ts
+@@ -1144,7 +1144,7 @@ export default function Team() {
+   assert.deepEqual(linksOf(map, '/team/:team#Team'), [['{?}', lineOf(indexed, 'history.push'), [], []], ...listRows(ROUTE_LIST)]);
+ });
+ 
+-test('a list of route constants stays a link source where the route find returns is the address of a move through ?? or ||, or where a re-export under another name is written as a link’s address', async () => {
++test('a list of route constants stays a link source where the route find returns is the address of a move through ?? or ||, but not where ?? or || only feeds a test, and where a re-export under another name is written as a link’s address', async () => {
+   const listRowsOf = (map: any, id: string) => linksOf(map, id).filter((row: any) => row[1] === lineOf(ROUTE_LIST, 'export const'));
+   for (const fallback of ['??', '||']) {
+     const found = `import { useHistory, useLocation } from 'react-router-dom';
+@@ -1159,6 +1159,10 @@ export default function Home() {
+     const map = await build(withRouteConstant({ 'Constants.js': ROUTE_LIST, 'Home.js': found }));
+     assert.deepEqual(listRowsOf(map, '/home#Home'), listRows(ROUTE_LIST), fallback);
+   }
++  for (const guard of ['pathname && routesToSkip.find((route) => route === pathname)', 'routesToSkip.find((route) => route === pathname) || pathname === "/"']) {
++    const map = await build(withRouteConstant({ 'Constants.js': ROUTE_LIST, 'Home.js': listPage('Home', `(${guard}) ? 'skip' : 'show'`) }));
++    assert.deepEqual(listRowsOf(map, '/home#Home'), [], guard);
++  }
+   const barrel = `export { routesToSkip as skipList } from './Constants';\n`;
+   const help = `import { Link } from 'react-router-dom';
+ import { skipList } from './Barrel';
