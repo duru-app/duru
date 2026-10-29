@@ -215,7 +215,7 @@ export function readTrace(file: string): TraceResult {
   const shown: Shown = {
     addresses: new Set(frameUrls.map(withoutHash)),
     pages: new Set(frameUrls.map(documentOf)),
-    lastDocumentAt: Math.max(-Infinity, ...resources.filter((e) => destOf(e.snapshot.request) === 'document').map((e) => e.snapshot._monotonicTime)),
+    lastDocumentAt: resources.findLast((e) => destOf(e.snapshot.request) === 'document')?.snapshot._monotonicTime ?? -Infinity,
   };
   const pageRequestAt = (url: string, from: number, to: number) => {
     const page = documentOf(url);

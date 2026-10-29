@@ -487,7 +487,7 @@ test('a page load the browser marks as a document is not a call the test sent, a
   ], 'http://x/login'), ['open /home', 'press /home', 'open /login', 'GET /api/me 200']);
 });
 
-test('a link the browser opens as a document that answers with a file, not a page, or gets no answer is a call the test sent', () => {
+test('a link the browser opens as a document that answers with a file, not a page, or gets no answer with no document asked for after it, is a call the test sent', () => {
   assert.deepEqual(clickTrace([
     { url: '/api/report/export', at: 12, type: 'text/csv', dest: 'document' },
     { url: '/home?format=csv', at: 13, type: 'text/csv', dest: 'document' },

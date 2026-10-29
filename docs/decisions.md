@@ -2754,8 +2754,8 @@ seen. The snapshots are read in the order they were taken, since actions can ove
 page it asks for, so the page can be asked for before the click's last snapshot, which still shows the old address. A
 page load is a GET of the same origin and path, query aside, that the browser marked as a document (`Sec-Fetch-Dest:
 document`) and that was answered with a page or a redirect, or whose whole address, query included, the test had open
-at some point, or that got no answer while its path was open at some point or another document was asked for after
-it, as when a second move cancels the first; when the request carries no such header, as on plain http to another
+at some point, or that got no answer while its path was open at some point or any document was asked for later in the
+trace, as when a second move cancels the first; when the request carries no such header, as on plain http to another
 host than localhost, it is a GET of a page the test had open answered with a page, a redirect or nothing yet. A link
 to a file, such as a CSV export or `?format=csv` on the page's own path, is a document too, but the test never has
 that address open and its answer is not a page, so it stays a request. In the test that follows a link, the click
@@ -2798,15 +2798,16 @@ Known limits: a GET answered below 400 with a type not on that list (a page serv
 does; an API call whose path ends in a static file's extension is left out when it did not fail; a dev server under
 another name than those above shows its own requests, and an app's own path with an `@vite`, `@id`, `@fs` or
 `@react-refresh` part is left out even when it failed; a download that got no answer is taken for a page load when
-another document was asked for after it, and so is a move to an API address answered with a redirect, such as setting
-`location` to a logout address; without `Sec-Fetch-Dest`, a fetch on the path of a page the test had open answered
-with a redirect, a 304 or not at all is taken for a page load, and the address a page load was redirected from shows
-as a request unless its answer was a page, since the test never had it open; a `tests.json` written before the steps
-were kept has no result file or project on its trace notices, so such a notice is matched on the test's file, line
-and title and is shown on every run of that test; an action with no address open (a blank page) shows 「앱 밖」 instead
-of a screen; what an `expect` checked is not shown; an action the trace has no end for, as when the test ran out of
-time during it, is not marked 「실패」; when an action changes the address without loading a page, as a router in the
-page does, a request the new screen sends before the action ends comes before 「열기」.
+any document was asked for later in the trace or when it is on the path of a page the test had open, and so is a move
+to an API address answered with a redirect, such as setting `location` to a logout address; a page load the trace
+ended before it was answered shows as a request; without `Sec-Fetch-Dest`, a fetch on the path of a page the test had
+open answered with a redirect, a 304 or not at all is taken for a page load, and the address a page load was
+redirected from shows as a request unless its answer was a page, since the test never had it open; a `tests.json`
+written before the steps were kept has no result file or project on its trace notices, so such a notice is matched on
+the test's file, line and title and is shown on every run of that test; an action with no address open (a blank page)
+shows 「앱 밖」 instead of a screen; what an `expect` checked is not shown; an action the trace has no end for, as when
+the test ran out of time during it, is not marked 「실패」; when an action changes the address without loading a page, as
+a router in the page does, a request the new screen sends before the action ends comes before 「열기」.
 
 **A kind of case can list values, each counted as a case of its own and named with `@case:<kind>=<value>`; a tag
 without a value on such a kind fills no value.**
