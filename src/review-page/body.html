@@ -25,6 +25,19 @@
   <button class="close" title="닫습니다" aria-label="닫기">✕</button>
   <img alt="">
 </dialog>
+<dialog id="replay-view" closedby="any" aria-label="단계 재생">
+  <div class="replay-head">
+    <span class="replay-count muted" title="몇 번째 단계인지"></span>
+    <ul class="replay-line"></ul>
+    <button class="close" title="닫습니다" aria-label="닫기">✕</button>
+  </div>
+  <div class="replay-shot"><img alt=""><p class="no-shot muted">이 단계까지는 찍힌 화면 그림이 없습니다.</p></div>
+  <div class="replay-acts">
+    <button class="back" title="앞 단계로 돌아갑니다">이전</button>
+    <button class="pause"></button>
+    <button class="next" title="다음 단계로 넘어갑니다">다음</button>
+  </div>
+</dialog>
 <dialog id="reason-ask" closedby="none" aria-labelledby="reason-ask-title">
   <h2 id="reason-ask-title"></h2>
   <div class="subject"></div>

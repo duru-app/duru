@@ -44,18 +44,95 @@ function shownProject(node, t) {
   return picked !== undefined && Object.hasOwn(stepsRuns(t) ?? {}, picked) ? picked : t.project ?? '';
 }
 
+const replayView = /** @type {HTMLDialogElement} */ (document.getElementById('replay-view'));
+const replayPart = (selector) => /** @type {HTMLButtonElement} */ (replayView.querySelector(selector));
+const REPLAY_STEP_MS = 2000;
+/** @type {{ lines: TestStepLine[], at: number, playing: boolean, timer: ReturnType<typeof setTimeout> | undefined }} */
+const replay = { lines: [], at: 0, playing: false, timer: undefined };
+
+function shotUntil(lines, at) {
+  for (let i = at; i >= 0; i--) if (lines[i].shot) return lines[i].shot;
+  return null;
+}
+
+function drawReplay() {
+  clearTimeout(replay.timer);
+  const { lines, at } = replay;
+  const last = at === lines.length - 1;
+  if (last) replay.playing = false;
+  const shot = shotUntil(lines, at);
+  const img = /** @type {HTMLImageElement} */ (replayView.querySelector('img'));
+  if (shot) img.src = shotUrl(shot);
+  img.hidden = !shot;
+  replayPart('.no-shot').hidden = Boolean(shot);
+  replayPart('.replay-count').textContent = `${at + 1}/${lines.length}`;
+  fill(replayPart('.replay-line'), testStepItem(lines[at], true));
+  const pause = replayPart('button.pause');
+  const [word, title] = replay.playing ? ['멈춤', '이 단계에서 멈춥니다'] : last ? ['처음부터', '첫 단계부터 다시 넘깁니다'] : ['계속', '이 단계부터 다시 넘깁니다'];
+  pause.textContent = word;
+  pause.title = title;
+  const turnOff = (button, off) => {
+    if (off && document.activeElement === button) pause.focus();
+    button.disabled = off;
+  };
+  turnOff(replayPart('button.back'), at === 0);
+  turnOff(replayPart('button.next'), last);
+  if (replay.playing) replay.timer = setTimeout(() => moveReplay(1), REPLAY_STEP_MS);
+}
+
+function moveReplay(by) {
+  replay.at = Math.min(Math.max(replay.at + by, 0), replay.lines.length - 1);
+  drawReplay();
+}
+
+function openReplay(lines) {
+  Object.assign(replay, { lines, at: 0, playing: true });
+  for (const line of lines) if (line.shot) new Image().src = shotUrl(line.shot);
+  replayView.showModal();
+  drawReplay();
+  replayPart('button.pause').focus();
+}
+
+replayPart('button.close').addEventListener('click', () => replayView.close());
+replayPart('button.back').addEventListener('click', () => moveReplay(-1));
+replayPart('button.next').addEventListener('click', () => moveReplay(1));
+replayPart('button.pause').addEventListener('click', () => {
+  if (!replay.playing && replay.at === replay.lines.length - 1) replay.at = 0;
+  replay.playing = !replay.playing;
+  drawReplay();
+});
+replayView.addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  e.preventDefault();
+  moveReplay(e.key === 'ArrowLeft' ? -1 : 1);
+});
+replayView.addEventListener('close', () => {
+  clearTimeout(replay.timer);
+  replay.playing = false;
+});
+
 function replayButton(node, t) {
+  if (t.format !== 'playwright') return null;
+  const lines = stepsRuns(t)?.[shownProject(node, t)];
+  if (!lines?.some((line) => line.kind !== 'request' && line.shot)) return null;
+  return h('button', {
+    class: 'replay', title: '이 테스트의 단계를 화면 그림과 함께 한 단계씩 넘겨 봅니다',
+    onclick: (e) => { e.stopPropagation(); openReplay(lines); }, onkeydown: (e) => e.stopPropagation(),
+  }, '재생');
+}
+
+function traceButton(node, t) {
   if (t.format !== 'playwright' || !t.steps) return null;
   const project = shownProject(node, t);
   const kept = state.data.testTraces?.[t.steps]?.[project];
   if (kept === undefined) return null;
-  if (!kept) return h('button', { class: 'replay', disabled: true, title: '이 테스트의 trace 파일이 지워져 재생할 수 없습니다. 테스트를 다시 돌리고 duru rebuild 를 실행하면 됩니다' }, '재생');
+  if (!kept) return h('button', { class: 'trace', disabled: true, title: '이 테스트의 trace 파일이 지워져 열 수 없습니다. 테스트를 다시 돌리고 duru rebuild 를 실행하면 됩니다' }, 'trace');
   const trace = `test-trace?steps=${encodeURIComponent(t.steps)}&project=${encodeURIComponent(project)}`;
   return h('a', {
-    class: 'replay', href: `/trace-viewer/index.html?trace=${encodeURIComponent(trace)}`, target: '_blank', rel: 'noopener',
-    title: '이 테스트가 돈 화면을 Playwright trace viewer 로 새 탭에서 처음부터 다시 봅니다',
+    class: 'trace', href: `/trace-viewer/index.html?trace=${encodeURIComponent(trace)}`, target: '_blank', rel: 'noopener',
+    title: '이 테스트의 trace 를 Playwright trace viewer 로 새 탭에서 엽니다',
     onclick: (e) => e.stopPropagation(), onkeydown: (e) => e.stopPropagation(),
-  }, '재생');
+  }, 'trace');
 }
 
 function stepsButton(node, t) {
@@ -84,24 +161,24 @@ function writtenValue(line) {
   return line.value === '' ? h('span', { class: 'muted step-value', title: '빈 값을 넣어 상자를 비웠습니다' }, '빈 값') : h('code', { class: 'step-value' }, line.value);
 }
 
-function testStepItem(/** @type {TestStepLine} */ line) {
-  if (line.kind === 'request') return testRequestItem(line);
+function testStepItem(/** @type {TestStepLine} */ line, inReplay = false) {
+  if (line.kind === 'request') return testRequestItem(line, inReplay);
   return h('li', { class: `step-line ${line.kind}` },
     h('span', { class: `chip step-${line.kind}`, title: [STEP_KIND_TITLE[line.kind], line.method && `(${line.method})`].filter(Boolean).join(' ') }, STEP_KIND[line.kind]), ' ',
     stepPlace(line),
     line.kind === 'write' ? [' ', line.box ? h('span', { class: 'step-box' }, boxWords(line.box)) : h('span', { class: 'muted step-unread', title: line.selector ?? null }, '찾은 상자를 읽지 못함')] : null,
     line.kind === 'write' && writtenValue(line) ? [' ', writtenValue(line)] : null,
     line.failed ? [' ', h('span', { class: 'chip fail', title: '이 동작은 오류로 끝났습니다' }, '실패')] : null,
-    shotThumb(line));
+    inReplay ? null : shotThumb(line));
 }
 
 const answerChip = (status) => (status === null
   ? h('span', { class: 'chip status-none', title: '응답을 받지 못했습니다' }, '응답 없음')
   : h('span', { class: `chip status${status >= 400 ? ' status-error' : ''}`, title: '응답 상태' }, String(status)));
 
-function testRequestItem(line) {
+function testRequestItem(line, inReplay) {
   const body = [h('span', { class: 'mono', title: line.url }, `${line.method} ${shownAddress(line.url)}`), ' ', answerChip(line.status)];
-  if (line.call && opensOnPage(line.call)) {
+  if (!inReplay && line.call && opensOnPage(line.call)) {
     return h('li', { class: 'request-line on-map' },
       h('button', { class: 'open-call', title: '이 호출을 부르는 화면을 열고 이 호출을 고릅니다', onclick: (e) => { e.stopPropagation(); openCall(line.call); } }, body));
   }
@@ -128,5 +205,5 @@ function stepsFold(node, t) {
       class: `chip step-project${p === picked ? ' on' : ''}`, 'data-project': p, 'aria-pressed': String(p === picked), title: `${p || '프로젝트 이름 없이'} 돈 실행의 단계를 봅니다`,
       onclick: (e) => { e.stopPropagation(); pickStepsProject(place, p); },
     }, p || '이름 없음'))) : null,
-    lines.length ? h('ol', { class: 'step-lines' }, lines.map(testStepItem)) : h('p', { class: 'muted' }, '이 실행은 화면을 열지도 호출을 보내지도 않았습니다.'));
+    lines.length ? h('ol', { class: 'step-lines' }, lines.map((line) => testStepItem(line))) : h('p', { class: 'muted' }, '이 실행은 화면을 열지도 호출을 보내지도 않았습니다.'));
 }

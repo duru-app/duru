@@ -74,7 +74,7 @@ test('in a browser, 「단계」 on a screen\'s test opens, in order, what the t
   });
 });
 
-test('in a browser, a test that ran in two projects shows the steps of its own project first and the other one\'s on its chip, and 「재생」 plays the run whose steps are shown', { skip: browserMissing }, async () => {
+test('in a browser, a test that ran in two projects shows the steps of its own project first and the other one\'s on its chip, and 「trace」 opens the run whose steps are shown', { skip: browserMissing }, async () => {
   await withSteps(async (p) => {
     const [chromium, firefox] = [testLine(p, 'fills the boxes on home').first(), testLine(p, 'fills the boxes on home').nth(1)];
     await firefox.locator('.steps-toggle').click();
@@ -88,16 +88,16 @@ test('in a browser, a test that ran in two projects shows the steps of its own p
     assert.equal(await foldOf(firefox).locator('.step-project.on').textContent(), 'chromium');
     assert.equal((await lines(foldOf(firefox))).length, 20);
     assert.deepEqual(await p.evaluate(() => [document.activeElement!.textContent, document.activeElement!.getAttribute('aria-pressed')]), ['chromium', 'true']);
-    assert.match((await firefox.locator('a.replay').getAttribute('href'))!, /project%3Dchromium$/);
-    assert.match((await chromium.locator('a.replay').getAttribute('href'))!, /project%3Dchromium$/);
+    assert.match((await firefox.locator('a.trace').getAttribute('href'))!, /project%3Dchromium$/);
+    assert.match((await chromium.locator('a.trace').getAttribute('href'))!, /project%3Dchromium$/);
     await fold.locator('.step-project', { hasText: 'firefox' }).click();
-    assert.match((await firefox.locator('a.replay').getAttribute('href'))!, /project%3Dfirefox$/);
+    assert.match((await firefox.locator('a.trace').getAttribute('href'))!, /project%3Dfirefox$/);
     await chromium.locator('.steps-toggle').click();
     await foldOf(chromium).locator('.step-project', { hasText: 'firefox' }).click();
-    assert.match((await chromium.locator('a.replay').getAttribute('href'))!, /project%3Dfirefox$/);
-    assert.match((await firefox.locator('a.replay').getAttribute('href'))!, /project%3Dfirefox$/);
+    assert.match((await chromium.locator('a.trace').getAttribute('href'))!, /project%3Dfirefox$/);
+    assert.match((await firefox.locator('a.trace').getAttribute('href'))!, /project%3Dfirefox$/);
     await foldOf(firefox).locator('.step-project', { hasText: 'chromium' }).click();
-    assert.match((await chromium.locator('a.replay').getAttribute('href'))!, /project%3Dfirefox$/);
+    assert.match((await chromium.locator('a.trace').getAttribute('href'))!, /project%3Dfirefox$/);
   });
 });
 
@@ -208,15 +208,61 @@ test('in a browser, a step line shows a small picture of the screen after it, an
   });
 });
 
-test('in a browser, 「재생」 opens the test\'s trace in the Playwright trace viewer in a new tab, and is greyed out once the trace file is gone', { skip: browserMissing }, async () => {
+test('in a browser, 「재생」 shows a test\'s steps one at a time in a large window, each with the screen picture, moving on by itself and stopping at the last step', { skip: browserMissing }, async () => {
   await withSteps(async (p) => {
-    const replay = testLine(p, 'shows the screen after each step').locator('a.replay');
+    const row = testLine(p, 'shows the screen after each step');
+    await row.locator('.steps-toggle').click();
+    const all = await lines(foldOf(row));
+    assert.ok(all.length > 2);
+    const replay = row.locator('button.replay');
     assert.equal(await replay.textContent(), '재생');
-    assert.equal(await replay.getAttribute('target'), '_blank');
-    const [viewer] = await Promise.all([p.context().waitForEvent('page'), replay.click()]);
+    await replay.click();
+    const view = p.locator('#replay-view');
+    assert.ok(await view.evaluate((d: HTMLDialogElement) => d.open));
+    const count = () => view.locator('.replay-count').textContent();
+    const shown = () => view.locator('.replay-line > li').evaluate((li) => li.textContent!.replace(/\s+/g, ' ').trim());
+    const pause = view.locator('button.pause');
+    assert.equal(await count(), `1/${all.length}`);
+    assert.equal(await shown(), all[0]);
+    assert.ok(await view.locator('button.back').isDisabled());
+    assert.equal(await pause.textContent(), '멈춤');
+    const img = view.locator('img');
+    await img.evaluate((el: HTMLImageElement) => el.decode());
+    assert.ok(await img.evaluate((el: HTMLImageElement) => el.naturalWidth) > 0);
+    assert.ok(await img.evaluate((el: HTMLImageElement) => el.getBoundingClientRect().width) > 600);
+
+    await p.clock.runFor(2000);
+    assert.equal(await count(), `2/${all.length}`);
+    assert.equal(await shown(), all[1]);
+    await pause.click();
+    assert.equal(await pause.textContent(), '계속');
+    await p.clock.runFor(5000);
+    assert.equal(await count(), `2/${all.length}`);
+    await view.locator('button.next').click();
+    assert.equal(await count(), `3/${all.length}`);
+    assert.equal(await shown(), all[2]);
+    await p.keyboard.press('ArrowLeft');
+    assert.equal(await count(), `2/${all.length}`);
+
+    await pause.click();
+    await p.clock.runFor(2000 * all.length);
+    assert.equal(await count(), `${all.length}/${all.length}`);
+    assert.ok(await view.locator('button.next').isDisabled());
+    assert.equal(await pause.textContent(), '처음부터');
+    await p.keyboard.press('Escape');
+    assert.equal(await view.evaluate((d: HTMLDialogElement) => d.open), false);
+  }, (page) => page.clock.install());
+});
+
+test('in a browser, 「trace」 opens the test\'s trace in the Playwright trace viewer in a new tab, and is greyed out once the trace file is gone', { skip: browserMissing }, async () => {
+  await withSteps(async (p) => {
+    const trace = testLine(p, 'shows the screen after each step').locator('a.trace');
+    assert.equal(await trace.textContent(), 'trace');
+    assert.equal(await trace.getAttribute('target'), '_blank');
+    const [viewer] = await Promise.all([p.context().waitForEvent('page'), trace.click()]);
     await viewer.getByText('Navigate to "/home"').waitFor();
     await viewer.getByText('Fill "첫 메모"').waitFor();
-    assert.equal(await testLine(p, 'opens home without a trace').locator('.replay').count(), 0);
+    assert.equal(await testLine(p, 'opens home without a trace').locator('.trace, .replay').count(), 0);
     await viewer.close();
   });
   await withRebuiltFixture(STEPS, async (config, copy) => {
@@ -225,8 +271,9 @@ test('in a browser, 「재생」 opens the test\'s trace in the Playwright trace
       await p.waitForSelector('#screen-list li');
       await chooseScreen(p, '/home');
       const row = testLine(p, 'shows the screen after each step');
-      assert.equal(await row.locator('a.replay').count(), 0);
-      assert.equal(await row.locator('button.replay:disabled').textContent(), '재생');
+      assert.equal(await row.locator('a.trace').count(), 0);
+      assert.equal(await row.locator('button.trace:disabled').textContent(), 'trace');
+      assert.equal(await row.locator('button.replay').textContent(), '재생');
       await row.locator('.steps-toggle', { hasText: '단계' }).click();
       await foldOf(row).locator('button.shot-thumb img').first().evaluate((img: HTMLImageElement) => img.decode());
     }));

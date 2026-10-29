@@ -392,14 +392,25 @@
   .test-row, #center .pair-test { border-top: 1px solid var(--line); padding: 4px 0; }
   .test-row:first-child, #center .pair-test:first-of-type { border-top: none; }
   .test-row:hover, #center .pair-test:hover { background: var(--selected); }
-  :is(.steps-toggle, .replay) { flex: none; border: 1px solid var(--line); border-radius: 10px; padding: 0 8px; font: inherit; font-size: 12px; line-height: 18px; background: var(--panel); color: var(--text); cursor: pointer; white-space: nowrap; }
-  a.replay { text-decoration: none; }
-  .replay:disabled { color: var(--muted); cursor: default; }
+  :is(.steps-toggle, .replay, .trace) { flex: none; border: 1px solid var(--line); border-radius: 10px; padding: 0 8px; font: inherit; font-size: 12px; line-height: 18px; background: var(--panel); color: var(--text); cursor: pointer; white-space: nowrap; }
+  a.trace { text-decoration: none; }
+  .trace:disabled { color: var(--muted); cursor: default; }
   .test-steps button.shot-thumb { display: block; margin: 2px 0 4px; padding: 0; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); cursor: zoom-in; }
   .test-steps button.shot-thumb img { display: block; width: min(360px, 100%); height: auto; border-radius: 3px; }
   #shot-view { max-width: calc(100vw - 32px); max-height: calc(100vh - 32px); padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
   #shot-view::backdrop { background: rgba(0, 0, 0, .55); }
   #shot-view img { display: block; max-width: calc(100vw - 50px); max-height: calc(100vh - 80px); }
+  #replay-view { width: min(1100px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); font-size: 13px; }
+  #replay-view::backdrop { background: rgba(0, 0, 0, .55); }
+  #replay-view .replay-head { display: flex; align-items: baseline; gap: 8px; min-height: 24px; }
+  #replay-view .replay-line { flex: 1; min-width: 0; margin: 0; padding: 0; list-style: none; overflow-wrap: anywhere; }
+  #replay-view .step-value { margin-left: 2px; }
+  #replay-view .replay-shot { display: flex; align-items: center; justify-content: center; height: min(calc(100vh - 150px), calc((min(1100px, 100vw - 32px) - 26px) * 9 / 16)); margin: 6px 0; }
+  #replay-view .replay-shot img { max-width: 100%; max-height: 100%; border: 1px solid var(--line); border-radius: 4px; }
+  #replay-view .replay-acts { display: flex; justify-content: center; gap: 8px; }
+  #replay-view .replay-acts button { min-width: 72px; padding: 2px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; cursor: pointer; }
+  #replay-view .replay-acts button:disabled { color: var(--muted); cursor: default; }
+  #replay-view button.close { border: none; background: none; color: var(--text); font: inherit; cursor: pointer; }
   #shot-view button.close { display: block; margin: 0 0 6px auto; border: none; background: none; color: var(--text); font: inherit; cursor: pointer; }
   .steps-toggle[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
   .test-steps { margin: 2px 0 10px 12px; padding-left: 10px; border-left: 2px solid var(--line); font-size: 12px; }

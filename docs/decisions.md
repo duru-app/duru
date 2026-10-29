@@ -2810,7 +2810,7 @@ the test ran out of time during it, is not marked 「실패」; when an action c
 a router in the page does, a request the new screen sends before the action ends comes before 「열기」.
 
 **A step of a test shows the screen picture taken after it, which `rebuild` copies out of the trace into
-`test-shots/`, and 「재생」 opens the test's trace in the trace viewer that comes with `playwright-core`, served by the
+`test-shots/`, and 「trace」 opens the test's trace in the trace viewer that comes with `playwright-core`, served by the
 review server.**
 Asked for in #481 (2026-10-29), at the screen check of the steps: the list alone did not show what the test saw. A
 trace recorded with screenshots has `screencast-frame` lines with the page, the picture's name in `resources/` (a
@@ -2827,7 +2827,7 @@ whose picture is the one of the line before shows none, as the 「열기」 afte
 `rebuild` copies only the pictures the steps name into `test-shots/` under `outDir`, in place of the ones there before, so they show as
 long as the steps do, also when the traces have been moved. In that trace that is 3 of its 4 pictures, 13.5 KB of
 18.1 KB; there is no limit on the folder's size.
-`tests.json` keeps each walk's trace file as `traceFiles` for 「재생」. The review server serves `playwright-core`'s
+`tests.json` keeps each walk's trace file as `traceFiles` for 「trace」. The review server serves `playwright-core`'s
 `lib/vite/traceViewer/` under `/trace-viewer/`, and a trace at `/trace-viewer/test-trace?steps=<key>&project=<name>`
 only when `traceFiles` names it. The page opens `index.html?trace=test-trace?...`, which the viewer's service worker
 fetches next to its own files, as `show-trace` does with `file?path=`. Measured: served this way, the viewer lists the
@@ -2838,7 +2838,7 @@ Alternatives compared:
   shows its box still empty and the click shows the page before it moved, since pictures come after the change.
 - Reading the pictures from the trace when the page asks for them: nothing is copied, but they vanish when the trace
   is moved while the steps still show.
-- Running `playwright show-trace` for 「재생」: another process and port for each trace, to be stopped when the review
+- Running `playwright show-trace` for 「trace」: another process and port for each trace, to be stopped when the review
   ends.
 - Opening `trace.playwright.dev`: needs the internet, and the trace has to be fetched from the review server by a page
   on another origin.
@@ -2847,9 +2847,25 @@ that changed nothing on the screen shows the first picture after it, which can a
 when that was painted before the next step ended, as an `expect` followed by a click; a test with several pages
 shows the pictures of the step's own page only; a page first seen as an action started shows the last picture taken
 until then, which is still the old page when the new one was painted later, and none when its page had no picture yet,
-as on the first action in a popup; 「재생」 is greyed out only when the trace file is gone, not when it was
+as on the first action in a popup; 「trace」 is greyed out only when the trace file is gone, not when it was
 replaced by another run's trace at the same place; `rebuild` reads each trace a second time to copy its pictures, and
 the review server checks that each trace file is there every time it sends the page's data.
+
+**「재생」 shows a test's steps one at a time in a window on the review page, about two seconds each with the step's
+screen picture, and the trace viewer stays under 「trace」.**
+Asked for in #481 (2026-10-29), at the second screen check: the trace viewer played the test too fast to follow, even
+at 0.5×. Measured in `playwright-core` 1.60.0: the viewer's speeds are fixed in its code as 0.5, 1 and 2, and it
+plays the test's own timing at that speed, so a test that ran in a second ends in two. The window steps through the
+lines 「단계」 lists, requests included, so what is shown is what the review page already read; a line without a
+picture of its own, as a request or a line whose picture is the one before, keeps the last picture before it, and a
+line before any picture says there is none yet. It needs only `tests.json` and `test-shots/`, so it still works when
+the trace file is gone, and it shows only when at least one step has a picture. Chosen by the driver.
+Alternatives compared:
+- Adding 0.1× and 0.25× to the viewer's speeds: rewriting the bundled viewer, and the test's own timing stays, so a
+  fill or a click still passes in a moment.
+- Keeping the viewer and moving through it with its next-action button: not a replay that runs by itself.
+Known limits: two seconds a step is fixed; a step's picture is the one described above for the step lines, with the
+same limits.
 
 **A kind of case can list values, each counted as a case of its own and named with `@case:<kind>=<value>`; a tag
 without a value on such a kind fills no value.**

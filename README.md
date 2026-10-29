@@ -1206,8 +1206,11 @@ request that matches a call opens that call. A test that ran in several projects
 a trace, with a trace that could not be read, or that was skipped says so instead. When Playwright recorded the trace
 with screenshots (`screenshots` in its `trace` option), a step and an opened page show a small
 picture of the screen after it, and pressing it shows it large; a line whose picture would be the same as the one
-before it shows none. 「재생」 beside 「단계」 opens the test's trace in Playwright's trace viewer in
-a new tab, served by the review page itself; it is greyed out when the trace file is no longer where `rebuild` read it.
+before it shows none. 「재생」 beside 「단계」 shows those steps one at a time in a large window, each for about two
+seconds with the picture of the screen after it, and has 「멈춤」, 「이전」 and 「다음」; the arrow keys move a step, and a
+line without a picture of its own keeps the one before. It shows only when at least one step has a picture.
+「trace」 opens the test's trace in Playwright's trace viewer in a new tab, served by the review page itself; it is
+greyed out when the trace file is no longer where `rebuild` read it.
 Under 「호출한 테스트」 a test shows, next to 「호출함」, the status it got for that call.
 
 **Untagged tests.** An untagged test linked to a screen by its imports or its trace has 「제외」, to discard the
