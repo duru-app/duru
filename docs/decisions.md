@@ -2865,7 +2865,8 @@ Alternatives compared:
   fill or a click still passes in a moment.
 - Keeping the viewer and moving through it with its next-action button: not a replay that runs by itself.
 Known limits: two seconds a step is fixed; a step's picture is the one described above for the step lines, with the
-same limits.
+same limits; a line does not keep which page it ran on, so in a test with several pages a line without a picture of
+its own keeps the last picture before it even when that was another page's, as on the first action in a popup.
 
 **A kind of case can list values, each counted as a case of its own and named with `@case:<kind>=<value>`; a tag
 without a value on such a kind fills no value.**

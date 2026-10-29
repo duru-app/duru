@@ -214,6 +214,9 @@ test('in a browser, 「재생」 shows a test\'s steps one at a time in a large 
     await row.locator('.steps-toggle').click();
     const all = await lines(foldOf(row));
     assert.ok(all.length > 2);
+    const own = await foldOf(row).locator('.step-lines > li').evaluateAll((items) => items.map((li) => li.querySelector('img')?.getAttribute('src') ?? null));
+    assert.ok(own.includes(null));
+    assert.equal(await testLine(p, 'fills the boxes on home').first().locator('button.replay').count(), 0);
     const replay = row.locator('button.replay');
     assert.equal(await replay.textContent(), '재생');
     await replay.click();
@@ -229,7 +232,10 @@ test('in a browser, 「재생」 shows a test\'s steps one at a time in a large 
     const img = view.locator('img');
     await img.evaluate((el: HTMLImageElement) => el.decode());
     assert.ok(await img.evaluate((el: HTMLImageElement) => el.naturalWidth) > 0);
-    assert.ok(await img.evaluate((el: HTMLImageElement) => el.getBoundingClientRect().width) > 600);
+    assert.ok(await img.evaluate((el: HTMLImageElement) => {
+      const box = el.getBoundingClientRect();
+      return Math.min(box.width, box.height * el.naturalWidth / el.naturalHeight);
+    }) > 600);
 
     await p.clock.runFor(2000);
     assert.equal(await count(), `2/${all.length}`);
@@ -249,6 +255,15 @@ test('in a browser, 「재생」 shows a test\'s steps one at a time in a large 
     assert.equal(await count(), `${all.length}/${all.length}`);
     assert.ok(await view.locator('button.next').isDisabled());
     assert.equal(await pause.textContent(), '처음부터');
+    let kept: string | null = null;
+    const expected = own.map((src) => (kept = src ?? kept));
+    for (let at = all.length - 1; at >= 0; at--) {
+      assert.equal(await img.getAttribute('src'), expected[at]);
+      if (at) await p.keyboard.press('ArrowLeft');
+    }
+    assert.equal(await count(), `1/${all.length}`);
+    await p.keyboard.press('Alt+ArrowRight');
+    assert.equal(await count(), `1/${all.length}`);
     await p.keyboard.press('Escape');
     assert.equal(await view.evaluate((d: HTMLDialogElement) => d.open), false);
   }, (page) => page.clock.install());

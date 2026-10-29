@@ -45,7 +45,8 @@ function shownProject(node, t) {
 }
 
 const replayView = /** @type {HTMLDialogElement} */ (document.getElementById('replay-view'));
-const replayPart = (selector) => /** @type {HTMLButtonElement} */ (replayView.querySelector(selector));
+const replayPart = (selector) => /** @type {HTMLElement} */ (replayView.querySelector(selector));
+const replayControl = (name) => /** @type {HTMLButtonElement} */ (replayView.querySelector(`button.${name}`));
 const REPLAY_STEP_MS = 2000;
 /** @type {{ lines: TestStepLine[], at: number, playing: boolean, timer: ReturnType<typeof setTimeout> | undefined }} */
 const replay = { lines: [], at: 0, playing: false, timer: undefined };
@@ -67,16 +68,19 @@ function drawReplay() {
   replayPart('.no-shot').hidden = Boolean(shot);
   replayPart('.replay-count').textContent = `${at + 1}/${lines.length}`;
   fill(replayPart('.replay-line'), testStepItem(lines[at], true));
-  const pause = replayPart('button.pause');
+  const pause = replayControl('pause');
   const [word, title] = replay.playing ? ['멈춤', '이 단계에서 멈춥니다'] : last ? ['처음부터', '첫 단계부터 다시 넘깁니다'] : ['계속', '이 단계부터 다시 넘깁니다'];
   pause.textContent = word;
   pause.title = title;
+  pause.setAttribute('aria-label', title);
   const turnOff = (button, off) => {
     if (off && document.activeElement === button) pause.focus();
     button.disabled = off;
   };
-  turnOff(replayPart('button.back'), at === 0);
-  turnOff(replayPart('button.next'), last);
+  turnOff(replayControl('back'), at === 0);
+  turnOff(replayControl('next'), last);
+  const coming = lines.slice(at + 1).map((line) => line.kind !== 'request' && line.shot).find((next) => next && next !== shot);
+  if (coming) new Image().src = shotUrl(coming);
   if (replay.playing) replay.timer = setTimeout(() => moveReplay(1), REPLAY_STEP_MS);
 }
 
@@ -87,22 +91,21 @@ function moveReplay(by) {
 
 function openReplay(lines) {
   Object.assign(replay, { lines, at: 0, playing: true });
-  for (const line of lines) if (line.shot) new Image().src = shotUrl(line.shot);
   replayView.showModal();
   drawReplay();
-  replayPart('button.pause').focus();
+  replayControl('pause').focus();
 }
 
-replayPart('button.close').addEventListener('click', () => replayView.close());
-replayPart('button.back').addEventListener('click', () => moveReplay(-1));
-replayPart('button.next').addEventListener('click', () => moveReplay(1));
-replayPart('button.pause').addEventListener('click', () => {
+replayControl('close').addEventListener('click', () => replayView.close());
+replayControl('back').addEventListener('click', () => moveReplay(-1));
+replayControl('next').addEventListener('click', () => moveReplay(1));
+replayControl('pause').addEventListener('click', () => {
   if (!replay.playing && replay.at === replay.lines.length - 1) replay.at = 0;
   replay.playing = !replay.playing;
   drawReplay();
 });
 replayView.addEventListener('keydown', (e) => {
-  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  if ((e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.isComposing) return;
   e.preventDefault();
   moveReplay(e.key === 'ArrowLeft' ? -1 : 1);
 });
@@ -116,7 +119,7 @@ function replayButton(node, t) {
   const lines = stepsRuns(t)?.[shownProject(node, t)];
   if (!lines?.some((line) => line.kind !== 'request' && line.shot)) return null;
   return h('button', {
-    class: 'replay', title: '이 테스트의 단계를 화면 그림과 함께 한 단계씩 넘겨 봅니다',
+    class: 'replay', title: '이 테스트의 단계를 화면 그림과 함께 한 단계씩 넘겨 봅니다', 'aria-label': '이 테스트의 단계를 화면 그림과 함께 한 단계씩 넘겨 보기',
     onclick: (e) => { e.stopPropagation(); openReplay(lines); }, onkeydown: (e) => e.stopPropagation(),
   }, '재생');
 }
@@ -126,11 +129,11 @@ function traceButton(node, t) {
   const project = shownProject(node, t);
   const kept = state.data.testTraces?.[t.steps]?.[project];
   if (kept === undefined) return null;
-  if (!kept) return h('button', { class: 'trace', disabled: true, title: '이 테스트의 trace 파일이 지워져 열 수 없습니다. 테스트를 다시 돌리고 duru rebuild 를 실행하면 됩니다' }, 'trace');
+  if (!kept) return h('button', { class: 'trace', disabled: true, title: '이 테스트의 trace 파일이 지워져 열 수 없습니다. 테스트를 다시 돌리고 duru rebuild 를 실행하면 됩니다', 'aria-label': 'trace 파일이 지워져 열 수 없는 trace viewer' }, 'trace');
   const trace = `test-trace?steps=${encodeURIComponent(t.steps)}&project=${encodeURIComponent(project)}`;
   return h('a', {
     class: 'trace', href: `/trace-viewer/index.html?trace=${encodeURIComponent(trace)}`, target: '_blank', rel: 'noopener',
-    title: '이 테스트의 trace 를 Playwright trace viewer 로 새 탭에서 엽니다',
+    title: '이 테스트의 trace 를 Playwright trace viewer 로 새 탭에서 엽니다', 'aria-label': '이 테스트의 trace 를 새 탭의 trace viewer 로 열기',
     onclick: (e) => e.stopPropagation(), onkeydown: (e) => e.stopPropagation(),
   }, 'trace');
 }
