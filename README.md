@@ -862,7 +862,8 @@ address of. A story with a screen the map does not have is detached. 「사전 �
 the end: what the first screen needs and the conditions on the way.
 
 A story also gets a status from its tests: fail when a test tagged `@story:<its ID>` fails, pending when none
-fails and one is pending, pass when all pass. When all pass but the traces of its Playwright story tests show that
+fails and one is pending, `limit` when none fails or is pending and one is within a limit (`WITHIN_LIMIT`),
+pass when all pass. When all pass but the traces of its Playwright story tests show that
 none of them opened its screens one after another, it is `part-pass`, and each link says how many story tests went
 across it. Whether they went through is not known, and the story stays `pass`, when a story test has no trace (a
 test that is not a Playwright test never has one), its trace holds no screen on the map (also when the test opened
@@ -993,10 +994,10 @@ drawn under them are gathered below the rest under
 「딸린 화면이 없는 진입 화면 N」, whose hover says why they are there. On a map of more than 100 screens, the gathered
 screens that share the start of their address are folded into one box per group (a group of more than 20 is split
 again by the next part of the address): the box shows the shared start, the number of screens and, with the squares
-of the status buttons, how many pass, fail, are pending or have no tagged test. Pressing the box opens the group in
+of the status buttons, how many pass, are within a limit, are pending, fail or have no tagged test. Pressing the box opens the group in
 its place across a whole row; pressing the group's name above the row folds it again. On such a map, every entry
 screen with screens under it is drawn folded among the gathered screens, with 「+N」 at its right end for the N
-screens under it and, with the same squares, how many of them pass, fail, are pending or have no tagged test; the
+screens under it and, with the same squares, how many of them pass, are within a limit, are pending, fail or have no tagged test; the
 heading then reads 「진입 화면 N」, counting the screens in folded groups and the opened ones too. 「+N」 draws that entry screen above the gathered
 screens with its tree, where a screen with more than six screens under it is folded the same way; 「−」 folds it
 again, and pressing the box still picks the screen. A tree that no entry screen reaches is folded at its first

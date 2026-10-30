@@ -12,6 +12,7 @@ declare const state: any;
 declare const GAP: number;
 declare let drawnGrid: { count: number; cellW: number; per: number } | null;
 declare function renderFlow(): void;
+declare function countText(c: { pass: number; fail: number; pending: number; limit: number }): string | (Node | null)[];
 declare const GROUP_HEAD_TIP: string;
 declare const FOLDED_HEAD_TIP: string;
 declare function screensIn(roots: { id: string; children: object[] }[]): { id: string; children: object[] }[];
@@ -1521,6 +1522,23 @@ test('in a browser, a folded screen fades by itself and the screens it hides, an
         assert.equal(await faded(p, home), 'dim', 'nothing /home hides is on the path of /help');
       }, { view: 'flow', setup: folding((data) => {
         walkFlow(data.flow.roots).find((n) => n.id === '/help#Help')!.jumps = [];
+      }) }),
+    ),
+  );
+});
+
+test('in a browser, a screen whose tests are only within a limit is drawn as 한계, a limit count reads △, and a pending test on a screen outranks a limit', { skip: browserMissing }, async () => {
+  const counts = { '/admin/group#AdminGroup': { pass: 0, fail: 0, pending: 0, limit: 1 }, '/admin/audit#AdminAudit': { pass: 0, fail: 0, pending: 1, limit: 2 } };
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box.screen');
+        assert.deepEqual(await boxesWith(p, 's-limit'), ['/admin/group#AdminGroup']);
+        assert.equal((await boxesWith(p, 's-pending')).includes('/admin/audit#AdminAudit'), true);
+        assert.equal(await filterButton(p, 'limit').textContent(), '한계 1');
+        assert.equal(await p.evaluate(() => { const el = document.createElement('div'); el.append(...[countText({ pass: 1, fail: 0, pending: 0, limit: 2 })].flat().filter((n): n is Node | string => n !== null)); return el.textContent; }), '✓1 △2 ');
+      }, { view: 'flow', setup: changeData((data) => {
+        for (const n of walkFlow(data.flow.roots)) if (Object.hasOwn(counts, n.id)) n.counts = counts[n.id as keyof typeof counts];
       }) }),
     ),
   );

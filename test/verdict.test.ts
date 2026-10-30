@@ -153,3 +153,21 @@ test('a log that cannot be read names the file', () => {
   const file = path.join(os.tmpdir(), 'duru-missing', 'checks.log');
   assert.throws(() => readVerdicts(file), (err: Error) => err.message.includes(file));
 });
+
+test('a WITHIN_LIMIT line linked to a screen keeps status limit and its detail, and one without a source is pending on that screen', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'checks.log'), [
+      'VERDICT lock count: WITHIN_LIMIT — about 9 per run, PR #7321 @screen:/document/:id#DocumentDetail',
+      'VERDICT lock order: WITHIN_LIMIT — the first wrong attempt counts less @screen:/document/:id#DocumentDetail',
+    ].join('\n') + '\n');
+    const tests = [{ format: 'verdict', path: dir, depth: 'api' }];
+    const linked = linkTests({ ...config, configDir: dir, tests }, map).nodes['/document/:id#DocumentDetail'];
+    assert.deepEqual(linked.map((t: { title: string; status: string; detail?: string }) => [t.title, t.status, t.detail]), [
+      ['lock count', 'limit', 'about 9 per run, PR #7321'],
+      ['lock order', 'pending', '출처 없음 — the first wrong attempt counts less'],
+    ]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

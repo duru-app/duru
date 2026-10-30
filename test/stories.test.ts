@@ -810,3 +810,11 @@ test('story IDs and screen IDs that are names of object members take their statu
     assert.deepEqual(checkStoryFiles(map, dir, 'out/map.json', tests).unknownTags, []);
   });
 });
+
+test('a story whose story tests are within a limit reads as limit, below a failing or pending one and above a passing one', () => {
+  const stories = { 'only.json': { ...STORY, screens: [HOME, LAB] }, 'pending.json': { ...STORY, screens: [HOME, LAB] }, 'passing.json': { ...STORY, screens: [HOME, LAB] } };
+  withStoriesDir(stories, (dir) => {
+    const tests = { nodes: {}, stories: { only: [ran('a', undefined, 'limit')], pending: [ran('b', undefined, 'limit'), ran('c', undefined, 'pending')], passing: [ran('d', undefined, 'limit'), ran('e')] } };
+    assert.deepEqual(statuses(dir, tests), [['only', 'limit'], ['passing', 'limit'], ['pending', 'pending']]);
+  });
+});

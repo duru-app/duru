@@ -157,6 +157,7 @@ interface CurrentTest {
   offNode: Map<string, TestStatus[]>;
 }
 
+export const isRegressedStatus = (status: string) => status !== 'pass' && status !== 'limit';
 const worst = (statuses: TestStatus[]) => statuses.reduce((w, s) => (STATUS_RANK[s] > STATUS_RANK[w] ? s : w));
 const worstThatRan = (statuses: TestStatus[]) => worst(statuses.some((s) => s !== 'pending') ? statuses.filter((s) => s !== 'pending') : statuses);
 const withoutSkipped = (statuses: TestStatus[], skipped: number) => {
@@ -331,7 +332,7 @@ function countsByNode(regressed: TestRow[][]) {
   const byNode: Record<string, { listed: Counts; chipOnly: Counts }> = {};
   for (const rows of regressed) {
     for (const node of new Set(rows.map((r) => r.node))) {
-      const failing = rows.filter((r) => r.node === node && r.status !== 'pass' && r.status !== 'limit');
+      const failing = rows.filter((r) => r.node === node && isRegressedStatus(r.status));
       const listed = failing.filter((r) => r.listed);
       const counted = listed.length ? listed : failing;
       if (!counted.length) continue;
@@ -413,6 +414,6 @@ export function passedInFolder(c: TestComparison, fines: Map<string, string>, ta
   const at = Date.parse(date);
   const fine = fines.get(node);
   if (fine !== undefined && at <= Date.parse(fine)) return null;
-  const regressed = c.regressions.some((r) => at > latestStart(r.baseline) && r.rows.some((row) => row.node === node && row.status !== 'pass' && sameTest(row.ref, part.key)));
+  const regressed = c.regressions.some((r) => at > latestStart(r.baseline) && r.rows.some((row) => row.node === node && isRegressedStatus(row.status) && sameTest(row.ref, part.key)));
   return regressed ? c.folder : null;
 }
