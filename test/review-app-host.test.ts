@@ -13,7 +13,8 @@ import { FIXTURE, withRebuiltFixture, signer, withServer, PASSWORD_ENV, ADMIN_PA
 import type { Config, PageData } from './review-helpers.ts';
 
 // 앱 서버가 로그인마다 새 토큰을 주고 그 앞의 토큰은 401 로 끊는 것처럼, 로그인한 계정을 세는 가짜 서버.
-async function withCutLogin<T>(fn: (api: string, logins: string[]) => Promise<T>) {
+// loginMs 를 주면 로그인 응답을 그만큼 늦게 보내, 로그인 둘이 겹치는 때를 만든다.
+async function withCutLogin<T>(fn: (api: string, logins: string[]) => Promise<T>, { loginMs = 0 } = {}) {
   const logins: string[] = [];
   const json = (res: http.ServerResponse, status: number, body: unknown) => {
     res.writeHead(status, { 'content-type': 'application/json' });
@@ -26,6 +27,7 @@ async function withCutLogin<T>(fn: (api: string, logins: string[]) => Promise<T>
     if (req.method === 'POST' && req.url === '/auth/login') {
       const { loginId, pw } = JSON.parse(body);
       logins.push(loginId);
+      if (loginMs) await new Promise((resolve) => setTimeout(resolve, loginMs));
       return pw === 's3cret' ? json(res, 200, { result: { token: token() } }) : json(res, 401, { message: 'bad login' });
     }
     if (req.headers.authorization !== `Bearer ${token()}`) return json(res, 401, { message: 'no token' });
@@ -40,6 +42,9 @@ async function withCutLogin<T>(fn: (api: string, logins: string[]) => Promise<T>
     server.close();
   }
 }
+
+// 로그인을 다시 하지 않을 때 칸 위에 보이는 문장.
+const CUT_SENTENCE = '다시 로그인한 뒤 1분 안에 또 로그인 화면으로 넘어가 더 시도하지 않습니다. 같은 계정으로 다른 곳에서 로그인했을 수 있습니다';
 
 // 페이지에 심는 localStorage 스크립트. 값은 저장소에 그대로 들어가는 글자다.
 const stored = (token: string) => `localStorage.setItem("FAKE_AUTH", "{\\"accessToken\\":\\"${token}\\"}")`;
@@ -160,7 +165,7 @@ test('a login-again request logs the account of a signed-in port in again, and t
           assert.ok((await page()).includes(stored('cut-1')));
           assert.equal((await host.fetchApi!('/api/v1/me')).status, 200);
 
-          const again = await fetch(`${host.url}${LOGIN_AGAIN_PATH}`, { method: 'POST' });
+          const again = await fetch(`${host.url}${LOGIN_AGAIN_PATH}`, { method: 'POST', headers: { origin: host.url } });
           assert.equal(again.status, 200);
           assert.deepEqual(await again.json(), { value: JSON.stringify({ accessToken: 'cut-2' }) });
           assert.deepEqual(logins, ['duru-admin', 'duru-admin']);
@@ -182,9 +187,9 @@ test('a second login-again request within a minute is answered with the sentence
       withRebuiltFixture({ app: { ...appSettings(api).app, login: loginWithHeader } }, async (config) => {
         const host = await startAppHost(config.app);
         try {
-          const again = () => fetch(`${host.url}${LOGIN_AGAIN_PATH}`, { method: 'POST' }).then((r) => r.json());
+          const again = () => fetch(`${host.url}${LOGIN_AGAIN_PATH}`, { method: 'POST', headers: { origin: host.url } }).then((r) => r.json());
           assert.deepEqual(await again(), { value: JSON.stringify({ accessToken: 'cut-2' }) });
-          assert.deepEqual(await again(), { error: '같은 계정으로 다른 곳에서 로그인해 이 앱 칸의 로그인이 끊겼습니다' });
+          assert.deepEqual(await again(), { error: CUT_SENTENCE });
           assert.deepEqual(logins, ['duru-admin', 'duru-admin']);
         } finally {
           host.close();
@@ -210,6 +215,61 @@ test('the signed-out port has no login-again path and none of the script that ca
           assert.deepEqual(logins, ['duru-admin']);
         }),
       ),
+    ),
+  );
+});
+
+test('two login-again requests for one account that arrive together log in once and both get the new token, with neither told that the login was cut', async () => {
+  await withCutLogin(
+    (api, logins) =>
+      withPassword('s3cret', () =>
+        withRebuiltFixture({ app: { ...appSettings(api).app, login: loginWithHeader } }, async (config) => {
+          const host = await startAppHost(config.app);
+          try {
+            const { port } = new URL(host.url);
+            const again = () => fetch(`${host.url}${LOGIN_AGAIN_PATH}`, { method: 'POST', headers: { origin: `http://localhost:${port}` } }).then((r) => r.json());
+            const [first, second] = await Promise.all([again(), again()]);
+            assert.deepEqual(first, { value: JSON.stringify({ accessToken: 'cut-2' }) });
+            assert.deepEqual(second, first);
+            assert.deepEqual(logins, ['duru-admin', 'duru-admin']);
+          } finally {
+            host.close();
+          }
+        }),
+      ),
+    { loginMs: 300 },
+  );
+});
+
+test('a login-again request from another page, from another port or with neither Origin nor a same-origin Sec-Fetch-Site is refused and logs nothing in', async () => {
+  await withCutLogin((api, logins) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture({ app: { ...appSettings(api).app, login: loginWithHeader } }, async (config) => {
+        const host = await startAppHost(config.app);
+        try {
+          const { port } = new URL(host.url);
+          const post = (headers: Record<string, string>) => fetch(`${host.url}${LOGIN_AGAIN_PATH}`, { method: 'POST', headers });
+          const refused: Record<string, string>[] = [
+            { origin: 'http://evil.example.test' },
+            { origin: `http://127.0.0.1:${Number(port) + 1}` },
+            {},
+            { 'sec-fetch-site': 'cross-site' },
+          ];
+          for (const headers of refused) {
+            const res = await post(headers);
+            assert.equal(res.status, 403, JSON.stringify(headers));
+            assert.equal(await res.text(), 'forbidden origin', JSON.stringify(headers));
+          }
+          assert.deepEqual(logins, ['duru-admin']);
+
+          const own = await post({ 'sec-fetch-site': 'same-origin' });
+          assert.equal(own.status, 200);
+          assert.deepEqual(await own.json(), { value: JSON.stringify({ accessToken: 'cut-2' }) });
+          assert.deepEqual(logins, ['duru-admin', 'duru-admin']);
+        } finally {
+          host.close();
+        }
+      }),
     ),
   );
 });

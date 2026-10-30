@@ -72,7 +72,7 @@ test('in a browser, a line the app pane sends when its login was cut shows above
             await p.click('#screen-list li:has-text("/home")');
             await p.frameLocator('#center iframe.app').locator('#who:has-text("두루 관리자")').waitFor();
             const { app } = await (await fetch(`${base}/api/data`)).json();
-            const sentence = '같은 계정으로 다른 곳에서 로그인해 이 앱 칸의 로그인이 끊겼습니다';
+            const sentence = '다시 로그인한 뒤 1분 안에 또 로그인 화면으로 넘어가 더 시도하지 않습니다. 같은 계정으로 다른 곳에서 로그인했을 수 있습니다';
             const pane = p.frames().find((f) => f.url() === `${app.url}/home`)!;
             await pane.evaluate((signedOut) => parent.postMessage({ duru: 'walk', signedOut }, '*'), sentence);
 
@@ -109,6 +109,33 @@ test('in a browser, an app pane that lands on a signed-out path is logged in aga
             await pane.evaluate(() => history.pushState({}, '', '/signin'));
 
             await untilSet(() => frameUrl() === `${app.url}/home`, 'the app pane back at /home');
+            assert.deepEqual(logins, ['duru-admin', 'duru-admin']);
+            await p.frameLocator('#center iframe.app').locator('#who:has-text("두루 관리자")').waitFor();
+            assert.equal(await p.locator('#center .login-cut').count(), 0);
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+test('in a browser, an app pane that reaches a signed-out path by a full page load goes back to the address it was at before the load', { skip: browserMissing }, async () => {
+  await withFakeApi((api, presses, logins) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture({ app: { ...appSettings(api).app, signedOutPaths: ['/signin'] } }, (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            await p.waitForSelector('#screen-list li');
+            await p.click('#screen-list li:has-text("/home")');
+            await p.frameLocator('#center iframe.app').locator('#who:has-text("두루 관리자")').waitFor();
+            const { app } = await (await fetch(`${base}/api/data`)).json();
+            const urls: string[] = [];
+            p.on('framenavigated', (f) => f.url().startsWith(`${app.url}/`) && urls.push(f.url()));
+            const pane = p.frames().find((f) => f.url() === `${app.url}/home`)!;
+            await pane.evaluate(() => setTimeout(() => { location.href = '/signin'; }, 0));
+
+            const back = await untilSet(() => urls.slice(urls.indexOf(`${app.url}/signin`) + 1).at(-1), 'the app pane to leave /signin');
+            assert.equal(back, `${app.url}/home`);
             assert.deepEqual(logins, ['duru-admin', 'duru-admin']);
             await p.frameLocator('#center iframe.app').locator('#who:has-text("두루 관리자")').waitFor();
             assert.equal(await p.locator('#center .login-cut').count(), 0);

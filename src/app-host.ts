@@ -385,18 +385,35 @@ export const SIGN_OUT_PATH = '/__duru/sign-out';
 export const LOGIN_AGAIN_PATH = '/__duru/login-again';
 // 다시 로그인할 때마다 앱이 다른 곳의 로그인을 끊을 수 있어, 한 번 다시 한 계정은 1분을 기다린다.
 const LOGIN_AGAIN_WAIT_MS = 60_000;
-const LOGIN_CUT = '같은 계정으로 다른 곳에서 로그인해 이 앱 칸의 로그인이 끊겼습니다';
+// 다시 하지 않고 멈춘 까닭과 그럴 만한 짐작을 함께 알린다.
+const LOGIN_CUT = '다시 로그인한 뒤 1분 안에 또 로그인 화면으로 넘어가 더 시도하지 않습니다. 같은 계정으로 다른 곳에서 로그인했을 수 있습니다';
 
 // 앱 페이지 안에서 따로 돌기 때문에 바깥 스코프의 변수를 쓰지 않는다.
 // 다른 곳에서 같은 계정으로 로그인해 토큰이 끊기면 앱이 로그아웃 화면으로 가므로, 그때 리뷰 서버에 로그인을 다시 청한다.
 // 받은 값을 앱의 저장소에 넣고 로그아웃 화면에 오기 전 주소로 돌아가며, 다시 하지 못하면 그 까닭을 리뷰 페이지에 보낸다.
-// 주소는 answerReviewPage 와 같은 자리(history, popstate, hashchange)에서 살핀다.
+// 주소는 answerReviewPage 와 같은 자리(history, popstate, hashchange)에서 살피고, 페이지를 새로 불러와도 남도록 sessionStorage 에도 둔다.
 export function logInAgainOnSignedOut(signedOutPaths: string[], againPath: string, storageKey: string, origins: string[]) {
   const w: any = globalThis;
   if (w.parent === w) return;
-  let last = '/';
-  let asking = false;
+  const lastKey = '__duru_last';
   const here = () => w.location.pathname + w.location.search + w.location.hash;
+  // 이 앱 안에서 쓰는 주소만 되돌아간다.
+  const inside = (url: unknown) => typeof url === 'string' && url.startsWith('/') && !url.startsWith('//');
+  const remembered = () => {
+    try {
+      const url = w.sessionStorage.getItem(lastKey);
+      return inside(url) ? url : '/';
+    } catch {
+      return '/';
+    }
+  };
+  const remember = (url: string) => {
+    try {
+      w.sessionStorage.setItem(lastKey, url);
+    } catch {}
+  };
+  let last = remembered();
+  let asking = false;
   const ask = async () => {
     if (asking) return;
     asking = true;
@@ -411,8 +428,12 @@ export function logInAgainOnSignedOut(signedOutPaths: string[], againPath: strin
     for (const origin of origins) w.parent.postMessage({ duru: 'walk', signedOut: answer.error }, origin);
   };
   const watch = () => {
-    if (signedOutPaths.includes(w.location.pathname)) ask();
-    else last = here();
+    if (signedOutPaths.includes(w.location.pathname)) {
+      ask();
+      return;
+    }
+    last = here();
+    remember(last);
   };
   for (const name of ['pushState', 'replaceState']) {
     const original = w.history[name];
@@ -447,6 +468,8 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
   const roleHolders = roles.map(([, account], i) => holderOf(account, roleLogins[i]));
   // 이 계정을 마지막으로 다시 로그인한 때. 이 뒤 1분 안에는 앱이 다른 곳의 로그인을 끊을 수 있어 다시 하지 않는다.
   const againAt = new Map<string, number>();
+  // 지금 다시 로그인하는 중인 계정. 그 로그인이 끝나기 전에 온 청에는 같은 답을 준다.
+  const againRunning = new Map<string, Promise<Login>>();
   const key = literal(app.login.storage.key);
   const { settingsFile } = app;
   const globalNames = settingsFile && globalNamesOf(settingsFile);
@@ -550,27 +573,43 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
   }
 
   // 다시 로그인하지 못하면 그 계정으로 다시 하지 못한 까닭을 그대로 알린다.
+  // 같은 계정의 청이 겹치면 두 번 로그인해 서로의 토큰을 끊으므로, 먼저 온 청의 로그인을 기다려 같은 답을 준다.
   async function logInAgain(res: http.ServerResponse, account: AppAccount, holder: LoginHolder) {
     const answer = (body: object) => send(res, 200, 'application/json', JSON.stringify(body));
+    const said = (login: Login) => answer(login.error !== undefined ? { error: login.error } : { value: login.storage!.value });
+    const running = againRunning.get(account.id);
+    if (running) return said(await running);
     const before = againAt.get(account.id);
     if (before !== undefined && Date.now() - before < LOGIN_AGAIN_WAIT_MS) return answer({ error: LOGIN_CUT });
-    const login = await logIn(app, account);
-    if (login.error !== undefined) return answer({ error: login.error });
-    againAt.set(account.id, Date.now());
-    holder.login = login;
-    logins.set(account.id, Promise.resolve(login));
-    answer({ value: login.storage!.value });
+    const attempt = logIn(app, account);
+    againRunning.set(account.id, attempt);
+    const login = await attempt;
+    againRunning.delete(account.id);
+    if (login.error === undefined) {
+      againAt.set(account.id, Date.now());
+      holder.login = login;
+    }
+    said(login);
   }
 
   // login 이 null 인 포트는 로그아웃 상태로 띄운다. account 가 null 인 포트에는 로그인을 다시 하는 경로가 없다.
   async function listen(port: number, holder: LoginHolder, account: AppAccount | null) {
     const ownHosts = (): (string | undefined)[] => [`127.0.0.1:${(server.address() as AddressInfo).port}`, `localhost:${(server.address() as AddressInfo).port}`];
+    // 이 포트가 낸 페이지에서 온 청만 받는다. 다른 사이트가 이 컴퓨터의 앱에 로그인을 다시 시키지 못하게 한다.
+    const fromOwnPage = (req: http.IncomingMessage) => {
+      const origin = req.headers.origin;
+      if (origin !== undefined) return ownHosts().some((host) => origin === `http://${host}`);
+      return req.headers['sec-fetch-site'] === 'same-origin';
+    };
     const server = http.createServer(async (req, res) => {
       try {
         if (!ownHosts().includes(req.headers.host)) return send(res, 403, 'text/plain', 'forbidden host');
         const { pathname, search } = new URL(req.url!, 'http://host');
         if (!holder.login && pathname === SIGN_OUT_PATH) return signOutPage(res, search);
-        if (account && req.method === 'POST' && pathname === LOGIN_AGAIN_PATH) return await logInAgain(res, account, holder);
+        if (account && req.method === 'POST' && pathname === LOGIN_AGAIN_PATH) {
+          if (!fromOwnPage(req)) return send(res, 403, 'text/plain', 'forbidden origin');
+          return await logInAgain(res, account, holder);
+        }
         if (settingsFile && pathname === settingsFile.path) return await serveSettings(res);
         if (app.apiPaths.some((p) => pathname.startsWith(p))) return forward(req, res);
         if (fromFolder(app)) return serveFolder(res, pathname, holder.login);
