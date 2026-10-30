@@ -118,6 +118,9 @@
   tbody tr.selected { background: var(--selected); }
   td.depth { width: 110px; font-weight: 600; }
   td.mark { width: 90px; }
+  td.test-buttons { white-space: nowrap; }
+  tbody tr.test-line:not(.group-end) > td:not([rowspan]) { border-bottom: 0; }
+  tbody tr.test-line:hover { background: var(--selected); }
   table.calls tbody tr { cursor: default; }
   table.calls td.cell { cursor: pointer; white-space: nowrap; font-size: 12px; }
   table.calls td.cell:hover { background: var(--selected); }

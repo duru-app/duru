@@ -44,14 +44,8 @@ function renderCenter() {
   fill(center,
     baselineBanner(s),
     h('table', {},
-      h('thead', {}, h('tr', {}, h('th', {}, '깊이'), h('th', {}, '테스트'), h('th', {}, '상태'))),
-      h('tbody', {}, rows.map((r) => h('tr', {
-        class: keyOf(r.target) === keyOf(state.target) ? 'selected' : '',
-        onclick: () => selectTarget(r.target),
-      },
-        h('td', { class: 'depth' }, r.label, talkCount(entriesAt(r.target), r.target)),
-        h('td', {}, r.target.depth ? (r.tests.length ? r.tests.map((t) => testRow(testItem(t, { hide: [`screen:${s.id}`, `depth:${t.depth}`], chip: regressionChip(s.id, 'tag', t) }), s.id, t)) : h('span', { class: 'muted' }, '없음')) : h('span', { class: 'muted' }, `테스트 ${tests.length}개`)),
-        h('td', { class: 'mark' }, markChip(markOf(r.target)) ?? h('span', { class: 'muted' }, '—')))))),
+      h('thead', {}, h('tr', {}, h('th', {}, '깊이'), h('th', {}, '테스트'), h('th', {}, '상태'), h('th', {}))),
+      h('tbody', {}, rows.flatMap((r) => depthRows(r, s, tests.length)))),
     strayJudgmentError(s),
     untaggedPairs(s.id),
     baselineOnlyHere(s.id),
@@ -60,6 +54,29 @@ function renderCenter() {
     callInfo(s),
     screenInfo(s),
   );
+}
+
+function depthRows(r, s, total) {
+  const on = keyOf(r.target) === keyOf(state.target);
+  const pick = () => selectTarget(r.target);
+  const depthCell = (span) => h('td', { class: 'depth', rowspan: span }, r.label, talkCount(entriesAt(r.target), r.target));
+  const markCell = (span) => h('td', { class: 'mark', rowspan: span }, markChip(markOf(r.target)) ?? h('span', { class: 'muted' }, '—'));
+  const line = (t, i, count) => h('tr', {
+    class: `${i === count - 1 ? 'test-line group-end' : 'test-line'}${on ? ' selected' : ''}`,
+    onclick: pick,
+  },
+    i === 0 ? depthCell(count) : null,
+    h('td', {}, testRowWithoutButtons(testItem(t, { hide: [`screen:${s.id}`, `depth:${t.depth}`], chip: regressionChip(s.id, 'tag', t) }), s.id, t)),
+    i === 0 ? markCell(count) : null,
+    testButtonsCell(s.id, t));
+  if (!r.target.depth || !r.tests.length) {
+    return [h('tr', { class: on ? 'selected' : '', onclick: pick },
+      depthCell(1),
+      h('td', {}, r.target.depth ? h('span', { class: 'muted' }, '없음') : h('span', { class: 'muted' }, `테스트 ${total}개`)),
+      markCell(1),
+      h('td', {}))];
+  }
+  return r.tests.map((t, i) => line(t, i, r.tests.length));
 }
 
 const targetLabelOf = ({ option, depth }, call) => [option && optionLabel(option), depth && `${DEPTH_LABELS[depth]} 깊이`].filter(Boolean).join(' · ') || (call ? '호출 전체' : '화면 전체');
