@@ -62,6 +62,63 @@ test('in a browser, the chosen screen shows the logged-in app in a frame above i
   );
 });
 
+test('in a browser, a line the app pane sends when its login was cut shows above the pane until the pane opens another screen', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture({ app: { ...appSettings(api).app, signedOutPaths: ['/signin'] } }, (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            await p.waitForSelector('#screen-list li');
+            await p.click('#screen-list li:has-text("/home")');
+            await p.frameLocator('#center iframe.app').locator('#who:has-text("두루 관리자")').waitFor();
+            const { app } = await (await fetch(`${base}/api/data`)).json();
+            const sentence = '같은 계정으로 다른 곳에서 로그인해 이 앱 칸의 로그인이 끊겼습니다';
+            const pane = p.frames().find((f) => f.url() === `${app.url}/home`)!;
+            await pane.evaluate((signedOut) => parent.postMessage({ duru: 'walk', signedOut }, '*'), sentence);
+
+            const line = p.locator('#center .login-cut');
+            await line.waitFor();
+            assert.equal(await line.textContent(), sentence);
+            assert.ok(await line.evaluate((e) => e.classList.contains('error')));
+            const lineBox = (await line.boundingBox())!;
+            const frameBox = (await p.locator('#center iframe.app').boundingBox())!;
+            assert.ok(lineBox.y + lineBox.height <= frameBox.y + 1, `line ${lineBox.y}+${lineBox.height} above the pane at ${frameBox.y}`);
+
+            await p.click('#screen-list li:has-text("/help")');
+            await p.frameLocator('#center iframe.app').locator('#path:has-text("/help")').waitFor();
+            assert.equal(await p.locator('#center .login-cut').count(), 0);
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+test('in a browser, an app pane that lands on a signed-out path is logged in again and sent back to the address it was at', { skip: browserMissing }, async () => {
+  await withFakeApi((api, presses, logins) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture({ app: { ...appSettings(api).app, signedOutPaths: ['/signin'] } }, (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            await p.waitForSelector('#screen-list li');
+            await p.click('#screen-list li:has-text("/home")');
+            await p.frameLocator('#center iframe.app').locator('#who:has-text("두루 관리자")').waitFor();
+            const { app } = await (await fetch(`${base}/api/data`)).json();
+            const frameUrl = () => p.frames().find((f) => f.url().startsWith(`${app.url}/`))?.url();
+            const pane = p.frames().find((f) => f.url() === `${app.url}/home`)!;
+            await pane.evaluate(() => history.pushState({}, '', '/signin'));
+
+            await untilSet(() => frameUrl() === `${app.url}/home`, 'the app pane back at /home');
+            assert.deepEqual(logins, ['duru-admin', 'duru-admin']);
+            await p.frameLocator('#center iframe.app').locator('#who:has-text("두루 관리자")').waitFor();
+            assert.equal(await p.locator('#center .login-cut').count(), 0);
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
 const twoFrames = (p: Page) => p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 const pageOverflow = (p: Page) => p.evaluate(() => document.documentElement.scrollHeight - innerHeight);
 

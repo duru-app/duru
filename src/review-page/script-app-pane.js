@@ -168,6 +168,19 @@ function openingOf(s, link) {
   return { signedOut, who, opening };
 }
 
+// 다른 곳에서 같은 계정으로 로그인해 앱 칸의 로그인이 끊기면 앱 페이지가 그 문장을 보내 온다.
+// 칸을 다른 화면으로 열 때까지 칸 위에 그대로 보인다.
+window.addEventListener('message', (e) => {
+  const app = state.data?.app;
+  const frame = /** @type {HTMLIFrameElement | null} */ (document.querySelector('#center .app-stage iframe.app'));
+  if (!app || !screenPanesShown() || !frame || e.source !== frame.contentWindow) return;
+  const origins = [app.url, ...(app.signedOutUrl ? [app.signedOutUrl] : []), ...app.roles.map((r) => r.url)].map((url) => new URL(url).origin);
+  if (!origins.includes(e.origin) || e.data?.duru !== 'walk' || typeof e.data.signedOut !== 'string') return;
+  state.appSignedOut = { src: frame.dataset.src, text: e.data.signedOut };
+  document.querySelector('#center .login-cut')?.remove();
+  document.querySelector('#center .app-stage')?.before(h('div', { class: 'error login-cut' }, e.data.signedOut));
+});
+
 /**
  * @param {PageData['map']['screens'][number]} s
  * @param {ReturnType<typeof frameTarget>} target
@@ -189,6 +202,7 @@ function appFrame(s, { link, fallback, opens, missing }, entry) {
   const { signedOut, who, opening } = openingOf(opens ?? s, link);
   const shown = signedOut ? link : opening(link);
   const opened = opening(link);
+  const cut = state.appSignedOut?.src === opened ? state.appSignedOut.text : null;
   // 팝업이 막히지 않도록 탭은 누른 자리에서 바로 열고, 주소는 값을 받은 뒤에 넣는다.
   const openAnew = async (e) => {
     e.preventDefault();
@@ -217,6 +231,7 @@ function appFrame(s, { link, fallback, opens, missing }, entry) {
       appWidthPicker(),
       values),
     h('div', { class: 'settings-bar', id: 'settings-bar', hidden: true }),
+    cut && h('div', { class: 'error login-cut' }, cut),
     appStage(opened),
   ];
 }

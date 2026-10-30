@@ -7,10 +7,42 @@ import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import { loadConfig } from '../src/config.ts';
-import { applyOverrides, readSettingsFile } from '../src/app-host.ts';
+import { applyOverrides, readSettingsFile, startAppHost, LOGIN_AGAIN_PATH } from '../src/app-host.ts';
 import { startReviewServer } from '../src/review.ts';
 import { FIXTURE, withRebuiltFixture, signer, withServer, PASSWORD_ENV, ADMIN_PASSWORD_ENV, AUDITOR_PASSWORD_ENV, ACCOUNTS, withFakeApi, appSettings, SETTINGS_FILE, withSettingsFile, rewrite, rebuild, LIST_API, API_KEY_ENV, API_KEY, ISSUING_API, VIEW_TOKEN_API, VIEW_ROUTE, loginWithHeader, roleSettings, withPasswords, withPassword, ALL_PASSWORDS, pathValueSettings } from './review-helpers.ts';
 import type { Config, PageData } from './review-helpers.ts';
+
+// 앱 서버가 로그인마다 새 토큰을 주고 그 앞의 토큰은 401 로 끊는 것처럼, 로그인한 계정을 세는 가짜 서버.
+async function withCutLogin<T>(fn: (api: string, logins: string[]) => Promise<T>) {
+  const logins: string[] = [];
+  const json = (res: http.ServerResponse, status: number, body: unknown) => {
+    res.writeHead(status, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(body));
+  };
+  const token = () => `cut-${logins.length}`;
+  const server = http.createServer(async (req, res) => {
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    if (req.method === 'POST' && req.url === '/auth/login') {
+      const { loginId, pw } = JSON.parse(body);
+      logins.push(loginId);
+      return pw === 's3cret' ? json(res, 200, { result: { token: token() } }) : json(res, 401, { message: 'bad login' });
+    }
+    if (req.headers.authorization !== `Bearer ${token()}`) return json(res, 401, { message: 'no token' });
+    if (req.url === '/api/v1/me') return json(res, 200, { name: '두루 관리자' });
+    json(res, 404, {});
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    return await fn(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, logins);
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+}
+
+// 페이지에 심는 localStorage 스크립트. 값은 저장소에 그대로 들어가는 글자다.
+const stored = (token: string) => `localStorage.setItem("FAKE_AUTH", "{\\"accessToken\\":\\"${token}\\"}")`;
 
 const postSettings = (base: string, overrides: unknown) =>
   fetch(`${base}/api/settings`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ overrides }) });
@@ -111,6 +143,71 @@ test('every app page, signed in or signed out, carries the script that reports i
             assert.ok(html.includes(`)(${origins});`), page);
           }
           assert.doesNotMatch(await (await fetch(`${app.url}/app.js`)).text(), /answerReviewPage/);
+        }),
+      ),
+    ),
+  );
+});
+
+test('a login-again request logs the account of a signed-in port in again, and the pages after it and the API calls carry the new token', async () => {
+  await withCutLogin((api, logins) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture({ app: { ...appSettings(api).app, login: loginWithHeader } }, async (config) => {
+        const host = await startAppHost(config.app);
+        try {
+          assert.deepEqual(logins, ['duru-admin']);
+          const page = async () => (await fetch(`${host.url}/home`)).text();
+          assert.ok((await page()).includes(stored('cut-1')));
+          assert.equal((await host.fetchApi!('/api/v1/me')).status, 200);
+
+          const again = await fetch(`${host.url}${LOGIN_AGAIN_PATH}`, { method: 'POST' });
+          assert.equal(again.status, 200);
+          assert.deepEqual(await again.json(), { value: JSON.stringify({ accessToken: 'cut-2' }) });
+          assert.deepEqual(logins, ['duru-admin', 'duru-admin']);
+
+          assert.ok((await page()).includes(stored('cut-2')));
+          assert.ok(!(await page()).includes(stored('cut-1')));
+          assert.equal((await host.fetchApi!('/api/v1/me')).status, 200);
+        } finally {
+          host.close();
+        }
+      }),
+    ),
+  );
+});
+
+test('a second login-again request within a minute is answered with the sentence and does not log in again', async () => {
+  await withCutLogin((api, logins) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture({ app: { ...appSettings(api).app, login: loginWithHeader } }, async (config) => {
+        const host = await startAppHost(config.app);
+        try {
+          const again = () => fetch(`${host.url}${LOGIN_AGAIN_PATH}`, { method: 'POST' }).then((r) => r.json());
+          assert.deepEqual(await again(), { value: JSON.stringify({ accessToken: 'cut-2' }) });
+          assert.deepEqual(await again(), { error: '같은 계정으로 다른 곳에서 로그인해 이 앱 칸의 로그인이 끊겼습니다' });
+          assert.deepEqual(logins, ['duru-admin', 'duru-admin']);
+        } finally {
+          host.close();
+        }
+      }),
+    ),
+  );
+});
+
+test('the signed-out port has no login-again path and none of the script that calls it, so asking there logs nothing in', async () => {
+  await withFakeApi((api, presses, logins) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture({ app: { ...appSettings(api).app, signedOutPaths: ['/signin'] } }, (config) =>
+        withServer(config, 'reviewer', async (base) => {
+          const { app } = await (await fetch(`${base}/api/data`)).json();
+          const signedIn = await (await fetch(`${app.url}/home`)).text();
+          assert.ok(signedIn.includes('(function logInAgainOnSignedOut('), 'a signed-in page calls the login-again path');
+          const html = await (await fetch(`${app.signedOutUrl}/signin`)).text();
+          assert.doesNotMatch(html, /logInAgainOnSignedOut/);
+          const res = await fetch(`${app.signedOutUrl}${LOGIN_AGAIN_PATH}`, { method: 'POST' });
+          assert.match(res.headers.get('content-type')!, /text\/html/);
+          assert.match(await res.text(), /<title>가짜 앱<\/title>/);
+          assert.deepEqual(logins, ['duru-admin']);
         }),
       ),
     ),
