@@ -4815,6 +4815,46 @@ test('no line is printed for a route that takes only its own address, or when th
   assert.match(underLines(extractOut(partly))[0], /^ {2}3 addresses under \/settings reach no screen \(\/settings\/members, \/settings\/roles, \/settings\/roles\/:roleId\); /);
 });
 
+const TAB_SETTINGS = `import { useMemo } from 'react';
+import RouteTab from './RouteTab';
+import { getRoutes } from './Utils';
+
+export default function Settings() {
+  const routes = useMemo(() => getRoutes(), []);
+  return <section><RouteTab routes={routes} /></section>;
+}
+`;
+const TAB_COMPONENT = `export default function RouteTab({ routes }) {
+  return <nav>{routes.map((route) => <span key={route.route}>{route.name}</span>)}</nav>;
+}
+`;
+const TAB_LIST = `import Billing from './Billing';
+import Members from './Members';
+import Roles from './Roles';
+
+export function getRoutes() {
+  const settings = [];
+  settings.push({ Component: Billing, route: '/settings/billing', name: 'billing' });
+  settings.push({ Component: Members, route: '/settings/members', name: 'members' });
+  settings.push({ Component: Roles, route: '/settings/roles', name: 'roles' });
+  settings.push({ Component: Roles, route: '/settings/roles/:roleId', name: 'role' });
+  return settings;
+}
+`;
+const TAB_ENTRY = { import: './RouteTab', name: 'default', items: 'routes', path: 'route', component: 'Component' };
+
+test('links to a settings tab reach the tab\'s screen and the under-route line goes away', async () => {
+  const configFile = underApp('      <Route path="/settings" component={Settings} />', { 'Settings.js': TAB_SETTINGS, 'RouteTab.js': TAB_COMPONENT, 'Utils.js': TAB_LIST, 'Members.js': page('Members'), 'Roles.js': page('Roles') }, { routeTabs: [TAB_ENTRY] });
+  const map = await build(configFile);
+  const targets = Object.fromEntries(linksOf(map, '/home#Home').map(([to, , , targets]) => [to, targets]));
+  assert.deepEqual(targets['/settings/billing'], ['/settings/billing#Billing']);
+  assert.deepEqual(targets['/settings/members'], ['/settings/members#Members']);
+  assert.deepEqual(targets['/settings/roles'], ['/settings/roles#Roles']);
+  assert.deepEqual(targets['/settings/roles/:roleId'], ['/settings/roles/:roleId#Roles']);
+  assert.equal(map.addressesUnderRoutes, undefined);
+  assert.deepEqual(underLines(extractOut(configFile)), []);
+});
+
 test('a route made for each item of a route table takes the addresses under it when its item says exact is false, and not when the item says true', async () => {
   const table = `import Home from './Home';
 import Settings from './Settings';

@@ -194,6 +194,8 @@ function routeFilesOf(value: unknown, srcRoot: string) {
 
 const ROUTE_TABLE_KEYS = ['route', 'table', 'items', 'menus'];
 const ITEMS_PATH = /^(\*|[\w$-]+)(\.(\*|[\w$-]+))*$/;
+const ROUTE_TAB_KEYS = ['import', 'name', 'items', 'path', 'component'];
+const ITEM_FIELD_PATH = /^[\w$-]+(\.[\w$-]+)*$/;
 
 function routeTablesOf(value: unknown, srcRoot: string, routeFiles: (string | null)[]) {
   const inSrc = (f: string) => path.relative(srcRoot, path.join(srcRoot, f));
@@ -355,6 +357,12 @@ export function loadConfig(configPath: string) {
     throw new Error('linkComponents must be a list of { "import", "name" }: the import path and name the app imports a link component by whose source duru does not read, '
       + `such as [{ "import": "@appsmith/ads", "name": "Link" }], not ${JSON.stringify(raw.linkComponents)}`);
   }
+  const routeTabs = raw.routeTabs ?? [];
+  if (!Array.isArray(routeTabs) || !routeTabs.every((t) => isImported(t, ROUTE_TAB_KEYS) && isText(t.items) && IDENTIFIER.test(t.items) && isText(t.path) && ITEM_FIELD_PATH.test(t.path) && isText(t.component) && ITEM_FIELD_PATH.test(t.component))) {
+    throw new Error('routeTabs must be a list of { "import", "name", "items", "path", "component" }: the import path and name the app imports a component by that picks a tab by the address, '
+      + 'the prop it is handed the list of tabs by, and the fields of an item holding the tab\'s address and the component it draws, '
+      + `such as [{ "import": "components/RouteTab", "name": "default", "items": "routes", "path": "route", "component": "Component" }], not ${JSON.stringify(raw.routeTabs)}`);
+  }
   const linkFunctions = raw.linkFunctions ?? [];
   if (!Array.isArray(linkFunctions) || !linkFunctions.every((f) => isImported(f, ['import', 'name', 'address']) && isArgumentPlace(f.address))) {
     throw new Error('linkFunctions must be a list of { "import", "name", "address" }: the import path and name the app imports a function by whose call is a link, '
@@ -417,6 +425,7 @@ export function loadConfig(configPath: string) {
     callLinks,
     settingsDefaults,
     settingsFunctions,
+    routeTabs,
     redirectElements: raw.redirectElements ?? ['Redirect', 'Navigate'],
     entryPaths: raw.entryPaths ?? [],
     serverEndpoints: [raw.serverEndpoints ?? []].flat().map(at),

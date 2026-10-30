@@ -385,6 +385,8 @@ if (command === 'tasks') {
   for (const g of map.unknownRoleGuards ?? []) console.log(`  roleGuards ${g} matches no role guard`);
   for (const l of map.unknownCallLinks) for (const id of l.missing) console.log(`  callLinks ${l.from} → ${l.to}: ${id} matches no call`);
   for (const n of map.settingsCallNotices ?? []) console.log(`  settingsFunctions ${n.file ? `${n.file}:${n.line} ` : ''}${n.reason}`);
+  const routeTabNotices = (map as ScreenMap & { routeTabNotices?: { file: string | null; line: number | null; reason: string }[] }).routeTabNotices ?? [];
+  for (const n of routeTabNotices) console.log(`  routeTabs ${n.file ? `${n.file}:${n.line} ` : ''}${n.reason}`);
   for (const { spec, files } of map.unresolvedAliasImports ?? []) console.log(`  tsconfig import ${spec} matches an alias but no file, imported in ${files} file${files === 1 ? '' : 's'}`);
   for (const file of map.emptyRouteFiles ?? []) console.log(`  routesFile ${file} has no ${config.routeElements.join(' or ')} element, so it gives no screens`);
   for (const { component, file, line, componentFile } of map.framesPickingByAddress ?? []) {
