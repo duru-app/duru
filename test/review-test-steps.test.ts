@@ -7,8 +7,10 @@ import { withRebuiltFixture, withServer, browserMissing, withPage, chooseScreen,
 
 const STEPS = { tests: [...TRACED.tests, { format: 'playwright', path: 'results/playwright-steps', depth: 'ui' }] };
 
-const testLine = (p: Page, title: string) => p.locator('#center .part-row', { has: p.locator('.test', { hasText: title }) });
-const foldOf = (row: Locator) => row.locator('xpath=following-sibling::*[1][contains(@class, "test-steps")]');
+const testLine = (p: Page, title: string) => p.locator('#center tr.test-line', { has: p.locator('.test', { hasText: title }) });
+// 깊이 표는 단계를 테스트 줄 안에 펼치고, 호출 칸은 테스트 줄 옆에 펼친다.
+const foldOf = (row: Locator) =>
+  row.locator('.test-steps').or(row.locator('xpath=following-sibling::*[1][contains(@class, "test-steps")]'));
 const lines = (fold: Locator) => fold.locator('.step-lines > li').evaluateAll((items) => items.map((li) => li.textContent!.replace(/\s+/g, ' ').trim()));
 const focusedSteps = (p: Page) => p.evaluate(() => {
   const el = document.activeElement as HTMLElement;
@@ -156,7 +158,7 @@ test('in a browser, a browser test without a trace, with a trace that could not 
     assert.equal(await why('opens home without snapshots'), '이 테스트의 trace 파일을 읽지 못해 한 일을 알 수 없습니다. trace 파일에 화면 스냅숏이 없어 테스트가 연 주소를 알 수 없습니다.');
     assert.equal(await why('opens home without snapshots', 1), '이 테스트는 trace 파일 없이 돌아 한 일을 알 수 없습니다. Playwright 의 trace 옵션을 켜고 다시 돌리면 보입니다.');
     assert.equal(await why('skips home'), '이 테스트는 건너뛰어 돌지 않았으므로 한 일이 없습니다.');
-    const others = p.locator('#center .part-row', { has: p.locator('.test .depth, .test', { hasNotText: '.spec.' }) });
+    const others = p.locator('#center tr.test-line', { has: p.locator('.test .depth, .test', { hasNotText: '.spec.' }) });
     assert.ok(await others.count() > 0);
     assert.equal(await others.locator('.steps-toggle').count(), 0);
   });
@@ -171,18 +173,54 @@ test('in a browser, a test in a call\'s list of tests that sent it shows the sta
   });
 });
 
-test('in a browser, each test of a screen sits on its own line, apart from the next one, with the line under the pointer shaded', { skip: browserMissing }, async () => {
+test('in a browser, each test of a screen sits on its own line, the tests of one depth have no line between them and a line separates one depth from the next, with the line under the pointer shaded', { skip: browserMissing }, async () => {
   await withSteps(async (p) => {
-    const rows = p.locator('#center td .test-row');
-    assert.ok(await rows.count() > 1);
-    const look = (row: Locator) => row.evaluate((el) => [getComputedStyle(el).borderTopStyle, getComputedStyle(el).backgroundColor]);
-    const [first, second] = [rows.first(), rows.nth(1)];
-    assert.equal((await look(second))[0], 'solid');
-    const plain = (await look(second))[1];
-    await second.locator('.steps-toggle').hover();
-    assert.notEqual((await look(second))[1], plain);
-    assert.equal((await look(first))[1], plain);
-    assert.equal(await first.locator('.steps-toggle').count(), 1);
+    const rows = p.locator('#center tr.test-line');
+    const count = await rows.count();
+    assert.ok(count > 1);
+    assert.equal(await rows.locator('.test-row').count(), count, 'each line holds one test');
+
+    // 깊이와 상태 칸은 깊이 한 묶음의 첫 줄에 걸쳐 있고, 그 rowspan 이 묶음의 줄 수다. 그 칸의 아래 선이 묶음 끝의 선이다.
+    const groups: { first: number; size: number }[] = [];
+    for (let i = 0; i < count; i += 1) {
+      const size = await rows.nth(i).evaluate((tr) =>
+        Number([...(tr as HTMLTableRowElement).cells].find((cell) => cell.hasAttribute('rowspan'))?.getAttribute('rowspan') ?? 0));
+      if (size) groups.push({ first: i, size });
+    }
+    assert.ok(groups.length > 1, 'the screen has more than one depth');
+    assert.equal(groups[0].first, 0);
+    assert.equal(groups.at(-1)!.first + groups.at(-1)!.size, count, 'the depth groups cover every row');
+    assert.ok(groups[0].size > 2);
+
+    const cellsOf = (row: Locator) => row.evaluate((tr) => [...(tr as HTMLTableRowElement).cells].map((cell) => ({
+      spanned: cell.hasAttribute('rowspan'),
+      line: getComputedStyle(cell).borderBottomStyle,
+    })));
+    for (const [g, { first, size }] of groups.entries()) {
+      const end = first + size - 1;
+      for (let i = first; i <= end; i += 1) {
+        const cells = await cellsOf(rows.nth(i));
+        const plain = cells.filter((c) => !c.spanned).map((c) => c.line);
+        assert.deepEqual(plain, Array(plain.length).fill(i === end ? 'solid' : 'none'), `depth ${g + 1}, line ${i}`);
+      }
+      assert.deepEqual((await cellsOf(rows.nth(first))).filter((c) => c.spanned).map((c) => c.line), ['solid', 'solid'], `depth ${g + 1} ends under its last line`);
+    }
+
+    for (let i = groups[0].first; i < groups[0].first + groups[0].size; i += 1) assert.equal(await rows.nth(i).locator('.steps-toggle').count(), 1, `line ${i} holds its own 「단계」`);
+
+    const shade = (row: Locator) => row.evaluate((tr) => getComputedStyle(tr).backgroundColor);
+    const [one, other] = [rows.nth(groups[0].first + 1), rows.nth(groups[0].first + 2)];
+    const plain = await shade(one);
+    const behind = await p.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    assert.notEqual(plain, behind);
+    await one.locator('.test-row').hover();
+    const shaded = await shade(one);
+    assert.notEqual(shaded, plain);
+    assert.notEqual(shaded, behind, 'the shade under the pointer shows on the page');
+    assert.equal(await shade(other), plain);
+    await one.locator('td.test-buttons').hover();
+    assert.equal(await shade(one), shaded, 'the line is shaded under its buttons too');
+    assert.equal(await shade(other), plain);
   });
 });
 
@@ -194,7 +232,7 @@ test('in a browser, a step line shows a small picture of the screen after it, an
     assert.equal(await thumbs.count(), 3);
     await thumbs.first().evaluate((img: HTMLImageElement) => img.decode());
     assert.ok(await thumbs.first().evaluate((img: HTMLImageElement) => img.naturalWidth) > 0);
-    assert.equal(await testLine(p, 'fills the boxes on home').first().locator('xpath=following-sibling::*[1]').locator('button.shot-thumb').count(), 0);
+    assert.equal(await testLine(p, 'fills the boxes on home').first().locator('button.shot-thumb').count(), 0);
 
     await foldOf(row).locator('button.shot-thumb').nth(2).click();
     const view = p.locator('#shot-view');
