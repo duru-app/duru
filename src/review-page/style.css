@@ -102,6 +102,7 @@
   .setting.blocked { color: var(--muted); }
   .setting .reason { font-size: 12px; }
   .settings-bar .file-error { color: var(--pending); font-size: 12px; }
+  .login-cut { margin-top: 8px; padding: 4px 8px; border: 1px solid var(--line); border-bottom: 0; background: var(--bg); font-size: 13px; }
   .setting button, .settings-bar > button, .setting select { padding: 1px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
   .setting button.on { border-color: var(--accent); background: var(--selected); font-weight: 600; }
   .setting button:disabled, .setting select:disabled, .setting input:disabled { cursor: default; opacity: .6; }

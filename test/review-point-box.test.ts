@@ -202,8 +202,8 @@ const pointSettings = (api: string) => ({ app: { ...appSettings(api).app, signed
 
 type App = { url: string; signedOutUrl: string };
 
-async function withPointStory(fn: (p: Page, app: App, base: string, config: Config, copy: string) => Promise<void>, { setup, csp = false, password = 's3cret', edit, roles = false }: { setup?: (app: App) => (page: Page) => Promise<unknown>; csp?: boolean; password?: string; edit?: (copy: string) => void; roles?: boolean } = {}) {
-  await withFakeApi((api) =>
+async function withPointStory(fn: (p: Page, app: App, base: string, config: Config, copy: string, logins: string[]) => Promise<void>, { setup, csp = false, password = 's3cret', edit, roles = false }: { setup?: (app: App) => (page: Page) => Promise<unknown>; csp?: boolean; password?: string; edit?: (copy: string) => void; roles?: boolean } = {}) {
+  await withFakeApi((api, _presses, logins) =>
     withPasswords(roles ? ALL_PASSWORDS : { [PASSWORD_ENV]: password }, () =>
       withRebuiltFixture(roles ? { ...pointSettings(api), app: { ...pointSettings(api).app, roles: roleSettings(api).app.roles } } : pointSettings(api), (config, copy) => {
         fs.writeFileSync(path.join(copy, STORY_FILE), JSON.stringify(STORY));
@@ -214,7 +214,7 @@ async function withPointStory(fn: (p: Page, app: App, base: string, config: Conf
             await p.waitForSelector('#screen-list li');
             await p.click(storiesTab);
             await p.click('#story-list li:has-text("상자를 짚어 본다")');
-            await fn(p, app, base, config, copy);
+            await fn(p, app, base, config, copy, logins);
             if (csp) errors.splice(0, errors.length, ...errors.filter((e) => !e.includes('Content Security Policy')));
           }, { setup: setup?.(app) });
         });
@@ -394,7 +394,7 @@ test('in a browser, a count past the boxes there says 못 찾음 also when those
 });
 
 test('in a browser, a step whose screen cannot be opened and an app that moves to another screen leave 확인 안 됨 and the right pane says why, and a line on a screen off the map cannot be pressed', { skip: browserMissing }, async () => {
-  await withPointStory(async (p) => {
+  await withPointStory(async (p, _app, _base, _config, _copy, logins) => {
     await lineAt(p, 2, 0).click();
     await p.waitForSelector('#right-app .point-why:not(.muted)');
     assert.match((await p.textContent('#right-app .point-why'))!, /^id 값이 없어 이 단계의 화면을 띄울 수 없습니다\./);
@@ -406,6 +406,8 @@ test('in a browser, a step whose screen cannot be opened and an app that moves t
     await p.waitForSelector('#right-app .point-why:has-text("옮겨 가서")');
     assert.equal(await p.textContent('#right-app .point-why'), '앱이 이 단계의 화면이 아닌 /signin 로 옮겨 가서 상자를 찾지 않았습니다.');
     assert.equal(await chipAt(p, 3, 0).textContent(), '확인 안 됨');
+    // 상자 찾기의 앱 화면은 로그인 화면으로 넘어가도 다시 로그인하지 않고 그 화면에 머문다.
+    assert.deepEqual(logins, ['duru-admin']);
 
     await p.click('#right-app .point-close');
     const offMap = '이 단계의 화면이 맵에 없어, 앱을 어느 화면으로 띄울지 정하지 못합니다. 앱 화면에서 상자를 짚을 수 없습니다';

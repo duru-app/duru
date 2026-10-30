@@ -59,6 +59,10 @@ interface Login {
   error?: string;
 }
 
+interface LoginHolder {
+  login: Login | null;
+}
+
 interface ServerFetchOptions {
   method?: string;
   headers?: Record<string, string>;
@@ -376,6 +380,76 @@ export function answerReviewPage(origins: string[]) {
 // 페이지마다 지우면 앱이 로그인하고 새로 고칠 때 다시 로그아웃되므로, 이 경로로 열 때만 토큰을 지운다.
 export const SIGN_OUT_PATH = '/__duru/sign-out';
 
+export const LOGIN_AGAIN_PATH = '/__duru/login-again';
+const LOGIN_AGAIN_WAIT_MS = 60_000;
+const LOGIN_CUT = '다시 로그인한 뒤 1분 안에 또 로그인 화면으로 넘어가 더 시도하지 않습니다. 같은 계정으로 다른 곳에서 로그인했을 수 있습니다';
+
+// 리뷰 페이지가 가운데 앱 칸의 프레임에만 붙이는 이름. 이 이름이 없는 프레임은 다시 로그인하지 않는다.
+export const APP_PANE_NAME = '__duru_app_pane';
+
+// 앱 페이지 안에서 따로 돌기 때문에 바깥 스코프의 변수를 쓰지 않는다.
+export function logInAgainOnSignedOut(signedOutPaths: string[], againPath: string, storageKey: string, origins: string[], frameName: string) {
+  const w: any = globalThis;
+  if (w.parent === w) return;
+  // 가운데 앱 칸이 아닌 프레임(기록, 상자 찾기, 앱 화면 전체)은 로그인 화면에 그대로 머문다. 아무것도 남기지도 감시하지도 않는다.
+  if (w.name !== frameName) return;
+  // 한 탭에 그 이름의 프레임은 하나이므로 열쇠도 하나를 둔다. window.name 은 페이지를 새로 불러와도 남는다.
+  const lastKey = '__duru_last';
+  const here = () => w.location.pathname + w.location.search + w.location.hash;
+  // 이 앱 안의 주소만 되돌아간다. '//' 로 시작하는 주소는 다른 사이트다.
+  const inside = (url: unknown) => typeof url === 'string' && url.startsWith('/') && !url.startsWith('//');
+  const remembered = () => {
+    try {
+      const url = w.sessionStorage.getItem(lastKey);
+      return inside(url) ? url : '/';
+    } catch {
+      return '/';
+    }
+  };
+  const remember = (url: string) => {
+    try {
+      w.sessionStorage.setItem(lastKey, url);
+    } catch {}
+  };
+  let last = remembered();
+  let asking = false;
+  const ask = async () => {
+    asking = true;
+    const answer = await w.fetch(againPath, { method: 'POST' }).then((res: any) => res.json()).catch(() => null);
+    asking = false;
+    if (typeof answer?.value === 'string') {
+      w.localStorage.setItem(storageKey, answer.value);
+      w.location.replace(last);
+      return;
+    }
+    if (typeof answer?.error !== 'string') return;
+    for (const origin of origins) w.parent.postMessage({ duru: 'walk', signedOut: answer.error }, origin);
+  };
+  const watch = () => {
+    // 답을 기다리는 동안 로그인 화면이 옮겨 가는 주소는 돌아갈 주소가 아니다. 앱이 이름을 바꾼 프레임은 더는 가운데 앱 칸이 아니다.
+    if (asking || w.name !== frameName) return;
+    if (signedOutPaths.includes(w.location.pathname)) {
+      ask();
+      return;
+    }
+    const at = here();
+    if (!inside(at)) return;
+    last = at;
+    remember(last);
+  };
+  for (const name of ['pushState', 'replaceState']) {
+    const original = w.history[name];
+    w.history[name] = function (this: unknown, ...args: unknown[]) {
+      const result = original.apply(this, args);
+      watch();
+      return result;
+    };
+  }
+  w.addEventListener('popstate', watch);
+  w.addEventListener('hashchange', watch);
+  watch();
+}
+
 // incomplete 는 맵의 settingsDefaultsIncomplete 가운데 이 root 에 해당하는 목록이다.
 export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = () => ({ values: {}, incomplete: [] }), pageOrigins = () => [] }: AppHostOptions = {}) {
   const roles = Object.entries(app.roles ?? {});
@@ -386,6 +460,16 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
     return logins.get(account.id)!;
   };
   const [main, ...roleLogins] = await Promise.all([app.account, ...roles.map(([, account]) => account)].map(logInOnce));
+  // 계정마다 하나를 두고 그 계정을 쓰는 포트가 함께 읽는다. 이 자리를 바꾸면 이후 페이지와 API 호출이 새 로그인을 쓴다.
+  const holders = new Map<string, LoginHolder>();
+  const holderOf = (account: AppAccount, login: Login | null) => {
+    if (!holders.has(account.id)) holders.set(account.id, { login });
+    return holders.get(account.id)!;
+  };
+  const mainHolder = holderOf(app.account, main);
+  const roleHolders = roles.map(([, account], i) => holderOf(account, roleLogins[i]));
+  const againAt = new Map<string, number>();
+  const againRunning = new Map<string, Promise<Login>>();
   const key = literal(app.login.storage.key);
   const { settingsFile } = app;
   const globalNames = settingsFile && globalNamesOf(settingsFile);
@@ -396,6 +480,9 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
     const origins = pageOrigins();
     const code = [
       login?.storage ? `localStorage.setItem(${key}, ${literal(login.storage.value)});` : '',
+      login?.storage && app.signedOutPaths.length
+        ? `(${logInAgainOnSignedOut})(${literal(app.signedOutPaths)}, ${literal(LOGIN_AGAIN_PATH)}, ${key}, ${literal(origins)}, ${literal(APP_PANE_NAME)});`
+        : '',
       origins.length ? `(${answerReviewPage})(${literal(origins)});` : '',
     ].join('');
     return code ? withScript(html, code) : html;
@@ -485,18 +572,48 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
     res.end(Buffer.from(await r.arrayBuffer()));
   }
 
+  async function logInAgain(res: http.ServerResponse, account: AppAccount, holder: LoginHolder) {
+    const answer = (body: object) => send(res, 200, 'application/json', JSON.stringify(body));
+    const said = (login: Login) => answer(login.error !== undefined ? { error: login.error } : { value: login.storage!.value });
+    const running = againRunning.get(account.id);
+    if (running) return said(await running);
+    const before = againAt.get(account.id);
+    if (before !== undefined && Date.now() - before < LOGIN_AGAIN_WAIT_MS) return answer({ error: LOGIN_CUT });
+    const attempt = logIn(app, account);
+    againRunning.set(account.id, attempt);
+    try {
+      const login = await attempt;
+      if (login.error === undefined) {
+        againAt.set(account.id, Date.now());
+        holder.login = login;
+      }
+      said(login);
+    } finally {
+      againRunning.delete(account.id);
+    }
+  }
+
   // login 이 null 인 포트는 로그아웃 상태로 띄운다.
-  async function listen(port: number, login: Login | null) {
+  async function listen(port: number, holder: LoginHolder, account: AppAccount | null) {
     const ownHosts = (): (string | undefined)[] => [`127.0.0.1:${(server.address() as AddressInfo).port}`, `localhost:${(server.address() as AddressInfo).port}`];
+    const fromOwnPage = (req: http.IncomingMessage) => {
+      const origin = req.headers.origin;
+      if (origin !== undefined) return ownHosts().some((host) => origin === `http://${host}`);
+      return req.headers['sec-fetch-site'] === 'same-origin';
+    };
     const server = http.createServer(async (req, res) => {
       try {
         if (!ownHosts().includes(req.headers.host)) return send(res, 403, 'text/plain', 'forbidden host');
         const { pathname, search } = new URL(req.url!, 'http://host');
-        if (!login && pathname === SIGN_OUT_PATH) return signOutPage(res, search);
+        if (!holder.login && pathname === SIGN_OUT_PATH) return signOutPage(res, search);
+        if (account && req.method === 'POST' && pathname === LOGIN_AGAIN_PATH) {
+          if (!fromOwnPage(req)) return send(res, 403, 'text/plain', 'forbidden origin');
+          return await logInAgain(res, account, holder);
+        }
         if (settingsFile && pathname === settingsFile.path) return await serveSettings(res);
         if (app.apiPaths.some((p) => pathname.startsWith(p))) return forward(req, res);
-        if (fromFolder(app)) return serveFolder(res, pathname, login);
-        await serveDeployed(req, res, login);
+        if (fromFolder(app)) return serveFolder(res, pathname, holder.login);
+        await serveDeployed(req, res, holder.login);
       } catch (err: any) {
         if (!res.headersSent) send(res, 502, 'text/plain', err.message);
         else res.destroy();
@@ -515,9 +632,9 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
   };
   const urlOf = (server: http.Server) => `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const servers: http.Server[] = [];
-  const open = async (port: number, login: Login | null) => {
+  const open = async (port: number, holder: LoginHolder, account: AppAccount | null) => {
     try {
-      servers.push(await listen(port, login));
+      servers.push(await listen(port, holder, account));
     } catch (err) {
       servers.forEach(close);
       throw err;
@@ -525,20 +642,20 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
     return servers.at(-1)!;
   };
   // localStorage 는 포트마다 따로 있어서, 포트마다 다른 계정으로 로그인한 앱이 뜬다.
-  const signedInServer = await open(port, main);
-  const signedOutServer = app.signedOutPaths.length ? await open(0, null) : null;
+  const signedInServer = await open(port, mainHolder, app.account);
+  const signedOutServer = app.signedOutPaths.length ? await open(0, { login: null }, null) : null;
   const roleServers: http.Server[] = [];
-  for (const login of roleLogins) roleServers.push(await open(0, login));
+  for (let i = 0; i < roles.length; i += 1) roleServers.push(await open(0, roleHolders[i], roles[i][1]));
   const fetchServer = (apiPath: string, { method = 'GET', headers = {}, body, signal }: ServerFetchOptions = {}) => fetch(join(app.server, apiPath), {
     method,
     headers: { ...headers, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal,
   });
-  const apiCaller = ({ token }: Login) => (token
-    ? (apiPath: string, options?: ServerFetchOptions) => fetchServer(apiPath, { ...options, headers: fillIn(app.login.header ?? {}, { token }) })
-    : null);
-  const fetchApi = apiCaller(main);
+  const apiCaller = (holder: LoginHolder) => {
+    const call = (apiPath: string, options?: ServerFetchOptions) => fetchServer(apiPath, { ...options, headers: fillIn(app.login.header ?? {}, { token: holder.login?.token ?? '' }) });
+    return holder.login?.token ? call : null;
+  };
   const roleIndex = new Map(roles.map(([role], i) => [role, i]));
   return {
     url: urlOf(signedInServer),
@@ -546,8 +663,10 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
     account: app.account.id,
     error: main.error ?? null,
     roles: roles.map(([role, account], i) => ({ role, account: account.id, url: urlOf(roleServers[i]), error: roleLogins[i].error ?? null })),
-    fetchApi,
-    fetchApiAs: (role: string) => (roleIndex.has(role) ? apiCaller(roleLogins[roleIndex.get(role)!]) : undefined),
+    get fetchApi() {
+      return apiCaller(mainHolder);
+    },
+    fetchApiAs: (role: string) => (roleIndex.has(role) ? apiCaller(roleHolders[roleIndex.get(role)!]) : undefined),
     fetchServer,
     get overrides() {
       return overrides;

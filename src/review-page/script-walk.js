@@ -218,7 +218,8 @@ function renderWalkCenter() {
   const src = at ? paneOf(c.walk.pane).url + at : c.walk.src;
   const stage = appStage(src);
   stage.classList.add('walk-stage');
-  /** @type {HTMLIFrameElement} */ (stage.querySelector('iframe.app')).src = src;
+  const frame = /** @type {HTMLIFrameElement} */ (stage.querySelector('iframe.app'));
+  frame.src = src;
   fill(head,
     h('div', { class: 'frame-bar walk-bar' },
       h('button', { type: 'button', class: 'end-walk', title: '기록을 끝내고 지나간 길을 흐름 그림에 그립니다. 받은 주소와 입력값은 기록 파일로도 남깁니다', onclick: endWalk }, '기록 끝'),

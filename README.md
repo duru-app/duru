@@ -1076,7 +1076,12 @@ written. A recorded value is changed there like any other input.
 **List.** The left column lists screens with filters for no tests, dead screens, screens that open only under a
 setting or a role, and screens with only untagged tests. With `app` set, the middle shows the chosen screen's app
 in a frame, already logged in, with a role picker, boxes for path values and a line for the settings the screen's
-conditions name, which can be turned on and off. 「앱 너비」 above the frame sets the width the app is drawn at:
+conditions name, which can be turned on and off. When the app in the middle frame a screen shows lands on one of the
+`signedOutPaths`, the review server logs that account in again and reopens the address the app was at. When that
+happens twice within a minute it stops and says so above the frame, naming another login of the same account as
+a possible cause, and a login that fails shows its error there too. A walk being recorded, the cut of 「앱 화면」 and
+「가운데에 앱 화면 전체 열기」 stay on the sign-in screen instead. 「앱 너비」 above the frame sets the width the app
+is drawn at:
 1280 at first, 375, 768, 1024 or 1440, 「직접 입력」 for a width from 200 to 3840 typed into the box beside it, or
 「칸에 맞춤」 for the pane's own width. 「배율」 beside it sets how large that width is shown. At 「칸에 맞춤」, the
 first choice, a pane narrower than the width shows the app smaller to fit, and a wider pane shows it at its real
