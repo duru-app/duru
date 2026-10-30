@@ -33,6 +33,8 @@ export interface SentRequest {
 
 export interface FunctionInputs {
   sent: string[][];
+  // 요청 본문에서만 찾은 경로. 주소에서 찾은 경로는 본문에 실렸다는 뜻이 아니다.
+  body: string[][];
   spread: string[][];
 }
 
@@ -379,20 +381,26 @@ const samePath = (a: readonly string[], b: readonly string[]) => a.length === b.
 
 function inputsOf(requests: SentRequest[], t: Tagged, paths: string[][], spread: string[][]) {
   const sent: string[][] = [];
-  const add = (path: string[]) => {
-    if (!sent.some((p) => samePath(p, path))) sent.push(path);
+  const bodyPaths: string[][] = [];
+  const add = (into: string[][], path: string[]) => {
+    if (!into.some((p) => samePath(p, path))) into.push(path);
+  };
+  const addSent = (path: string[]) => add(sent, path);
+  const addBody = (path: string[]) => {
+    addSent(path);
+    add(bodyPaths, path);
   };
   for (const recorded of requests) {
-    if (recorded.url) scanText(untag(recorded.url), paths, add);
+    if (recorded.url) scanText(untag(recorded.url), paths, addSent);
     const from = recorded.sent;
-    if (Array.isArray(from) && request.url) scanText(untag(text(at(from, request.url)) ?? ''), paths, add);
+    if (Array.isArray(from) && request.url) scanText(untag(text(at(from, request.url)) ?? ''), paths, addSent);
     if (!Array.isArray(from) || !request.body) continue;
     const body = at(from, request.body);
-    if (typeof body === 'string') scanText(untag(body), paths, add);
-    else scanValue(body, t, paths, add);
+    if (typeof body === 'string') scanText(untag(body), paths, addBody);
+    else scanValue(body, t, paths, addBody);
   }
   const spreadPaths = spread.filter((path) => !sent.some((p) => samePath(p, path)));
-  return { sent, spread: spreadPaths };
+  return { sent, body: bodyPaths, spread: spreadPaths };
 }
 
 async function withInputs(tried: Attempt, kind: string, unit: string, self: unknown, fn: Callable): Promise<Attempt> {

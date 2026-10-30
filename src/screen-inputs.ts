@@ -39,6 +39,14 @@ interface Reading {
 
 const stringOf = (node: Node | null | undefined): string | null => (node?.type === 'StringLiteral' ? node.value : node?.type === 'NumericLiteral' ? String(node.value) : null);
 
+// 화면 값을 하나도 담지 않은 인자. 글자·숫자·불리언 값, 식이 없는 템플릿, 그런 값만 담은 객체 리터럴이다.
+const literalsOnly = (node: Node | null | undefined): boolean => {
+  if (!node) return false;
+  if (node.type === 'StringLiteral' || node.type === 'NumericLiteral' || node.type === 'BooleanLiteral') return true;
+  if (node.type === 'TemplateLiteral') return node.expressions.length === 0;
+  return node.type === 'ObjectExpression' && node.properties.every((p) => p.type === 'ObjectProperty' && literalsOnly(p.value as Node));
+};
+
 // 적힌 키. 계산한 키는 글자 그대로일 때만 읽는다.
 const propertyKey = (prop: any): string | null => (!prop.computed ? (prop.key.type === 'Identifier' ? prop.key.name : stringOf(prop.key)) : stringOf(prop.key));
 
@@ -438,7 +446,10 @@ export function screenInputReader({ srcRoot, resolve }: Reading) {
         const arg = p.get('arguments')[0] as NodePath<any> | undefined;
         if (!fn || !arg?.node) return;
         const state = argumentState(file, arg);
-        if (!state) return void found.set(p.node.start!, { unread: true });
+        if (!state) {
+          if (!literalsOnly(arg.node)) found.set(p.node.start!, { unread: true });
+          return;
+        }
         const entry = keysIn(file).get(state.name)!;
         const keys = [...entry.keys].sort((a, b) => compare(a.file, b.file) || a.line - b.line || compare(a.key, b.key));
         found.set(p.node.start!, { argPath: state.argPath, keys, unknown: entry.unknown });

@@ -461,7 +461,7 @@ export default function Search() {
   }, { requestFunction: { ...REQUEST, body: '0.body' } }));
   const calls = map.screens.find((s) => s.id.includes('Search'))!.apiCalls.filter((c) => c.fn === 'ajaxReportArchive');
   assert.equal(calls.length, 1);
-  assert.deepEqual(map.apiFunctions.ajaxReportArchive.inputs, { sent: [['0', 'data']], spread: [] });
+  assert.deepEqual(map.apiFunctions.ajaxReportArchive.inputs, { sent: [['0', 'data']], body: [['0', 'data']], spread: [] });
   assert.deepEqual(map.inputsToCheck!.filter((k) => k.fn === 'ajaxReportArchive'), []);
 });
 
@@ -586,4 +586,51 @@ test('the rebuild output counts the calls whose screen values were not read, on 
   const lines = rebuildLines(configFile);
   assert.ok(lines.includes('input calls not read 1 on 1 screens'), lines.join('\n'));
   assert.ok(rebuildLines(fixtureCopy(base)).includes('input calls not read 0 on 0 screens'));
+});
+
+// 주소에만 화면 값을 싣는 API 함수. 화면이 값을 넘겨도 요청 본문에는 아무 키도 실리지 않는다.
+const AJAX_BY_ID = `${AJAX_FUNC}
+export const ajaxSigner = async (id) => Ajax.request({ info: { METHOD: 'GET', URL: '/signer/' + id } });
+`;
+
+// 매개변수로 받은 값을 주소로 보내는 함수에 넘기는 화면.
+const PROPS_BY_ID = `import { ajaxSigner } from '_ajax/AjaxFunc';
+
+export default function SignerEdit(props) {
+  const load = async () => {
+    await ajaxSigner(props.id);
+  };
+
+  return <button onClick={load}>load</button>;
+}
+`;
+
+test('a call whose value goes into the address of a GET request rather than its body is not counted as a call duru did not read', async () => {
+  const map = await build(fixtureCopy({ ...base, 'components/SignerEdit.js': PROPS_BY_ID, '_ajax/AjaxFunc.js': AJAX_BY_ID }));
+  const screen = map.screens.find((s) => s.id.includes('SignerEdit'))!;
+  assert.deepEqual(screen.apiCalls.map((c) => c.fn), ['ajaxSigner']);
+  assert.equal(map.unreadInputCalls, undefined);
+  // 키는 요청에 실리지만 주소로만 실린다. 본문에서 찾은 키는 없다.
+  assert.deepEqual(map.apiFunctions.ajaxSigner.inputs, { sent: [['0']], body: [], spread: [] });
+});
+
+// 화면 값을 하나도 담지 않은 인자만 받는 호출. 읽지 못한 것이 아니다.
+const LITERAL_SIGNER = `import { ajaxUpdateSigner } from '_ajax/AjaxFunc';
+
+export default function SignerEdit(props) {
+  const save = async () => {
+    await ajaxUpdateSigner('fixed-id');
+    await ajaxUpdateSigner({ type: 'A', page: 1 });
+    await ajaxUpdateSigner(\`fixed-id\`);
+    await ajaxUpdateSigner(props.values);
+  };
+
+  return <button onClick={save}>save</button>;
+}
+`;
+
+test('a call given only literals holds no screen value and is not counted as a call duru did not read, while one given a value duru does not read is', async () => {
+  const map = await build(fixtureCopy({ ...base, 'components/SignerEdit.js': LITERAL_SIGNER }));
+  const screen = map.screens.find((s) => s.id.includes('SignerEdit'))!;
+  assert.deepEqual(map.unreadInputCalls, [{ screen: screen.id, calls: [{ fn: 'ajaxUpdateSigner', callSite: 'components/SignerEdit.js:8' }] }]);
 });

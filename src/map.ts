@@ -302,7 +302,7 @@ function checkInputs(screens: { id: string; apiCalls: (ClientScreen['apiCalls'][
       const callSite = `${c.file}:${c.line}`;
       // 어떤 키가 실렸는지 읽지 못한 인자를 받은 호출은, 요청 본문에 키를 싣는 함수일 때만 센다.
       if ('unread' in c.inputs) {
-        if (!api?.inputs?.sent.length) continue;
+        if (!api?.inputs?.body.length) continue;
         const entry = unread.get(s.id) ?? { screen: s.id, calls: [] };
         if (!entry.calls.some((call) => call.fn === c.fn && call.callSite === callSite)) entry.calls.push({ fn: c.fn, callSite });
         unread.set(s.id, entry);

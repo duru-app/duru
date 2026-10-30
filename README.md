@@ -573,9 +573,10 @@ listing the places whose value the source does not show in full.
   count of calls for each. The map lists them under `unknownInputs` with their `callSite`; nothing about the input
   keys of those calls can be said.
 - `input calls not read N on M screens` — printed with the lines above, also when N is 0: the calls of an API
-  function that sends keys in the request body, whose first argument comes from something duru does not read as
+  function whose request body carries keys, whose first argument comes from something duru does not read as
   screen state, such as a class component's state, a parameter or a form library, counted over the screens that
-  hold them. The map lists them under `unreadInputCalls`, one entry per screen; nothing can be said about whether
+  hold them. A key a function puts only in the address of its request does not make it such a function. The map
+  lists them under `unreadInputCalls`, one entry per screen; nothing can be said about whether
   the screen values of those calls are sent.
 - `input keys not checked: give body in requestFunction, the place of the request body among the values the request
   function is given, such as "body": "0.data"` — printed in place of the input key lines when `requestFunction`
@@ -1099,9 +1100,9 @@ call table: the state keys the screen writes and hands to an API function that d
 check`), one row per function and key with every place the key is written. ✓ saves `fine` on that key — the screen,
 the function and the key — and folds the row under 「확인함 N」; ✕ on a folded row saves `needs-more` and puts the
 row back in the list, where a row whose mark was saved before the screen's code changed carries 「코드 바뀜」. A
-folded 「모름 N」 lists the calls of the screen whose input keys could not be read, with the reason. It also carries
-one line per screen counting the calls whose arguments duru does not read as screen state,
-`화면 값을 읽지 못한 호출 K`, with the API functions of those calls (see `input calls not read`).
+folded 「모름 N」 lists, with the reason, the calls of the screen whose input keys could not be read, and gathers the
+calls whose arguments duru does not read as screen state into one line, `화면 값을 읽지 못한 호출 K`, that names
+each of their API functions once; N counts both kinds of call (see `input calls not read`).
 A screen that opens only under a role or a setting carries 「역할」 or 「설정」 next to its
 name, as its line in the flow does. Under the tables, 「화면 정보」 starts folded, with the number of links into the
 screen other than a menu's, links out of it from its own code and settings it reads on its line. Opened, it says under 「접근 조건」 what it takes to open

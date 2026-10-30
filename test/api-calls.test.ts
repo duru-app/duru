@@ -234,7 +234,7 @@ test('a method checking that its address values are strings or numbers while it 
     file: 'contracts/api/contract.api.ts',
     line: 83,
     endpoints: [{ method: 'POST', url: '/internal/v2/workspace/{?}/contract/{?}/update', line: 83, server: { status: 'none' }, callId: 'POST:/internal/v2/workspace/{?}/contract/{?}/update' }],
-    inputs: { sent: [['0', 'workspaceId'], ['0', 'contractId']], spread: [] },
+    inputs: { sent: [['0', 'workspaceId'], ['0', 'contractId']], body: [], spread: [] },
   });
 });
 
@@ -1043,7 +1043,7 @@ test('the input keys a screen passes and the API function copies one by one into
     '};',
     '',
   ].join('\n');
-  assert.deepEqual(await inputsOf(module), { sent: [['0', 'data', 'user.name'], ['0', 'data', 'user.email']], spread: [] });
+  assert.deepEqual(await inputsOf(module), { sent: [['0', 'data', 'user.name'], ['0', 'data', 'user.email']], body: [['0', 'data', 'user.name'], ['0', 'data', 'user.email']], spread: [] });
 });
 
 test('the input key a screen passes whole as the body is the one the request carries', async () => {
@@ -1056,7 +1056,7 @@ test('the input key a screen passes whole as the body is the one the request car
     '};',
     '',
   ].join('\n');
-  assert.deepEqual(await inputsOf(module), { sent: [['0', 'data']], spread: [] });
+  assert.deepEqual(await inputsOf(module), { sent: [['0', 'data']], body: [['0', 'data']], spread: [] });
 });
 
 test('the input key a screen passes into the address of the request is the one the request carries, and the rest of the address is not a key', async () => {
@@ -1069,7 +1069,7 @@ test('the input key a screen passes into the address of the request is the one t
     '};',
     '',
   ].join('\n');
-  assert.deepEqual(await inputsOf(module), { sent: [['0', 'params', 'page']], spread: [] });
+  assert.deepEqual(await inputsOf(module), { sent: [['0', 'params', 'page']], body: [], spread: [] });
 });
 
 test('the input key a screen passes under another name in a smaller object of the body is the one the request carries', async () => {
@@ -1082,7 +1082,7 @@ test('the input key a screen passes under another name in a smaller object of th
     '};',
     '',
   ].join('\n');
-  assert.deepEqual(await inputsOf(module), { sent: [['0', 'data', 'user.nickname']], spread: [] });
+  assert.deepEqual(await inputsOf(module), { sent: [['0', 'data', 'user.nickname']], body: [['0', 'data', 'user.nickname']], spread: [] });
 });
 
 test('the input object a screen spreads into the body is reported as spread rather than as each of its keys', async () => {
@@ -1095,7 +1095,7 @@ test('the input object a screen spreads into the body is reported as spread rath
     '};',
     '',
   ].join('\n');
-  assert.deepEqual(await inputsOf(module), { sent: [], spread: [['0', 'data']] });
+  assert.deepEqual(await inputsOf(module), { sent: [], body: [], spread: [['0', 'data']] });
 });
 
 test('an API function that fails only when a value it is given is itself a stand-in it cannot read says the input keys are unknown, and its addresses stay as they were', async () => {
@@ -1208,7 +1208,7 @@ test('with requestFunction the files in apiModules are run too: only the input k
   const without = await build(fixtureCopy(modulesOnly, { 'invoices/api/signer.ts': SIGNER }));
   assert.deepEqual(readOnly(map), readOnly(without));
   assert.deepEqual(map.apiFunctions.signerSave.endpoints.map((e) => [e.method, e.url]), [['POST', '/internal/v2/workspace/signer']]);
-  assert.deepEqual(map.apiFunctions.signerSave.inputs, { sent: [['0', 'data', 'user.name'], ['0', 'data', 'user.email']], spread: [] });
+  assert.deepEqual(map.apiFunctions.signerSave.inputs, { sent: [['0', 'data', 'user.name'], ['0', 'data', 'user.email']], body: [['0', 'data', 'user.name'], ['0', 'data', 'user.email']], spread: [] });
 });
 
 test('without requestFunction the same files give no input keys', async () => {
@@ -1226,7 +1226,7 @@ test('a function exported under another name gets its input keys, found by the n
     '',
   ].join('\n');
   const map = await build(fixtureCopy({ ...WITH_BODY, apiModules: ['invoices/api/inputs.ts'] }, { 'invoices/api/inputs.ts': module }));
-  assert.deepEqual(map.apiFunctions.a.inputs, { sent: [['0', 'data', 'name']], spread: [] });
+  assert.deepEqual(map.apiFunctions.a.inputs, { sent: [['0', 'data', 'name']], body: [['0', 'data', 'name']], spread: [] });
 });
 
 test('two exported names for the same function each get the input keys of their own, since one export never stands in for another', async () => {
@@ -1238,8 +1238,8 @@ test('two exported names for the same function each get the input keys of their 
     '',
   ].join('\n');
   const map = await build(fixtureCopy({ ...WITH_BODY, apiModules: ['invoices/api/inputs.ts'] }, { 'invoices/api/inputs.ts': module }));
-  assert.deepEqual(map.apiFunctions.b.inputs, { sent: [['0', 'data', 'name']], spread: [] });
-  assert.deepEqual(map.apiFunctions.a.inputs, { sent: [['0', 'data', 'name']], spread: [] });
+  assert.deepEqual(map.apiFunctions.b.inputs, { sent: [['0', 'data', 'name']], body: [['0', 'data', 'name']], spread: [] });
+  assert.deepEqual(map.apiFunctions.a.inputs, { sent: [['0', 'data', 'name']], body: [['0', 'data', 'name']], spread: [] });
 });
 
 test('the same error a function in apiModules always throws is named the same way there, with no stand-in marker in it', async () => {
@@ -1295,7 +1295,7 @@ test('a file whose run stops outside any function leaves only its own functions 
   const map = await build(configFile);
   assert.equal(map.apiFunctions.a.inputsUnknown, 'the run stopped outside any function');
   assert.equal(map.apiFunctions.a.inputs, undefined);
-  assert.deepEqual(map.apiFunctions.laterSave.inputs, { sent: [['0', 'data', 'name']], spread: [] });
+  assert.deepEqual(map.apiFunctions.laterSave.inputs, { sent: [['0', 'data', 'name']], body: [['0', 'data', 'name']], spread: [] });
   assert.equal(map.apiFunctions.laterSave.inputsUnknown, undefined);
 });
 

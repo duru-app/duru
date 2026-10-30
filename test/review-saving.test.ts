@@ -585,3 +585,49 @@ test('in a browser, a screen whose input calls duru could not read shows them in
     );
   });
 });
+
+// 화면 값을 읽지 못한 호출이 둘인 화면. 「모름」은 화면마다 한 줄이 아니라 호출을 센다.
+const UNREAD_TWO = [{ screen: '/lab#Lab', calls: [
+  { fn: 'ajaxLabExperiment', callSite: 'Components/Lab.js:8' },
+  { fn: 'ajaxLabExperiment', callSite: 'Components/Lab.js:12' },
+] }];
+
+test('in a browser, the 「모름」 count of a screen counts each call duru did not read rather than one line per screen, in its text and its aria-label alike', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    const mapFile = path.join(config.outDir, 'map.json');
+    fs.writeFileSync(mapFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(mapFile, 'utf8')), inputsToCheck: [], unreadInputCalls: UNREAD_TWO }));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await chooseScreen(p, '/lab');
+        await p.waitForSelector('#center-body details.inputs-unknown > summary:has-text("모름 2")');
+        assert.equal(await p.getAttribute('#center-body details.inputs-unknown > summary', 'aria-label'), '요청에 실리는 키를 읽지 못한 호출 2');
+      }),
+    );
+  });
+});
+
+// 같은 함수를 두 곳에서 부른 화면. 「모름」 줄에는 함수 이름이 한 번씩만 나온다.
+const UNREAD_REPEAT = [{ screen: '/lab#Lab', calls: [
+  { fn: 'ajaxLabExperiment', callSite: 'Components/Lab.js:8' },
+  { fn: 'ajaxLabList', callSite: 'Components/Lab.js:10' },
+  { fn: 'ajaxLabExperiment', callSite: 'Components/Lab.js:12' },
+] }];
+
+test('in a browser, the line for the calls duru did not read names each API function once in the order it first appears, and its title keeps every call site', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    const mapFile = path.join(config.outDir, 'map.json');
+    fs.writeFileSync(mapFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(mapFile, 'utf8')), inputsToCheck: [], unreadInputCalls: UNREAD_REPEAT }));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await chooseScreen(p, '/lab');
+        await p.waitForSelector('#center-body details.inputs-unknown > summary:has-text("모름")');
+        await p.click('#center-body details.inputs-unknown > summary');
+        const line = '#center-body details.inputs-unknown li';
+        assert.equal(await p.textContent(line), '화면 값을 읽지 못한 호출 3 ajaxLabExperiment, ajaxLabList');
+        assert.equal(await p.getAttribute(line, 'title'), 'ajaxLabExperiment Components/Lab.js:8, ajaxLabList Components/Lab.js:10, ajaxLabExperiment Components/Lab.js:12');
+      }),
+    );
+  });
+});
