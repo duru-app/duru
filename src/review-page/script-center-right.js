@@ -56,6 +56,7 @@ function renderCenter() {
     untaggedPairs(s.id),
     baselineOnlyHere(s.id),
     callTable(s),
+    inputSection(s),
     callInfo(s),
     screenInfo(s),
   );
@@ -253,6 +254,43 @@ function callTable(s) {
     h('h2', {}, `API 호출 ${own.length}`, listAbsentNote('서버 목록 없음')),
     callTableBody(s, own, depths, removed),
     shared,
+  ];
+}
+
+// 화면이 상태에 써서 API 함수에 넘기지만 그 함수의 요청에 실리지 않는 키. 사람이 보내지 않아도 된다고 표시한 줄은 접어 둔다.
+function inputSection(s) {
+  const keys = state.data.map.inputsToCheck;
+  if (!keys) return null;
+  const targetOf = (r) => ({ node: s.id, part: { kind: 'input', key: { fn: r.fn, key: r.key } } });
+  const grouped = new Map();
+  for (const k of keys.filter((k) => k.screen === s.id)) {
+    const groupKey = JSON.stringify([k.fn, k.key]);
+    if (!grouped.has(groupKey)) grouped.set(groupKey, { fn: k.fn, key: k.key, places: [] });
+    const places = grouped.get(groupKey).places;
+    if (!places.includes(k.at)) places.push(k.at);
+  }
+  const rows = [...grouped.values()].map((r) => ({ ...r, mark: markOf(targetOf(r)) }));
+  const fine = (r) => r.mark?.current?.status === 'fine' && !r.mark.codeChanged;
+  const marked = rows.filter(fine);
+  const toCheck = rows.filter((r) => !fine(r));
+  const unknown = (state.data.map.unknownInputs ?? []).filter((u) => u.screen === s.id);
+  if (!toCheck.length && !marked.length && !unknown.length) return null;
+  const busy = state.caseSaving || state.bulkBusy;
+  const table = (list, status, label, title) => h('table', { class: 'inputs' }, h('tbody', {}, list.map((r) => h('tr', {},
+    h('td', {}, h('span', { class: 'mono' }, r.fn)),
+    h('td', {}, h('span', { class: 'mono' }, r.key), r.mark?.codeChanged ? [' ', h('span', { class: 'chip', title: '표시한 뒤 화면 코드가 바뀜' }, CODE_CHANGED)] : null),
+    h('td', { class: 'muted mono' }, r.places.join(', ')),
+    h('td', {}, h('button', { type: 'button', title, 'aria-label': title, disabled: busy, onclick: () => savePick(targetOf(r), status) }, label))))));
+  return [
+    h('h2', {}, `입력 키 ${toCheck.length}`),
+    state.caseError?.node === s.id && state.caseError.input ? h('p', { class: 'error' }, state.caseError.message) : null,
+    toCheck.length ? table(toCheck, 'fine', '✓', '보내지 않는 게 맞음') : null,
+    marked.length ? h('details', { class: 'inputs-marked', open: state.inputsMarkedOpen, ontoggle: (e) => { state.inputsMarkedOpen = e.currentTarget.open; } },
+      h('summary', { title: '보내지 않는 게 맞다고 표시한 입력 키', 'aria-label': `보내지 않는 게 맞다고 표시한 입력 키 ${marked.length}` }, `확인함 ${marked.length}`),
+      table(marked, 'needs-more', '✕', '다시 확인할 입력 키로')) : null,
+    unknown.length ? h('details', { class: 'inputs-unknown', open: state.inputsUnknownOpen, ontoggle: (e) => { state.inputsUnknownOpen = e.currentTarget.open; } },
+      h('summary', { title: '요청에 실리는 키를 읽지 못한 호출', 'aria-label': `요청에 실리는 키를 읽지 못한 호출 ${unknown.length}` }, `모름 ${unknown.length}`),
+      h('ul', { class: 'plain' }, unknown.map((u) => h('li', {}, h('span', { class: 'mono' }, u.fn), ' ', h('span', { class: 'muted mono' }, u.callSite), ' ', u.reason)))) : null,
   ];
 }
 

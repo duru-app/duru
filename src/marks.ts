@@ -81,6 +81,7 @@ interface NewMark {
 interface MarkableMap {
   screens: (PartScreen & { codeHash?: string })[];
   calls?: { id: string; options?: { key: string }[]; codeHash?: string }[];
+  inputsToCheck?: PartContext['inputsToCheck'];
 }
 
 export interface MarkEntry {
@@ -368,7 +369,7 @@ export function classifyMarks(marks: Mark[], map: MarkableMap, storyIds: string[
     const path = target.story !== undefined ? paths.get(target.story) : undefined;
     const where = !target.part ? null
       : target.story !== undefined ? path && locateStoryPart(target.part, path, map.screens)
-      : nodes.has(target.node!) ? locatePart(target, { tests, screens: map.screens, roleGuards }) : null;
+      : nodes.has(target.node!) ? locatePart(target, { tests, screens: map.screens, roleGuards, inputsToCheck: map.inputsToCheck }) : null;
     const current = history.find((m) => m.status !== undefined) ?? null;
     const changed = current !== null && target.case === undefined && target.node !== undefined && differs(current.codeHash, hashes.get(target.node));
     const entry = { key, target, current, history, ...(target.part && { where: where ?? null }), ...(changed && { codeChanged: true as const }) };

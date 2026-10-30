@@ -33,14 +33,14 @@ export interface PartScreen {
   componentFile?: string | null;
   tableItem?: TableItem;
   access?: { restricted?: boolean; roleValues?: string[] | null; route?: Described[]; links?: LinkRow[]; menuLinks?: LinkRow[]; settings?: SettingSource[] };
-  // 이 화면이 상태에 써서 API 함수에 넘긴 키 가운데 요청이 싣지 않는 것과 그 키를 적은 자리
-  inputsToCheck?: ScreenMap['inputsToCheck'];
 }
 
 export interface PartContext {
   tests: { nodes?: ByNode; importers?: ByNode; passed?: ByNode };
   screens?: PartScreen[];
   roleGuards?: Record<string, string[]>;
+  // 이 화면들이 상태에 써서 API 함수에 넘긴 키 가운데 요청이 싣지 않는 것과 그 키를 적은 자리. 줄마다 어느 화면인지 screen 에 적는다.
+  inputsToCheck?: ScreenMap['inputsToCheck'];
 }
 
 export interface TestPlace {
@@ -135,9 +135,9 @@ function locateLink(screen: PartScreen, key: unknown): SourcePlaces | null {
 }
 
 // 키를 글자로 적은 자리. keysRef 는 keys[from].file 로 읽는 파일을 가르는 이름이다.
-function locateInput(screen: PartScreen, key: unknown, keysRef: string): SourcePlaces | null {
+function locateInput(screenId: string, key: unknown, inputs: ScreenMap['inputsToCheck'], keysRef: string): SourcePlaces | null {
   const { fn, key: name } = key as InputPartKey;
-  const rows = (screen.inputsToCheck ?? []).filter((k) => k.fn === fn && k.key === name);
+  const rows = (inputs ?? []).filter((k) => k.screen === screenId && k.fn === fn && k.key === name);
   const place = (at: string): SourcePlace => ({ from: keysRef, file: at.slice(0, at.lastIndexOf(':')), line: Number(at.slice(at.lastIndexOf(':') + 1)) });
   return rows.length ? { places: rows.map((k) => (k.at.includes(' → ') ? place(k.at.slice(k.at.lastIndexOf(' → ') + 3)) : place(k.at))) } : null;
 }
@@ -147,7 +147,7 @@ export function locatePart({ node, part }: { node?: string; part?: Part }, conte
   const screen = context.screens?.find((s) => s.id === node);
   if (!screen) return null;
   if (part!.kind === 'condition') return locateCondition(screen, part!.key, context.screens!, context.roleGuards ?? {});
-  return part!.kind === 'input' ? locateInput(screen, part!.key, keysRef) : locateLink(screen, part!.key);
+  return part!.kind === 'input' ? locateInput(node!, part!.key, context.inputsToCheck, keysRef) : locateLink(screen, part!.key);
 }
 
 export const STORY_PART_KINDS = ['step', 'hop'];

@@ -5150,6 +5150,24 @@ by moving the browser, get neither. `ajaxWorkspaceDocumentBffUpdateSigner` sends
 `.cellPhone`, and `0.data.signer.attribute.enabledAuth`, `.authType`, `.authPassword`, `.authPasswordHint`,
 `.notificationTypes`, `.notificationContexts`, and not `signer.attribute.pkiSignType`, which it never copies.
 
+**A person's "fine" on a key to check is a mark on a part of the screen: the API function and the key.**
+A key a screen writes and the API function does not carry stays in the map's `inputsToCheck`, and the review page
+writes a mark with the screen as its node and `"part": { "kind": "input", "key": { "fn", "key" } }`, in the same
+marks folder as the other decisions. `rebuild` leaves a line whose mark says `fine` and whose screen code has not
+changed since the mark out of its `input keys to check` list, and counts those lines as marked fine under it, while
+the map keeps the key; any other status, and a screen whose code changed since the mark, keeps or brings the line
+back, and the page marks such a row 「코드 바뀜」.
+Alternatives compared:
+- A list of keys in the config file: the review page cannot write it as a person looks at a row, so a person would
+  have to edit the config for each key and say where it is read from.
+- A mark on the file and line that wrote the key: a few lines moved in the code drop the mark, though the screen, the
+  function and the key are the same.
+- A mark that stays after the screen's code changes: a judgment made on old code would keep hiding a key the new code
+  may now need to send.
+Reason: the mark is kept with the other decisions, merges in git without clashes like them, and stays on the key when
+its lines move; a key comes back for a person to look at when its screen's code changes, since a judgment made on the
+old code does not hold for the new; and a key the map no longer lists leaves the mark as a mark outside the map.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

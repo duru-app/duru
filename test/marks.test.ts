@@ -691,14 +691,15 @@ test('a comment on several targets is in the history of each, stays on the ones 
 });
 
 const INPUT_KEY = { fn: 'ajaxList', key: 'keyword' };
-const SEARCH_SCREEN = { id: '/search#Search', routeFile: 'Routes.js', line: 5, componentFile: 'components/Search.js', inputsToCheck: [{ screen: '/search#Search', fn: 'ajaxList', key: 'keyword', file: 'components/Search.js', line: 3, at: 'components/Search.js:10 → components/Search.js:3' }] };
+const INPUT_KEYS = [{ screen: '/search#Search', fn: 'ajaxList', key: 'keyword', file: 'components/Search.js', line: 3, at: 'components/Search.js:10 → components/Search.js:3' }];
+const SEARCH_SCREEN = { id: '/search#Search', routeFile: 'Routes.js', line: 5, componentFile: 'components/Search.js' };
 
 test('a mark on a key the screen passes to an API function is written with the function and the key, takes the status fine, carries where the key is written, and is detached once the map has no such key', () => {
   withMarksDir((dir: string) => {
     const target = { node: '/search#Search', part: { kind: 'input', key: INPUT_KEY } };
     const fine = addMark(dir, { target, status: 'fine', author: 'a' });
     assert.deepEqual(fine.target, target);
-    const { attached } = classifyMarks(loadMarks(dir), { screens: [SEARCH_SCREEN] });
+    const { attached } = classifyMarks(loadMarks(dir), { screens: [SEARCH_SCREEN], inputsToCheck: INPUT_KEYS });
     assert.deepEqual(attached.map((m) => [m.current?.status, m.where]), [['fine', { places: [{ from: 'keys', file: 'components/Search.js', line: 3 }] }]]);
 
     for (const [part, message] of [
@@ -709,9 +710,18 @@ test('a mark on a key the screen passes to an API function is written with the f
     ] as [object, RegExp][]) assert.throws(() => addMark(dir, { target: { node: '/search#Search', part } as never, status: 'fine', author: 'a' }), message);
 
     const other = addMark(dir, { target: { node: '/search#Search', part: { kind: 'input', key: { fn: 'ajaxList', key: 'status' } } }, status: 'fine', author: 'a' });
-    const moved = classifyMarks(loadMarks(dir), { screens: [{ ...SEARCH_SCREEN, inputsToCheck: [] }] });
+    const moved = classifyMarks(loadMarks(dir), { screens: [SEARCH_SCREEN], inputsToCheck: [] });
     assert.deepEqual(moved.attached, []);
     assert.deepEqual(moved.detached.map((m) => [m.target, m.where]), [[fine.target, null], [other.target, null]]);
     assert.deepEqual(classifyMarks([other], { screens: [{ id: '/lab#Lab' }] }).detached.map((m) => m.target), [other.target]);
+  });
+});
+
+test('a mark on an input key of one screen is detached when only another screen writes the same function and key', () => {
+  withMarksDir((dir: string) => {
+    const fine = addMark(dir, { target: { node: '/search#Search', part: { kind: 'input', key: INPUT_KEY } }, status: 'fine', author: 'a' });
+    const elsewhere = classifyMarks([fine], { screens: [SEARCH_SCREEN, { id: '/list#List' }], inputsToCheck: INPUT_KEYS.map((k) => ({ ...k, screen: '/list#List' })) });
+    assert.deepEqual(elsewhere.attached, []);
+    assert.deepEqual(elsewhere.detached.map((m) => [m.target, m.where]), [[fine.target, null]]);
   });
 });

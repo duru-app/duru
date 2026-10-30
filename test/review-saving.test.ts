@@ -471,3 +471,42 @@ test('in a browser, a mark an older duru saved as missing shows as 「테스트 
     );
   });
 });
+
+const INPUT_KEYS = [
+  { screen: '/lab#Lab', fn: 'ajaxLabExperiment', key: 'keyword', file: 'Components/Lab.js', line: 8, at: 'Components/Lab.js:20 → Components/Lab.js:8' },
+  { screen: '/lab#Lab', fn: 'ajaxLabExperiment', key: 'status', file: 'Components/Lab.js', line: 9, at: 'Components/Lab.js:20 → Components/Lab.js:9' },
+];
+
+test('in a browser, a key to check takes ✓ as a fine mark on the screen, the API function and the key, folds under 「확인함」, and ✕ puts it back in the list', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    const mapFile = path.join(config.outDir, 'map.json');
+    fs.writeFileSync(mapFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(mapFile, 'utf8')), inputsToCheck: INPUT_KEYS }));
+    const target = { node: '/lab#Lab', part: { kind: 'input', key: { fn: 'ajaxLabExperiment', key: 'keyword' } } };
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await chooseScreen(p, '/lab');
+        await p.waitForSelector('#center-body table.inputs');
+        assert.equal(await p.textContent('#center-body > h2:has-text("입력 키")'), '입력 키 2');
+        assert.equal(await p.locator('#center-body > table.inputs tbody tr').count(), 2);
+        assert.deepEqual(await p.locator('#center-body > table.inputs td.muted.mono').allTextContents(), INPUT_KEYS.map((k) => k.at));
+        assert.equal(await p.locator('#center-body > table.inputs button[aria-label="보내지 않는 게 맞음"]').count(), 2);
+
+        await p.locator('#center-body > table.inputs tbody tr', { hasText: 'keyword' }).locator('button').click();
+        await p.waitForSelector('#center-body details.inputs-marked > summary:has-text("확인함 1")');
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status]), [[target, 'fine']]);
+        assert.equal(await p.textContent('#center-body > h2:has-text("입력 키")'), '입력 키 1');
+        assert.equal(await p.locator('#center-body > table.inputs tbody tr').count(), 1);
+        assert.deepEqual(await p.locator('#center-body details.inputs-marked table.inputs td span.mono').allTextContents(), ['ajaxLabExperiment', 'keyword']);
+
+        await p.click('#center-body details.inputs-marked > summary');
+        await p.locator('#center-body details.inputs-marked table.inputs button[aria-label="다시 확인할 입력 키로"]').click();
+        await p.waitForSelector('#center-body details.inputs-marked', { state: 'detached' });
+        assert.equal(await p.textContent('#center-body > h2:has-text("입력 키")'), '입력 키 2');
+        assert.equal(await p.locator('#center-body > table.inputs .chip').count(), 0);
+        assert.deepEqual(await p.locator('#center-body > table.inputs td.muted.mono').allTextContents(), INPUT_KEYS.map((k) => k.at));
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status]).sort((a, b) => String(a[1]).localeCompare(String(b[1]))), [[target, 'fine'], [target, 'needs-more']]);
+      }),
+    );
+  });
+});

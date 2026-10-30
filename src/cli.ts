@@ -75,8 +75,8 @@ async function sendToReview(server: string, route: string, body: unknown) {
 
 // 「충분」이 붙은 input 자리의 키. 그 화면 코드가 바뀐 표시는 세지 않는다.
 function inputFines(map: ScreenMap, config: ReturnType<typeof loadConfig>) {
-  const screens = map.screens.map((s) => ({ id: s.id, codeHash: s.codeHash, inputsToCheck: map.inputsToCheck }));
-  const { attached } = classifyMarks(loadMarks(config.marksDir).map(mergedStatus), { screens });
+  const screens = map.screens.map((s) => ({ id: s.id, codeHash: s.codeHash }));
+  const { attached } = classifyMarks(loadMarks(config.marksDir).map(mergedStatus), { screens, inputsToCheck: map.inputsToCheck });
   return attached
     .filter(({ target, current, codeChanged }) => target.part?.kind === 'input' && current?.status === 'fine' && !codeChanged)
     .map(({ target }) => {

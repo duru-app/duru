@@ -1082,7 +1082,13 @@ screen's tests by depth and its API calls, with
 a row per option value. The table holds the calls the screen's own code sends; the calls it gets only from a component
 around or beside its route (`layout`) and those of `appWide` are folded below it under 「공통 N」, with the same
 columns, and stay open or folded on other screens until toggled. Choosing such a call shows, after where this screen
-calls it, 「앱 시작 때 부르는 곳」 for an `appWide` call. A screen that opens only under a role or a setting carries 「역할」 or 「설정」 next to its
+calls it, 「앱 시작 때 부르는 곳」 for an `appWide` call. With `requestFunction` set, 「입력 키 N」 follows the call
+table: the state keys the screen writes and hands to an API function that does not send them (see `input keys to
+check`), one row per function and key with every place the key is written. ✓ saves `fine` on that key — the screen,
+the function and the key — and folds the row under 「확인함 N」; ✕ on a folded row saves `needs-more` and puts the
+row back in the list, where a row whose mark was saved before the screen's code changed carries 「코드 바뀜」. A
+folded 「모름 N」 lists the calls of the screen whose input keys could not be read, with the reason.
+A screen that opens only under a role or a setting carries 「역할」 or 「설정」 next to its
 name, as its line in the flow does. Under the tables, 「화면 정보」 starts folded, with the number of links into the
 screen other than a menu's, links out of it from its own code and settings it reads on its line. Opened, it says under 「접근 조건」 what it takes to open
 the screen, then shows the tests of each role and setting case by depth under 「관점별 테스트」, the links into it
