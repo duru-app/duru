@@ -23,7 +23,7 @@ interface State {
 }
 
 export interface CallInputs {
-  // 인자 자리: ['0'] 이거나 ['0', 'data'] 처럼 객체 리터럴의 속성 이름을 잇는다.
+  // 인자 위치: ['0'] 또는 ['0', 'data'] 처럼 객체 리터럴의 속성 이름을 이어 적는다.
   argPath: string[];
   keys: InputKey[];
   unknown: string | null;
@@ -39,7 +39,6 @@ const stringOf = (node: Node | null | undefined): string | null => (node?.type =
 // 적힌 키. 계산한 키는 글자 그대로일 때만 읽는다.
 const propertyKey = (prop: any): string | null => (!prop.computed ? (prop.key.type === 'Identifier' ? prop.key.name : stringOf(prop.key)) : stringOf(prop.key));
 
-// `{ ...name, … }` 에서 name 뒤의 속성. 첫 자리가 name 을 펼치지 않으면 null 이다.
 function spreadOf(owner: Node | null | undefined, name: string) {
   if (owner?.type !== 'ObjectExpression') return null;
   const [first, ...rest] = owner.properties;
@@ -47,7 +46,6 @@ function spreadOf(owner: Node | null | undefined, name: string) {
   return rest;
 }
 
-// const F = (a) => … · function F(a) {} 처럼 선언한 함수의 이름 자리에서 그 함수.
 function functionAt(binding: Binding | undefined) {
   const declared = binding?.path;
   if (declared?.node.type === 'FunctionDeclaration') return declared;
@@ -55,7 +53,6 @@ function functionAt(binding: Binding | undefined) {
   return declared && init && 'params' in init ? (declared.get('init') as NodePath<any>) : null;
 }
 
-// 불러온 이름과 그 파일에서 내보낸 이름.
 function importedName(binding: Binding) {
   if (binding.kind !== 'module') return null;
   const declaration = binding.path.parent as ImportDeclaration;
@@ -65,7 +62,6 @@ function importedName(binding: Binding) {
   return { spec: declaration.source.value, exported: 'default' };
 }
 
-// props.onChange 이거나, `const { onChange } = props` 처럼 props 에서 꺼낸 이름.
 function isProp(p: NodePath<any>, prop: string) {
   const binding = p.scope.getBinding(prop);
   if (binding?.kind === 'param') return true;
@@ -73,7 +69,6 @@ function isProp(p: NodePath<any>, prop: string) {
   return Boolean(binding?.kind === 'const' && declarator?.node.type === 'VariableDeclarator' && declarator.node.id.type === 'ObjectPattern' && declarator.node.init?.type === 'Identifier' && declarator.node.init.name === 'props');
 }
 
-// 이만큼 깊은 파일에서 넘긴 속성까지 따라간다.
 const MAX_DEPTH = 3;
 
 export function screenInputReader({ srcRoot, resolve }: Reading) {
@@ -87,7 +82,6 @@ export function screenInputReader({ srcRoot, resolve }: Reading) {
   const rel = (file: string) => path.relative(srcRoot, file);
   const at = (file: string, node: Node) => `${rel(file)}:${node.loc?.start.line ?? 0}`;
 
-  // 파일마다 useState 로 선언한 상태. 초기값의 키는 세지 않는다.
   function statesIn(file: string) {
     if (states.has(file)) return states.get(file)!;
     const found = new Map<string, State>();
@@ -104,7 +98,6 @@ export function screenInputReader({ srcRoot, resolve }: Reading) {
     return found;
   }
 
-  // 그 이름으로 부른 곳. JSX 속성 값 안의 것도 들어 있다.
   function callsOf(file: string, name: string) {
     const calls: NodePath<CallExpression>[] = [];
     traverse(parse(file).ast, {
@@ -122,7 +115,6 @@ export function screenInputReader({ srcRoot, resolve }: Reading) {
     return fn.isFunctionDeclaration() && fn.node.id ? fn.node.id.name : null;
   }
 
-  // F 가 param 번째 매개변수로 받는 값들: F 를 부른 곳마다 그 자리에 건넨 글자와 그 줄. 글자가 아닌 것도 있으면 null 이다.
   function passedAt(file: string, owner: Binding, param: number) {
     const fn = owner.path.getFunctionParent();
     const name = fn && functionName(fn);
@@ -136,7 +128,6 @@ export function screenInputReader({ srcRoot, resolve }: Reading) {
     return passed.length ? passed : null;
   }
 
-  // 키 자리에 놓인 식의 값들. 문자열 글자 그대로이거나, 이름 있는 함수의 매개변수면 부른 곳에서 건넨 글자다.
   function valuesOf(file: string, node: Node | null | undefined, scope: NodePath<any>): InputKey[] | null {
     const literal = stringOf(node);
     if (literal !== null) return [{ key: literal, file: rel(file), line: node!.loc!.start.line, at: at(file, node!) }];
@@ -146,11 +137,9 @@ export function screenInputReader({ srcRoot, resolve }: Reading) {
     const fn = binding.path.getFunctionParent();
     const param = fn ? (fn.get('params') as NodePath<any>[]).findIndex((q) => q.isIdentifier() && q.node.name === (node as { name: string }).name) : -1;
     const passed = fn && param >= 0 ? passedAt(file, binding, param) : null;
-    // 글자는 이 자리가 아니라 매개변수를 받은 함수를 부른 곳에 있다.
     return passed?.map(({ value, line }) => ({ key: value, file: rel(file), line: node.loc!.start.line, at: `${at(file, node)} → ${rel(file)}:${line}` })) ?? null;
   }
 
-  // 이 파일이 relative 파일의 컴포넌트에 상태를 받은 인자를 속성으로 넘긴 자리: 인자 이름, 속성 이름, 그 파일.
   function mergesIn(file: string) {
     const found: { param: string; prop: string; from: string }[] = [];
     traverse(parse(file).ast, {
@@ -171,7 +160,6 @@ export function screenInputReader({ srcRoot, resolve }: Reading) {
     return found;
   }
 
-  // 이 파일이 그 속성을 다른 파일의 컴포넌트에 그대로 넘긴 자리의 키.
   function forwardedKeys(file: string, prop: string, depth: number, seen: string[]): InputKey[] | null {
     let found = false;
     let keys: InputKey[] | null = null;
@@ -194,7 +182,6 @@ export function screenInputReader({ srcRoot, resolve }: Reading) {
     return found ? keys : null;
   }
 
-  // 이 파일이 그 속성으로 넘긴 자리: 속성 attribute 에 이름 from 을 건넨 JSX 요소.
   function jsxFor(file: string, attribute: string, from: string): NodePath<JSXElement> | null {
     let found: NodePath<JSXElement> | null = null;
     traverse(parse(file).ast, {
@@ -210,7 +197,6 @@ export function screenInputReader({ srcRoot, resolve }: Reading) {
     return found;
   }
 
-  // 다른 파일의 컴포넌트가 그 속성을 부르는 곳마다 넘기는 키. 그 파일이 그 속성으로 다시 넘긴 자리도 따라간다.
   // 키를 알 수 없는 자리가 있으면 null 이다.
   function propKeys(file: string, prop: string, depth = 0, seen: string[] = []): InputKey[] | null {
     const bindings = new WeakMap<NodePath<any>, Map<string, Binding | undefined>>();
@@ -226,19 +212,15 @@ export function screenInputReader({ srcRoot, resolve }: Reading) {
       if (!functions.has(fn)) functions.set(fn, functionName(fn));
       return functions.get(fn)!;
     };
-    // `const { onChange } = props` 처럼 props 에서 꺼낸 그 속성은 그 속성 그대로다.
     const fromProps = (binding: Binding | undefined) =>
       binding?.kind === 'const' && binding.path.node.type === 'VariableDeclarator' && binding.path.node.id.type === 'ObjectPattern' && binding.path.node.init?.type === 'Identifier' && binding.path.node.init.name === 'props';
-    // 이 파일 밖에서 부르는 이름. 그 속성과 props 는 그 속성을, state 는 그 상태를 든다.
     const given = (name: string) => (name === prop || name === 'props' ? 'props' : name === 'state' ? 'state' : null);
     let unsure = false;
-    // 그 속성을 부른 자리의 첫 인자.
     const argumentOf = (p: NodePath<any>): NodePath<any> | null => {
       const arguments_ = (p.parentPath as NodePath<any>).get('arguments') as NodePath<any>[];
       return arguments_[0] ?? null;
     };
 
-    // 이 이름으로 넘긴 자리의 컴포넌트 파일을 같은 규칙으로 다시 읽는다. 없거나 깊거나 돌아오면 null 이다.
     const forward = (name: string, attribute: string): InputKey[] | null => {
       const element = jsxFor(file, attribute, name);
       const tag = element?.node.openingElement.name;
@@ -249,19 +231,16 @@ export function screenInputReader({ srcRoot, resolve }: Reading) {
       return propKeys(target, attribute, depth + 1, [...seen, file]);
     };
 
-    // 이 파일 밖에서 부르는 이름 name. name.k · name['k'] · x={name} 이면 그 속성으로 넘긴 자리다.
     const through = (p: NodePath<any>, name: string): InputKey[] | null => {
       const parent = p.parentPath as NodePath<any> | null;
       const member = parent?.isMemberExpression() && parent.node.object === p.node ? parent : null;
       const key = member && (member.node.computed ? stringOf(member.node.property) : (member.node.property as { name?: string }).name);
       const inside = parent?.isJSXExpressionContainer() && parent.node.expression === p.node ? parent.parentPath : null;
       const attribute = inside?.isJSXAttribute() ? inside : null;
-      // x={onChange} 는 그 속성 그대로, onChange.k 는 k 라는 속성으로 넘긴다.
       const as = attribute ? (attribute.node.name.type === 'JSXIdentifier' ? attribute.node.name.name : null) : key;
       return as ? forward(name, as) : null;
     };
 
-    // 이 자리에 놓인 값이 그 속성으로 넘기는 키. 키를 알 수 없거나 그 속성으로 넘긴 것이 아니면 null 이다.
     const read = (p: NodePath<any>): InputKey[] | null => {
       if (p.isObjectExpression()) {
         const found: InputKey[] = [];
@@ -270,7 +249,6 @@ export function screenInputReader({ srcRoot, resolve }: Reading) {
             const argument = item.get('argument') as NodePath<any>;
             const name = argument.isIdentifier() ? argument.node.name : null;
             const binding = name ? bindingAt(argument, name) : undefined;
-            // 자식 자신의 props 나 상태를 펼친 것은 부모가 이미 가진 키다.
             if ((binding?.kind === 'param' || fromProps(binding)) && !given(name!)) continue;
             const inner = name ? model(argument, name, binding) : null;
             if (!inner) return null;
@@ -290,7 +268,6 @@ export function screenInputReader({ srcRoot, resolve }: Reading) {
       return model(p, p.node.name, b);
     };
 
-    // 이 파일의 name 이 가리키는 값의 키.
     const model = (p: NodePath<any>, name: string, binding: Binding | undefined): InputKey[] | null => {
       if (binding?.kind === 'module' || given(name) || (fromProps(binding) && name === prop)) return through(p, name);
       if (binding && (binding.kind === 'let' || binding.kind === 'const')) return assigned(binding);
@@ -298,7 +275,6 @@ export function screenInputReader({ srcRoot, resolve }: Reading) {
       return through(p, name);
     };
 
-    // G 가 param 번째 매개변수로 받는 값: G 를 부른 자리마다 그 자리에 넘긴 값의 키다. 넘긴 값이 하나라도 다르면 null 이다.
     const passed = (binding: Binding): InputKey[] | null => {
       const fn = binding.path.getFunctionParent();
       const name = fn && named(fn);
@@ -317,7 +293,6 @@ export function screenInputReader({ srcRoot, resolve }: Reading) {
       return calls.length ? found : null;
     };
 
-    // 같은 함수 안의 N 에 놓는 키: 처음 놓은 값과 N = {…}, 그리고 N.k = v · N['k'] = v. 그 밖의 쓰임이면 null 이다.
     const assigned = (binding: Binding): InputKey[] | null => {
       const fn = binding.path.getFunctionParent();
       if (!fn || binding.scope !== fn.scope) return null;
@@ -330,12 +305,10 @@ export function screenInputReader({ srcRoot, resolve }: Reading) {
           if (p.node.name !== name || bindingAt(p, name) !== binding || !p.isReferencedIdentifier() || !fn.isAncestor(p)) return;
           const parent = p.parentPath;
           const assignment = parent.parentPath?.isAssignmentExpression() && p.key === 'object' && parent.parentPath.node.left === parent.node ? parent.parentPath : null;
-          // N = {…}
           if (parent.isAssignmentExpression() && parent.node.left === p.node) {
             placed.push(parent.get('right') as NodePath<any>);
             return;
           }
-          // N.k = v · N['k'] = v · N[K] = v
           if (parent.isMemberExpression() && assignment) {
             const key = propertyKey(parent.node);
             const values = key !== null ? [{ key, file: rel(file), line: parent.node.property.loc!.start.line, at: at(file, parent.node.property) }] : valuesOf(file, parent.node.property, p);
@@ -343,7 +316,6 @@ export function screenInputReader({ srcRoot, resolve }: Reading) {
             for (const value of values) if (!found.some((k) => k.key === value.key)) found.push(value);
             return;
           }
-          // 그 속성에 N 을 넘기는 자리는 여기서 세는 자리다. 그 밖에 N 을 넘기는 자리는 키를 더할 수도 있다.
           if (parent.isCallExpression() && parent.node.callee.type === 'Identifier' && parent.node.callee.name === prop && parent.node.arguments[0] === p.node) return;
           other = true;
         },
@@ -356,14 +328,12 @@ export function screenInputReader({ srcRoot, resolve }: Reading) {
       }
       return other ? null : found;
     };
-    // 이 파일이 그 속성을 부르는 곳마다 넘긴 키. 부르지 않거나, 키를 알 수 없는 자리가 있으면 null 이다.
     const found: InputKey[] = [];
     let called = false;
     traverse(parse(file).ast, {
       Identifier(p: NodePath<any>) {
         if (p.node.name !== prop || !p.isReferencedIdentifier() || !isProp(p, prop)) return;
         if (p.parentPath.isMemberExpression() && p.key === 'property' && !p.parentPath.node.computed) return;
-        // `onChange && onChange(…)` 의 앞자리는 부르는 자리가 아니다.
         if (!(p.parentPath as NodePath<any> | null)?.isCallExpression() || p.key !== 'callee') return;
         called = true;
         const arg = argumentOf(p);
@@ -381,13 +351,11 @@ export function screenInputReader({ srcRoot, resolve }: Reading) {
         for (const value of inner) if (!found.some((k) => k.key === value.key)) found.push(value);
       },
     });
-    // 그 속성을 다른 파일의 컴포넌트에 그대로 넘긴 자리가 있으면 그 컴포넌트가 넘기는 키도 함께다.
     const forwarded = forwardedKeys(file, prop, depth, seen);
     if (unsure || (forwarded === null && !found.length)) return null;
     for (const key of forwarded ?? []) if (!found.some((k) => k.key === key.key)) found.push(key);
     return called || found.length ? found : null;
   }
-  // 이 파일의 상태마다 그 상태의 set 함수에 쓰인 키.
   function keysIn(file: string) {
     const byState = statesIn(file);
     if (done.has(file)) return byState;
@@ -441,7 +409,6 @@ export function screenInputReader({ srcRoot, resolve }: Reading) {
     return byState;
   }
 
-  // fn(arg) 의 arg 로 넘긴 상태의 이름과 그 인자 자리. arg 가 이 파일의 상태로 이어지지 않으면 null 이다.
   function argumentState(file: string, arg: NodePath<any>) {
     const known = statesIn(file);
     if (arg.isIdentifier()) return known.has(arg.node.name) ? { name: arg.node.name, argPath: [] } : null;
@@ -460,7 +427,6 @@ export function screenInputReader({ srcRoot, resolve }: Reading) {
     return null;
   }
 
-  // 이 파일이 API 함수 fn 을 부르는 곳마다, 그 인자로 넘긴 상태의 키.
   function callInputs(file: string) {
     const found = new Map<number, CallInputs>();
     if (!statesIn(file).size) return found;

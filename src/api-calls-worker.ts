@@ -19,7 +19,6 @@ export interface WorkerData {
   timeoutMs: number;
   mark: string;
   markNumber: number;
-  // 인자 자리만 알아보는 실행. 같이 넘긴 파일의 내보내기의 이름과 값을 돌린다.
   inputsOnly?: boolean;
   exports?: Record<string, Record<string, string>>;
 }
@@ -28,11 +27,9 @@ export interface SentRequest {
   method: string | null;
   url: string | null;
   body: boolean | undefined;
-  // 요청 함수가 받은 설정. 인자가 어디에 실렸는지 보려고 남긴다.
   sent?: unknown;
 }
 
-// 요청에 실린 인자의 자리(sent)와 펼쳐 넘긴 인자의 자리(spread).
 export interface FunctionInputs {
   sent: string[][];
   spread: string[][];
@@ -44,7 +41,6 @@ interface SentRecord {
   waits: Promise<unknown>[];
 }
 
-// 표식을 만드는 데 쓰는 것들.
 interface Tagged {
   spread: (path: string[]) => void;
   born: (value: object, path: string[]) => void;
@@ -110,11 +106,10 @@ function standIn(named: (k: string) => unknown = () => undefined) {
 const fake = standIn();
 
 const ID_KEY = /^id$|Id$|ID$/;
-// 인자 경로를 지닌 값. 표식은 `${mark}\u0001<n>\u0002` 이고, n 은 경로의 번호다.
+// 경로가 붙은 값의 마커 형식은 `${mark}\u0001<n>\u0002` 이며, n 은 경로 인덱스이다.
 const TAG_START = '\u0001';
 const TAG_END = '\u0002';
 const TAG = new RegExp(`${TAG_START}(\\d+)${TAG_END}`, 'g');
-// 요청 주소는 URL 로 읽느라 표식이 %01 같은 모양으로 바뀌어 있다. 표식을 찾기 전에 되돌린다.
 const TAG_IN_URL = new RegExp(`%0?1(\\d+)%0?2`, 'g');
 const untag = (value: string) => value.replace(TAG_IN_URL, `${TAG_START}$1${TAG_END}`);
 const tagText = (paths: string[][], t: Tagged, path: string[]) => {
@@ -124,11 +119,8 @@ const tagText = (paths: string[][], t: Tagged, path: string[]) => {
   return `${mark}${TAG_START}${n}${TAG_END}`;
 };
 
-// 고른 시도의 인자 모양을 그대로 흉내 낸다. tag 는 fake 처럼 어떤 키를 읽어도 그 자리의 값이 나오고,
-// leaves 는 어떤 키를 읽어도 그 키의 표식 문자열이 나오며, idsAsText 는 id 이름의 키만 표식 문자열이다.
 function taggedValue(t: Tagged, paths: string[][], path: string[], kind: 'fake' | 'leaves' | 'idsAsText') {
   const made = new Map<string, unknown>();
-  // 화살표 함수를 대상으로 두면 arguments 나 prototype 이 없어, 키를 세는 검사가 이 값의 키만 본다.
   const value: any = new Proxy(() => {}, {
     get: (target, k) => {
       if (k === Symbol.toPrimitive || k === 'toString' || k === 'valueOf' || k === 'toJSON') return () => tagText(paths, t, path);
@@ -153,13 +145,11 @@ function taggedValue(t: Tagged, paths: string[][], path: string[], kind: 'fake' 
   return value;
 }
 
-// 보낸 값에서 표식을 찾는다. 표식은 값 전체로 왔거나 문자열 안에 들어 있다.
 function scanValue(value: unknown, t: Tagged, paths: string[][], into: (path: string[]) => void) {
   const seen = new Set<unknown>();
   const walk = (v: unknown, depth: number) => {
     if (depth > 8 || !v) return;
     if (typeof v === 'string') return scanText(v, paths, into);
-    // 경로를 지닌 값은 그 자체로 요청에 실렸다. 안을 세면 그 아래 키만 늘어나므로 값으로 끝낸다.
     const path = t.pathOf(v);
     if (path) return into(path);
     if (typeof v !== 'object' || seen.has(v)) return;
@@ -202,7 +192,6 @@ const keep = (method: string | null, url: string | null, body?: boolean, scanned
   if (record) record.list.push({ method, url, body, sent: scanned });
   return Promise.resolve(fake);
 };
-// recorder 만 요청 함수가 받은 설정을 남긴다. 표식은 그 설정의 주소와 body 자리에서만 찾는다.
 const recorder = (...args: unknown[]) => keep(request.method ? text(at(args, request.method)) : null, text(at(args, request.url)), request.body ? at(args, request.body) != null : undefined, args);
 globalThis.__duruRecorder = recorder;
 
@@ -348,7 +337,6 @@ const leaves = (leaf: unknown) => {
 // 앞의 모양이 오류로 끝나거나 요청 없이 끝나면 다음 모양을 넣어 본다. URL 변수 값이 문자열이나 숫자인지 검사하는 앱은 키마다 문자열이나 숫자가 나와야 통과한다.
 // 마지막 시도에서는 이름이 id 이거나 Id · ID 로 끝나는 키만 문자열이고, 다른 키를 읽으면 몇 단계를 내려가도 이 값이 다시 나온다. URL 경로 값과 함께 받은 body 에 `in` 을 쓰거나 배열 메서드를 호출하는 메서드도 그래야 요청까지 간다.
 const ARGUMENT_SHAPES: (() => unknown)[] = [() => fake, () => leaves(mark), () => leaves(markNumber), () => idsAsText];
-// call 이 고른 시도가 어느 모양이었는지. 그 모양의 인자를 표식으로 바꿔 한 번 더 돌린다.
 const SHAPE_NAMES = ['fake', 'leaves(mark)', 'leaves(markNumber)', 'idsAsText'];
 
 globalThis.__duruArgument = (queryKey) => {
@@ -362,7 +350,6 @@ globalThis.__duruWait = (value) => {
   sent.get(current.getStore())?.waits.push(Promise.resolve(value));
 };
 
-// args 는 인자를 하나씩 만든다. call 도 표식을 지닌 인자로 한 번 더 돈다.
 async function attempt(self: unknown, fn: Callable, args: () => unknown): Promise<Attempt> {
   const record: SentRecord = { list: [], flooded: false, waits: [] };
   const token = { argument: args };
@@ -389,7 +376,6 @@ async function attempt(self: unknown, fn: Callable, args: () => unknown): Promis
 
 const samePath = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((k, i) => k === b[i]);
 
-// 보낸 요청에서 표식을 찾아, 값 전체가 실린 자리와 키를 센 자리를 모은다. 주소와, 요청 함수에 body 자리가 있으면 그 값도 본다.
 function inputsOf(requests: SentRequest[], t: Tagged, paths: string[][], spread: string[][]) {
   const sent: string[][] = [];
   const add = (path: string[]) => {
@@ -397,7 +383,6 @@ function inputsOf(requests: SentRequest[], t: Tagged, paths: string[][], spread:
   };
   for (const recorded of requests) {
     if (recorded.url) scanText(untag(recorded.url), paths, add);
-    // 설정의 자리는 인자에서 읽는 자리처럼 `0.body` 로 센다. 설정의 다른 값은 보지 않는다.
     const from = recorded.sent;
     if (Array.isArray(from) && request.url) scanText(untag(text(at(from, request.url)) ?? ''), paths, add);
     if (!Array.isArray(from) || !request.body) continue;
@@ -409,9 +394,6 @@ function inputsOf(requests: SentRequest[], t: Tagged, paths: string[][], spread:
   return { sent, spread: spreadPaths };
 }
 
-// 고른 시도의 인자 모양 그대로 표식을 지닌 인자를 넣어 한 번 더 돌리고, 그 요청에서 인자가 실린 자리를 읽는다.
-// 그 모양으로 요청까지 가지 못하면 문자열이 나오는 모양으로 한 번 더 돌려 본다.
-// 표식은 값도 문자열도 아니다. 함수가 넘겨받은 값을 그대로 읽거나 검사하는 자리에서 걸리면 그 까닭을 알린다.
 async function withInputs(tried: Attempt, kind: string, unit: string, self: unknown, fn: Callable): Promise<Attempt> {
   const kinds: ('fake' | 'leaves' | 'idsAsText')[] = kind === 'idsAsText' ? ['idsAsText', 'leaves'] : [kind === 'fake' ? 'fake' : 'leaves', 'leaves'];
   let reason = '';
@@ -426,7 +408,6 @@ async function withInputs(tried: Attempt, kind: string, unit: string, self: unkn
       born: (value, path) => tagged.set(value, path),
       pathOf: (value) => (value && (typeof value === 'object' || typeof value === 'function') ? tagged.get(value as object) : undefined),
     };
-    // 인자 i 의 값은 처음부터 [String(i)] 자리에 있다. 자리를 미리 잡아 두어야 인자마다 다른 표식이 간다.
     const args = Array.from({ length: Math.max(fn.length, 1) }, (_, i) => taggedValue(t, paths, [String(i)], shape));
     let next = 0;
     send({ type: 'attempt', unit });
@@ -442,7 +423,6 @@ async function withInputs(tried: Attempt, kind: string, unit: string, self: unkn
     }
     return { ...tried, inputs: inputsOf(ran.requests, t, paths, spread) };
   }
-  // 표식을 지닌 인자로 끝까지 가지 못했다. 그 까닭을 적고, 까닭 없이 요청만 없었다면 고른 시도가 인자를 읽지 못한 것이다.
   return { ...tried, inputsUnknown: reason || 'no clean run' };
 }
 
@@ -450,7 +430,6 @@ async function call(unit: string, self: unknown, fn: Callable): Promise<Attempt>
   let best: Attempt | null = null;
   let chosen = -1;
   let index = -1;
-  // 모양마다 난 오류.
   const errors: (string | undefined)[] = [];
   for (const argument of ARGUMENT_SHAPES) {
     index++;
@@ -467,14 +446,10 @@ async function call(unit: string, self: unknown, fn: Callable): Promise<Attempt>
   }
   const picked = best!;
   if (picked.requests.length) return withInputs(picked, SHAPE_NAMES[chosen], unit, self, fn);
-  // 요청도 없이 끝났다. 시도 하나가 오류 없이 끝났으면 이 함수는 인자를 읽었고 요청을 보내지 않았을 뿐이다.
-  // 요청을 너무 많이 보냈거나 끝나지 않았다면 인자가 아니라 값이 얼마나 되는지의 문제다.
   const failure = picked.error;
   const valueErrors = failure && !failure.late && errors.every((message) => message !== undefined) && !errors.some((message) => message?.startsWith('sent more than'));
   if (!failure || !valueErrors) return picked;
-  // 모든 모양이 같은 자리에서 끝났다면 이 함수는 값의 종류를 가린다. 그중 숫자가 나오는 모양으로 요청까지 가는 함수가 있다.
   if (errors.every((message) => message === errors[0])) return { ...picked, inputsUnknown: 'needs numbers' };
-  // 모양에 따라 다른 곳에서 끝났다면, 넘겨받은 값을 그대로 읽거나 검사하는 자리에서 걸린 것이다. 그 자리를 알려 준다.
   return { ...picked, inputsUnknown: `threw with tagged values: ${firstLine(failure.message)}` };
 }
 
@@ -530,7 +505,6 @@ for (const { file, url } of modules) {
   for (const [exportName, value] of Object.entries(mod)) {
     if (!value || !['object', 'function'].includes(typeof value) || isStandIn(value)) continue;
     if (inputsOnly) {
-      // 정적 읽기는 식 이름을 부른다. 그 이름이 값으로 내보내진 이름을 대신 돌린다.
       const valueName = exportsWanted?.[file]?.[exportName];
       if (!valueName) continue;
       if (valueName !== exportName) {

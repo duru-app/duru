@@ -185,8 +185,6 @@ export function requestFunctionFile(config: any, resolve: ImportResolver['resolv
   return target;
 }
 
-// apiModules 파일마다 정적 읽기가 찾은 이름마다, 그 이름이 가리키는 값을 내보낸 이름.
-// 정적 읽기는 식 이름을 부르므로, export { load as loadList } 나 const load = …; export { load } 같은 이름은 그 값의 이름으로 돌린다.
 function exportedValues(file: string, names: string[]) {
   const values = new Map(names.map((name) => [name, name]));
   let ast;
@@ -204,7 +202,6 @@ function exportedValues(file: string, names: string[]) {
         if (values.has(exported)) values.set(exported, sp.local.name);
       }
     }
-    // const load = wrap(...) 같은 값도 그 이름 그대로 돌린다.
     if (node.declaration?.type === 'VariableDeclaration') {
       for (const d of node.declaration.declarations) {
         if (d.id.type !== 'Identifier' || d.init?.type !== 'Identifier') continue;
@@ -215,8 +212,6 @@ function exportedValues(file: string, names: string[]) {
   return values;
 }
 
-// apiModules 파일을 requestFunction 의 기록 함수로 돌려, 정적 읽기가 이미 찾은 함수의 인자 자리만 얻는다.
-// 그 실행이 보낸 요청은 쓰지 않고, 정적 읽기가 그 파일에 붙인 이름마다 { file, exportName, found } 를 돌려준다.
 export async function apiModuleInputs(config: any, resolve: ImportResolver['resolve'], exports: Record<string, string[]>) {
   const { import: from, name, method, url, body, object } = config.requestFunction ?? {};
   if (!from) return [];
@@ -236,7 +231,6 @@ export async function apiModuleInputs(config: any, resolve: ImportResolver['reso
   };
   try {
     const modules: { file: string; url: string }[] = [];
-    // 돌릴 파일마다 정적 읽기가 찾은 이름과, 그 이름이 가리키는 값을 내보낸 이름.
     const wanted: Record<string, Record<string, string>> = {};
     for (const [relFile, names] of Object.entries(exports)) {
       if (!names.length) continue;
@@ -250,7 +244,6 @@ export async function apiModuleInputs(config: any, resolve: ImportResolver['reso
       }
     }
     copier.finish();
-    // 값으로 내보낸 이름을 돌리므로, 메서드가 없는 때의 이름이 곧 정적 읽기가 부른 이름이다.
     const staticName = new Map([...apiOf].flatMap(([file, names]) => [...names].map(([name, value]) => [`${file}\n${value}`, name])));
     const read = (m: ReportedMessage) => {
       if (m.type !== 'called') return;
@@ -258,7 +251,6 @@ export async function apiModuleInputs(config: any, resolve: ImportResolver['reso
       if (name === undefined) return;
       put(m.file, name, { ...(m.inputs && { inputs: m.inputs }), ...(m.inputsUnknown && { inputsUnknown: m.inputsUnknown }) });
     };
-    // 앞선 실행에서 오래 걸린 모듈과 함수는 건너뛰고, 그 까닭을 남긴다.
     const gaveUp = new Map<string, { file: string; reason: string }>();
     const retry = new Map<string, { file: string; reason: string }>();
     const skip = new Set<string>();
@@ -273,7 +265,6 @@ export async function apiModuleInputs(config: any, resolve: ImportResolver['reso
       skip.add(outcome.unit);
       const [kind, file] = outcome.unit.split('\n');
       const reason = firstLine(copier.rename(outcome.error.message));
-      // 가짜 값 때문에 오래 걸린 모듈은 그 값 없이 한 번 더 돌려 본다.
       if (kind === 'load' && outcome.error?.late) retry.set(outcome.unit, { file, reason });
       else gaveUp.set(outcome.unit, { file, reason });
     }
@@ -281,7 +272,6 @@ export async function apiModuleInputs(config: any, resolve: ImportResolver['reso
       const reason = reasons.get(file) ?? [...retry.values(), ...gaveUp.values()].find((s) => s.file === file)?.reason;
       for (const name of names.keys()) if (!found.has(`${file}\n${name}`)) put(file, name, { inputsUnknown: reason ?? `the file exports no ${name}` });
     }
-    // 로드가 오래 걸린 모듈은 내보낸 이름을 모두 빼고 한 번 더 돌려 본다.
     for (const { file } of new Set([...retry.values(), ...gaveUp.values()])) {
       const outcome = await runWorker({ ...run, modules: [{ file, url: modules.find((m) => m.file === file)!.url }] }, read);
       if (!outcome.done && !outcome.unit && outcome.error) for (const name of apiOf.get(file)!.keys()) if (!found.has(`${file}\n${name}`)) put(file, name, { inputsUnknown: firstLine(copier.rename(outcome.error.message)) });

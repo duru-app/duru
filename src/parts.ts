@@ -39,7 +39,6 @@ export interface PartContext {
   tests: { nodes?: ByNode; importers?: ByNode; passed?: ByNode };
   screens?: PartScreen[];
   roleGuards?: Record<string, string[]>;
-  // 이 화면들이 상태에 써서 API 함수에 넘긴 키 가운데 요청이 싣지 않는 것과 그 키를 적은 자리. 줄마다 어느 화면인지 screen 에 적는다.
   inputsToCheck?: ScreenMap['inputsToCheck'];
 }
 

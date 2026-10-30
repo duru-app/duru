@@ -35,7 +35,6 @@ export interface Part {
   key: TestRef | string | LinkKey | StepKey | HopKey | InputPartKey;
 }
 
-// 키를 글자로 적은 함수와 그 키. 화면이 그 키를 요청에 싣지 않아도 되는지는 fine 이 말한다.
 export interface InputPartKey {
   fn: string;
   key: string;
@@ -277,7 +276,6 @@ export function addMark(dir: string, { target, targets, status, note, rule, auth
   }
   const checked: MarkTarget = all.length === 1 ? all[0] : {};
   if (checked.story !== undefined && checked.part && hasStatus) throw new Error('a comment on a step or a hop of a story takes no status; put the status on the story itself');
-  // 전송 키 자리의 「충분」은 그 화면이 그 키를 보내지 않아도 된다는 뜻이라 상태를 받는다.
   if (checked.part && hasStatus && checked.part.kind !== 'input') throw new Error('a comment on a part of a screen or call takes no status; put the status on the screen or call itself');
   if (checked.candidate !== undefined && hasStatus) throw new Error('a comment on a story candidate takes no status; accept it as a story to give it one');
   if (checked.screens !== undefined && hasStatus) throw new Error('a comment on a screen order takes no status');

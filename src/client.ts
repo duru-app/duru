@@ -1433,7 +1433,6 @@ export async function extractClient(config: any) {
     },
   });
 
-  // requestFunction 이 있을 때만 인자로 넘긴 상태의 키를 읽는다.
   const screenInputs = config.requestFunction ? screenInputReader({ srcRoot: config.srcRoot, resolve: imports.resolve }) : null;
 
   const routeFileSet = new Set((config.routeFiles as string[]).map((f) => path.join(config.srcRoot, f)));
@@ -1807,7 +1806,6 @@ export async function extractClient(config: any) {
       },
     });
 
-    // 화면이 부른 API 함수에, 인자로 넘긴 상태에 쓴 키를 붙인다.
     if (screenInputs) {
       const byStart = screenInputs.callInputs(file);
       for (const site of facts.apiCalls) if (siteStart.has(site)) site.inputs = byStart.get(siteStart.get(site)!);
@@ -3030,7 +3028,6 @@ export async function extractClient(config: any) {
 
   const apiFunctions: Record<string, any> = {};
   const moduleExports = new Map<string, { file: string; exportName: string }[]>();
-  // apiModules 파일마다 정적 읽기가 찾은 내보낸 이름. requestFunction 이 있으면 이 파일들을 돌려 인자 자리만 얻는다.
   const apiExports: Record<string, string[]> = {};
   for (const f of apiModuleFiles) {
     const fns = extractApiModule(f);
@@ -3038,7 +3035,6 @@ export async function extractClient(config: any) {
     apiExports[path.relative(config.srcRoot, f)] = Object.keys(fns);
     for (const name of Object.keys(fns)) moduleExports.set(name, [{ file: f, exportName: name }]);
   }
-  // 돌린 파일과 이름이 모두 정적 읽기가 찾은 자리일 때만 인자 자리를 보탠다.
   for (const { file, exportName, found } of await apiModuleInputs(config, imports.resolve, apiExports)) {
     if (apiFunctions[exportName]?.file === file) apiFunctions[exportName] = { ...apiFunctions[exportName], ...found };
   }

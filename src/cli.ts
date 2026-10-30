@@ -73,7 +73,6 @@ async function sendToReview(server: string, route: string, body: unknown) {
   return res;
 }
 
-// 「충분」이 붙은 input 자리의 키. 그 화면 코드가 바뀐 표시는 세지 않는다.
 function inputFines(map: ScreenMap, config: ReturnType<typeof loadConfig>) {
   const screens = map.screens.map((s) => ({ id: s.id, codeHash: s.codeHash }));
   const { attached } = classifyMarks(loadMarks(config.marksDir).map(mergedStatus), { screens, inputsToCheck: map.inputsToCheck });
@@ -340,7 +339,7 @@ if (command === 'tasks') {
   }
   for (const [name, fn] of Object.entries<any>(map.apiFunctions)) if (fn.error && !fn.endpoints.length) console.log(`  api method ${name} ← ${fn.file ?? '?'}${fn.line ? `:${fn.line}` : ''}: ${fn.error}`);
   if (map.inputsToCheck) {
-    // 화면이 보내도 되는 키로 「충분」을 받았고 그 화면 코드가 그대로면 목록에서 뺀다.
+    // fine 표시는 그 화면 코드가 그대로일 때만 목록에서 뺀다.
     const fines = new Set(inputFines(map, config));
     const toCheck = map.inputsToCheck.filter((k) => !fines.has(`${k.screen}\n${k.fn}\n${k.key}`));
     console.log(`input keys to check ${toCheck.length}${fines.size ? ` (${fines.size} marked fine)` : ''}`);
