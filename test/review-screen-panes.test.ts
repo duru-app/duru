@@ -8,6 +8,7 @@ import { taskList } from '../src/tasks.ts';
 import { withRebuiltFixture, withServer, postMark, browserMissing, toList, withPage, openScreenInfo, waitCallInfoInView, openDocumentScreenInShortViewport, insideRightPane, withLabLinks, screenBox, needTag, closeCallInfo } from './review-helpers.ts';
 import type { PageData } from './review-helpers.ts';
 import type { PageData as ServedData } from '../src/review.ts';
+import { editJson } from './baseline-helpers.ts';
 
 declare function load(): Promise<void>;
 declare function render(): void;
@@ -680,6 +681,26 @@ test('in a browser, each call shows on and off rows for its options and a no-opt
       }),
     ),
   );
+});
+
+test('in a browser, a request-only option keeps its row, carries the 보낸 요청 chip and lists the tests that sent it', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    editJson(path.join(config.outDir, 'map.json'), (map) => {
+      const call = map.calls.find((c: { id: string }) => c.id === 'POST:/api/v1/report/schedule');
+      call.options.push({ key: 'weeklyNow', values: [true, false], sources: ['request'], sites: [], requests: [{ test: 'sends the weekly report on Monday', file: 'export.spec.ts', line: 3, project: 'chromium', values: [true] }] });
+    });
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/admin/report")');
+        const rows = p.locator('table.calls tr.option').filter({ hasText: 'weeklyNow' });
+        assert.deepEqual(await rows.locator('.chip').allTextContents(), ['보낸 요청', '보낸 요청']);
+        assert.equal(await rows.locator('.chip').first().getAttribute('title'), '테스트가 보낸 요청의 본문에서 읽은 옵션');
+        await rows.locator('td.cell').first().click();
+        assert.match(await p.locator('#center .call-info .option-sites').innerText(), /보낸 요청에서 읽음\s+sends the weekly report on Monday$/);
+      }),
+    );
+  });
 });
 
 const RESULT_CALL = 'GET:/api/v1/document/{documentId}';

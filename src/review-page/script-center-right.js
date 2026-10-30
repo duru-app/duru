@@ -155,7 +155,8 @@ function optionRows(s, call, depths) {
     return h('tr', { class: `option${matching.length ? '' : ' gap'}` },
       h('td', { class: 'call' }, h('div', {}, optionLabel(target.option)),
         o.sources.includes('type') ? h('span', { class: 'chip config', title: 'API 메서드가 보내는 본문의 타입에서 읽은 옵션' }, '본문 타입') : null,
-        o.sources.includes('config') ? h('span', { class: 'chip config', title: '설정 bodyOptions 에 적은 옵션' }, '설정') : null),
+        o.sources.includes('config') ? h('span', { class: 'chip config', title: '설정 bodyOptions 에 적은 옵션' }, '설정') : null,
+        o.sources.includes('request') ? h('span', { class: 'chip config', title: '테스트가 보낸 요청의 본문에서 읽은 옵션' }, '보낸 요청') : null),
       cell(target, matching, '테스트 없음'),
       depths.map((d, i) => cell({ ...target, depth: d }, split[i])),
       compareGap());
