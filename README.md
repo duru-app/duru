@@ -120,9 +120,9 @@ client with example results and a config to start from.
   `import` and `name` name the component, `items` the prop the screen that draws it hands the list of tabs by, and
   `path` and `component` the fields of an item holding the tab's address and the component it draws; all five are
   required, and `path` and `component` may be dotted key paths inside the item, such as `"meta.path"`. `import` and
-  `name` are read as in `history`, with `default` for a default export. duru finds the screens whose own component, or a
-  component wrapping its route, draws the component with that prop, and reads the list each hands it; one drawn in a
-  file beside the routes, such as a header, is not read. The conditions written around a `push` are not read, as
+  `name` are read as in `history`, with `default` for a default export. duru finds the screens whose own component draws the
+  component with that prop, or whose `<Route>` sits inside it in the function that draws the route, and reads the list
+  each hands it. The conditions written around a `push` are not read, as
   for the items of a `routeTables` table, so every tab becomes a screen. A tab component that is not handed its list
   through that prop, and reads it itself, is not read. Each item gives a screen for the address and the component it
   names, with the ID `<address>#<Component>`: the screen that draws the tab component is its frame, so the tab
@@ -669,7 +669,8 @@ listing the places whose value the source does not show in full.
   value (the map keeps that value), or that differs from another call's or cannot be compared with it (the map
   leaves the default unknown); and a function called in none of those files (`settingsCallNotices`).
 - `routeTabs <import> <name> is drawn by no screen` — an entry of `routeTabs` naming a component that no screen's own
-  component, nor a component wrapping its route, draws with the prop the entry names, so duru found no list of tabs to read and made no tab screen.
+  component draws with the prop the entry names, nor a component the screen's `<Route>` sits inside in the function
+  that draws it, so duru found no list of tabs to read and made no tab screen.
   The file and the name are the ones the entry gives (`routeTabNotices`).
 - `routeTabs <file>:<line> its <prop> stopped at <piece>` — the value handed to that prop was not read as a list of
   tabs: `<piece>` is the part duru could not follow, written as for `route path not read`. The screen that draws the
