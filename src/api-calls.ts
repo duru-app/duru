@@ -177,6 +177,37 @@ function runWorker(workerData: WorkerData, onMessage: (m: ReportedMessage) => vo
   });
 }
 
+type Stop = { unit: string; location: FunctionLocation | null; error: Failure };
+
+// onStray 는 어느 단위도 아닌 자리에서 멈췄을 때 부른다. 다음에 건너뛸 단위를 주면 이어서 돌고, null 이면 끝난다.
+// onStop 은 멈출 때마다 그 자리에서 불러, 메시지와 섞인 순서를 지킨다.
+async function runToEnd(data: WorkerData, onMessage: (m: ReportedMessage) => void, onStray: (error: Failure, lastFile: string | null) => string | null, onStop?: (stop: Stop) => void) {
+  const skip = new Set(data.skip);
+  const stops: Stop[] = [];
+  let lastFile: string | null = null;
+  const read = (m: ReportedMessage) => {
+    if (m.type === 'failed' || m.type === 'called') skip.add(m.unit);
+    if (m.type === 'loaded') lastFile = m.unit.slice('load\n'.length);
+    else if ('file' in m) lastFile = m.file;
+    onMessage(m);
+  };
+  for (;;) {
+    lastFile = null;
+    const outcome = await runWorker({ ...data, skip: [...skip] }, read);
+    if (outcome.done) return stops;
+    if (outcome.unit) {
+      const stop = { unit: outcome.unit, location: outcome.location, error: outcome.error };
+      skip.add(stop.unit);
+      stops.push(stop);
+      onStop?.(stop);
+      continue;
+    }
+    const next = onStray(outcome.error, lastFile);
+    if (next === null || skip.has(next)) return stops;
+    skip.add(next);
+  }
+}
+
 // requestFunction.import 가 패키지면 null 이다.
 export function requestFunctionFile(config: any, resolve: ImportResolver['resolve']) {
   const from: string | undefined = config.requestFunction?.import;
@@ -227,7 +258,7 @@ export async function apiModuleInputs(config: any, resolve: ImportResolver['reso
   const reasons = new Map<string, string>();
   const found = new Map<string, { inputs?: FunctionInputs; inputsUnknown?: string }>();
   const put = (file: string, name: string, inputs: { inputs?: FunctionInputs; inputsUnknown?: string }) => {
-    found.set(`${file}\n${name}`, inputs);
+    found.set(`${file}\n${name}`, inputs.inputsUnknown === undefined ? inputs : { ...inputs, inputsUnknown: unmarked(inputs.inputsUnknown) });
   };
   try {
     const modules: { file: string; url: string }[] = [];
@@ -246,49 +277,38 @@ export async function apiModuleInputs(config: any, resolve: ImportResolver['reso
     copier.finish();
     // 워커는 내보낸 이름으로 알린다.
     const staticName = new Map([...apiOf].flatMap(([file, names]) => [...names.keys()].map((name) => [`${file}\n${name}`, name] as [string, string])));
-    // 실행이 멈출 때 어느 파일을 돌고 있었는지 알기 위해 마지막으로 본 파일을 둔다.
-    let lastFile: string | null = null;
     const read = (m: ReportedMessage) => {
-      if (m.type === 'loaded') lastFile = m.unit.slice('load\n'.length);
-      else if ('file' in m) lastFile = m.file;
+      if (m.type === 'failed') reasons.set(m.file, firstLine(copier.explain(m.error)));
       if (m.type !== 'called') return;
       const name = m.member === null || m.member === undefined ? staticName.get(`${m.file}\n${m.exportName}`) : apiOf.get(m.file)?.has(m.member) ? m.member : undefined;
       if (name === undefined) return;
-      put(m.file, name, { ...(m.inputs && { inputs: m.inputs }), ...(m.inputsUnknown && { inputsUnknown: unmarked(firstLine(copier.rename(m.inputsUnknown))) }) });
+      put(m.file, name, { ...(m.inputs && { inputs: m.inputs }), ...(m.inputsUnknown && { inputsUnknown: firstLine(copier.rename(m.inputsUnknown)) }) });
     };
-    const gaveUp = new Map<string, { file: string; reason: string }>();
-    const retry = new Map<string, { file: string; reason: string }>();
-    const skip = new Set<string>();
     const run: WorkerData = { modules, skip: [], request: { method: method ?? null, url: url ?? '0', body: body ?? null }, timeoutMs: CALL_TIMEOUT_MS, mark: FAKE_MARK, markNumber: FAKE_NUMBER, inputsOnly: true, readInputs: true, exports: wanted };
-    for (;;) {
-      const outcome = await runWorker({ ...run, skip: [...skip] }, (m) => {
-        if ('unit' in m && gaveUp.has(m.unit)) return;
-        read(m);
-      });
-      if (outcome.done) break;
-      if (!outcome.unit) {
-        // 어느 함수에도 속하지 않는 자리에서 멈췄으면 그 파일의 남은 함수는 모름으로 두고 그 파일만 건너뛴다.
-        for (const [file, names] of apiOf) {
-          if (lastFile !== null && file !== lastFile) continue;
-          for (const name of names.keys()) if (!found.has(`${file}\n${name}`)) put(file, name, { inputsUnknown: 'the run stopped outside any function' });
-        }
-        if (lastFile === null || skip.has(`load\n${lastFile}`)) break;
-        skip.add(`load\n${lastFile}`);
-        continue;
+    // 어느 함수에도 속하지 않는 자리에서 멈췄으면 그 파일의 남은 함수는 모름으로 두고 그 파일만 건너뛴다.
+    const stray = (_error: Failure, lastFile: string | null) => {
+      for (const [file, names] of apiOf) {
+        if (lastFile !== null && file !== lastFile) continue;
+        for (const name of names.keys()) if (!found.has(`${file}\n${name}`)) put(file, name, { inputsUnknown: 'the run stopped outside any function' });
       }
-      skip.add(outcome.unit);
-      const [kind, file] = outcome.unit.split('\n');
-      const reason = firstLine(copier.rename(outcome.error.message));
-      if (kind === 'load' && outcome.error?.late) retry.set(outcome.unit, { file, reason });
-      else gaveUp.set(outcome.unit, { file, reason });
+      return lastFile === null ? null : `load\n${lastFile}`;
+    };
+    const stopped = new Map<string, string>();
+    const note = (stops: Stop[]) => {
+      for (const { unit, error } of stops) {
+        const file = unit.split('\n')[1];
+        if (!stopped.has(file)) stopped.set(file, firstLine(copier.rename(error.message)));
+      }
+    };
+    const stops = await runToEnd(run, read, stray);
+    note(stops);
+    for (const file of new Set(stops.filter((s) => s.unit.startsWith('load\n')).map((s) => s.unit.slice('load\n'.length)))) {
+      stopped.delete(file);
+      note(await runToEnd({ ...run, modules: modules.filter((m) => m.file === file) }, read, (error, lastFile) => stray(error, lastFile ?? file)));
     }
     for (const [file, names] of apiOf) {
-      const reason = reasons.get(file) ?? [...retry.values(), ...gaveUp.values()].find((s) => s.file === file)?.reason;
+      const reason = reasons.get(file) ?? stopped.get(file);
       for (const name of names.keys()) if (!found.has(`${file}\n${name}`)) put(file, name, { inputsUnknown: reason ?? `the file exports no ${name}` });
-    }
-    for (const { file } of new Set([...retry.values(), ...gaveUp.values()])) {
-      const outcome = await runWorker({ ...run, modules: [{ file, url: modules.find((m) => m.file === file)!.url }] }, read);
-      if (!outcome.done && !outcome.unit && outcome.error) for (const name of apiOf.get(file)!.keys()) if (!found.has(`${file}\n${name}`)) put(file, name, { inputsUnknown: firstLine(copier.rename(outcome.error.message)) });
     }
     const rel = (f: string) => path.relative(config.srcRoot, f);
     return [...found].flatMap(([key, inputs]) => {
@@ -337,23 +357,21 @@ export async function recordApiCalls(config: any, resolve: ImportResolver['resol
     const called: CalledUnit[] = [];
     const same = new Map<string, string>();
     const classes = new Map<string, FunctionLocation[]>();
-    const skip = new Set<string>();
     const onMessage = (m: ReportedMessage) => {
-      if (m.type === 'failed' || m.type === 'called') skip.add(m.unit);
       if (m.type === 'failed') failedModules.push({ file: rel(m.file), error: firstLine(copier.explain(m.error)) });
       else if (m.type === 'same') same.set(`${m.file}\n${m.exportName}`, `${m.as.file}\n${m.as.exportName}`);
       else if (m.type === 'called') called.push(m);
       else if (m.type === 'classes') classes.set(`${m.file}\n${m.exportName}`, m.locations);
     };
-    for (;;) {
-      const outcome = await runWorker({ modules, skip: [...skip], request: { method: method ?? null, url: url ?? '0', body: body ?? null }, timeoutMs: CALL_TIMEOUT_MS, mark: FAKE_MARK, markNumber: FAKE_NUMBER, readInputs: Boolean(from) }, onMessage);
-      if (outcome.done) break;
-      if (!outcome.unit) throw new Error(`calledApiModules: the run stopped outside any module or method: ${firstLine(outcome.error.message)}`);
-      skip.add(outcome.unit);
-      const [kind, file, exportName, member] = outcome.unit.split('\n');
-      if (kind === 'load') failedModules.push({ file: rel(file), error: firstLine(copier.rename(outcome.error.message)) });
-      else called.push({ file, exportName, member: member || null, location: outcome.location ?? null, requests: [], error: outcome.error });
-    }
+    const stray = (error: Failure) => {
+      throw new Error(`calledApiModules: the run stopped outside any module or method: ${firstLine(error.message)}`);
+    };
+    const onStop = ({ unit, location, error }: Stop) => {
+      const [kind, file, exportName, member] = unit.split('\n');
+      if (kind === 'load') failedModules.push({ file: rel(file), error: firstLine(copier.rename(error.message)) });
+      else called.push({ file, exportName, member: member || null, location, requests: [], error });
+    };
+    await runToEnd({ modules, skip: [], request: { method: method ?? null, url: url ?? '0', body: body ?? null }, timeoutMs: CALL_TIMEOUT_MS, mark: FAKE_MARK, markNumber: FAKE_NUMBER, readInputs: Boolean(from) }, onMessage, stray, onStop);
     const failed = new Set(failedModules.map((f) => f.file));
     const sent = called.filter((c) => c.requests.length);
     const sentOwners = new Set(sent.map((c) => `${c.file}\n${c.exportName}`));
