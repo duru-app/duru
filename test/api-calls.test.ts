@@ -1175,6 +1175,20 @@ test('a function that throws the same error whatever it is given names that erro
   assert.equal(fn.inputs, undefined);
 });
 
+test('a file in apiModules that throws while it is imported leaves its functions with that error as the input keys unknown rather than saying the file exports nothing of the kind', async () => {
+  const module = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    'export const moduleSave = ({ data }: { data: Record<string, unknown> }) =>',
+    "  executeRequest({ endpoint: { method: 'POST', path: '/save' }, url: '/save', body: { name: data.name } });",
+    "throw new Error('no session');",
+    '',
+  ].join('\n');
+  const configFile = fixtureCopy({ ...WITH_BODY, apiModules: ['invoices/api/inputs.ts'] }, { 'invoices/api/inputs.ts': module });
+  const map = await build(configFile);
+  assert.equal(map.apiFunctions.moduleSave.inputsUnknown, `${path.join(path.dirname(configFile), 'client/src/invoices/api/inputs.ts')}:4: no session`);
+  assert.equal(map.apiFunctions.moduleSave.inputs, undefined);
+});
+
 // apiModules 파일을 돌려 인자 자리만 얻는 설정. 이 파일은 정적 읽기가 주소를 찾는 apiModules 파일이기도 하다.
 const API_FILES = ['_ajax/AjaxFunc.ts', 'invoices/api/signer.ts'];
 const MODULES = { apiModules: API_FILES, requestFunction: WITH_BODY.requestFunction };
@@ -1330,4 +1344,49 @@ test('a shape that was already tried is not tried again, so a function that send
   const map = await build(fixtureCopy({ ...CALLED, calledApiModules: ['invoices/api/leaves.ts', ...CALLED.calledApiModules] }, { 'invoices/api/leaves.ts': LEAVES }));
   assert.equal(map.apiFunctions.counted.inputsUnknown, 'threw with tagged values: called more than twice');
   assert.deepEqual(seenUrl(map), ['/seen/3']);
+});
+
+// 멈춘 함수 뒤로 다시 돌 때 이미 인자를 낸 함수를 또 부르는지 본다. 워커마다 모듈이 새로 불리므로, 한 실행에서 함수마다 한 번씩 임시 파일에 적어 센다.
+const callLog = (log: string) => fs.readFileSync(log, 'utf8').split('\n').filter(Boolean);
+const LOGGED_MODULE = (log: string) => [
+  "import { executeRequest } from '../../contracts/api/request';",
+  "const fs = await import('node:fs');",
+  'const noted = new Set<string>();',
+  `const note = (what: string) => { if (!noted.has(what)) { noted.add(what); fs.appendFileSync(${JSON.stringify(log)}, what + '\\n'); } };`,
+  'export const counted = ({ data }: { data: Record<string, unknown> }) => {',
+  "  note('counted');",
+  "  return executeRequest({ endpoint: { method: 'POST', path: '/save' }, url: '/save', body: { name: data.name } });",
+  '};',
+  'export const stuck = () => {',
+  "  note('stuck');",
+  '  for (;;) {}',
+  '};',
+  '',
+].join('\n');
+
+test('a function that already gave its input keys is not called again when the run restarts past a function of the same file that gets stuck', async () => {
+  const log = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'duru-calls-')), 'calls.log');
+  copies.push(path.dirname(log));
+  const map = await build(fixtureCopy({ ...WITH_BODY, apiModules: ['invoices/api/inputs.ts'] }, { 'invoices/api/inputs.ts': LOGGED_MODULE(log) }));
+  assert.deepEqual(map.apiFunctions.counted.inputs, { sent: [['0', 'data', 'name']], body: [['0', 'data', 'name']], spread: [] });
+  assert.deepEqual(callLog(log), ['counted', 'stuck']);
+});
+
+test('a file in apiModules whose import does not finish in time is run once more on its own, and gives the input keys when it finishes then', async () => {
+  const mark = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'duru-slow-')), 'loaded-once');
+  copies.push(path.dirname(mark));
+  const module = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    "const fs = await import('node:fs');",
+    `if (!fs.existsSync(${JSON.stringify(mark)})) {`,
+    `  fs.writeFileSync(${JSON.stringify(mark)}, '');`,
+    '  await new Promise((done) => setTimeout(done, 15000));',
+    '}',
+    'export const slowSave = ({ data }: { data: Record<string, unknown> }) =>',
+    "  executeRequest({ endpoint: { method: 'POST', path: '/save' }, url: '/save', body: { name: data.name } });",
+    '',
+  ].join('\n');
+  const map = await build(fixtureCopy({ ...WITH_BODY, apiModules: ['invoices/api/inputs.ts'] }, { 'invoices/api/inputs.ts': module }));
+  assert.equal(map.apiFunctions.slowSave.inputsUnknown, undefined);
+  assert.deepEqual(map.apiFunctions.slowSave.inputs, { sent: [['0', 'data', 'name']], body: [['0', 'data', 'name']], spread: [] });
 });
