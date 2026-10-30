@@ -886,3 +886,9 @@ test('a fine on the whole screen after the comment stops it, a fine on one depth
   assert.equal(passedInFolder(comparison, fines, onRow('/a#A', 'opens a'), '2026-10-09T00:00:00.000Z'), null);
   assert.equal(passedInFolder(comparison, fines, onRow('/a#A', 'opens a'), '2026-10-11T00:00:00.000Z'), 'releases/1.5.0');
 });
+
+test('a comment on a row that is within a limit now gives no baseline folder, while the same test failing under another screen gives it there', () => {
+  const comparison = compareTests(was({ title: 'lock', status: 'pass' }), now({ nodes: { '/a#A': [{ title: 'lock @screen:/a#A', status: 'limit' }], '/b#B': [{ title: 'lock @screen:/b#B', line: 2, status: 'fail' }] } }), MAP);
+  assert.equal(passedInFolder(comparison, NO_FINE, onRow('/a#A', 'lock'), AFTER), null);
+  assert.equal(passedInFolder(comparison, NO_FINE, onRow('/b#B', 'lock'), AFTER), 'releases/1.5.0');
+});
