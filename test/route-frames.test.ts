@@ -240,7 +240,7 @@ test('a component beside routes that draws its own routes is not given to the sc
   ]);
 });
 
-test('a named tab component gets its tabs the drawing screen as frame and no "draws its own routes" line', async () => {
+test('a named tab component gets its tabs the drawing screen as frame', async () => {
   const settings = `import { useMemo } from 'react';
 import RouteTab from './RouteTab';
 import { getRoutes } from './Utils';
@@ -282,10 +282,8 @@ export function getRoutes() {
   }, { routeTabs: [{ import: './RouteTab', name: 'default', items: 'routes', path: 'route', component: 'Component' }] });
   const map = await build(configFile);
   for (const id of ['/settings/billing#Billing', '/settings/members#Members']) assert.ok(screen(map, id).sourceFiles.includes('Settings.js'), id);
-  assert.equal(map.framesPickingByAddress, undefined);
   const result = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(result.stdout.split('\n').filter((l) => l.includes('draws its own routes')), []);
 });
 
 test('a toggle named Switch from a UI library, drawn with or without children, in a component beside routes or beside them in the route file, does not count as routes', async () => {

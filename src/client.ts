@@ -1479,7 +1479,6 @@ export async function extractClient(config: any) {
   // 주소에 따라 탭을 고르는 컴포넌트. 목록은 그 컴포넌트를 그리는 화면이 넘겨주는 prop 에서 읽는다.
   type RouteTab = { import: string; name: string; items: string; path: string; component: string };
   const routeTabEntries = ((config.routeTabs ?? []) as RouteTab[]).map((entry, i) => ({ ...entry, file: exportingFile(`routeTabs[${i}]`, entry) }));
-  const routeTabFiles = new Set(routeTabEntries.map((e) => e.file));
   const routeTabNotices: { file: string | null; line: number | null; reason: string }[] = [];
   const usedListed = new Set<Listed>();
   const listedImports = new Map<string, boolean>();
@@ -2655,7 +2654,7 @@ export async function extractClient(config: any) {
         if (!file || routeFileSet.has(file)) return;
         const line = e.node.loc!.start.line;
         if (drawsOwnRoutes(file)) {
-          if (!routeTabFiles.has(file)) framesPickingByAddress.set(`${routeFile}:${line}`, { component: tag!, file: routeFile, line, componentFile: file });
+          framesPickingByAddress.set(`${routeFile}:${line}`, { component: tag!, file: routeFile, line, componentFile: file });
           return;
         }
         const guards = guardsOf(e, src, note, undefined, at.node);
@@ -3054,12 +3053,14 @@ export async function extractClient(config: any) {
   const extracted = drawn.flatMap((d) => d.screens);
   const emptyRouteFiles = (config.routeFiles as string[]).filter((_, i) => !drawn[i].hasRoutes);
   const screenFiles = new Set(extracted.map((s) => s.componentFile).filter(Boolean));
-  function sourcedOf({ wrapperFiles, frameFiles, outerFill, ...s }: RouteScreen) {
+  // beside: 이 화면에게는 다른 화면의 것인 파일들. 탭 화면에게는 다른 탭들의 컴포넌트가 그렇다.
+  function sourcedOf({ wrapperFiles, frameFiles, outerFill, ...s }: RouteScreen, beside: Set<string> = new Set()) {
     const entryFiles = [s.componentFile, ...wrapperFiles].filter(Boolean) as string[];
-    const isOtherScreen = (f: string) => screenFiles.has(f) && !entryFiles.includes(f);
-    return { s, outerFill, frameFiles, entryFiles, isOtherScreen, files: [...new Set(entryFiles.flatMap((f) => closureOf(f, isOtherScreen)))], drawnUnder: [] as { file: string; unders: Required<InheritedGuard>[] }[], drawnFiles: new Map<string, Required<InheritedGuard>[]>() };
+    const isOtherScreen = (f: string) => (screenFiles.has(f) || beside.has(f)) && !entryFiles.includes(f);
+    const cut = new Set([...beside].filter((f) => !entryFiles.includes(f)));
+    return { s, outerFill, frameFiles, entryFiles, isOtherScreen, cut, files: [...new Set(entryFiles.flatMap((f) => closureOf(f, isOtherScreen, cut)))], drawnUnder: [] as { file: string; unders: Required<InheritedGuard>[] }[], drawnFiles: new Map<string, Required<InheritedGuard>[]>() };
   }
-  const sourced = extracted.map(sourcedOf);
+  const sourced = extracted.map((s) => sourcedOf(s));
   type Sourced = ReturnType<typeof sourcedOf>;
 
   type TabRead = { items: NodePath[]; stoppedAt: NodePath | null };
@@ -3123,7 +3124,7 @@ export async function extractClient(config: any) {
   type TabDrawing = { x: Sourced; element: NodePath<JSXElement>; value: NodePath | null; tag: string; guards: string[] };
 
   function tabDrawings(entry: RouteTab & { file: string }): TabDrawing[] {
-    // 한 파일은 한 번만 걸어 다니고, 그 파일을 소스로 갖는 화면마다 찾은 요소를 붙인다.
+    // 한 파일은 한 번만 읽고, 그 파일을 소스로 갖는 화면마다 찾은 요소를 붙인다.
     const inFile = new Map<string, Omit<TabDrawing, 'x'>[]>();
     function foundIn(file: string) {
       const known = inFile.get(file);
@@ -3158,6 +3159,7 @@ export async function extractClient(config: any) {
     // 라우트가 이미 주는 주소는 그 라우트의 화면이 있다. 탭 화면을 만들지 않고 알리지도 않는다.
     const routePaths = new Set(extracted.map((s) => s.path));
     const madeScreen = new Set<string>();
+    const tabs: RouteScreen[] = [];
     for (const entry of routeTabEntries) {
       const drawings = tabDrawings(entry);
       if (!drawings.length) {
@@ -3179,8 +3181,11 @@ export async function extractClient(config: any) {
           told.add(element.node);
           routeTabNotices.push({ file: stoppedAt.file, line: stoppedAt.line, reason: `its ${entry.items} stopped at ${stoppedAt.text}` });
         }
-        const frameFiles: FrameFile[] = [...x.frameFiles, ...(x.s.componentFile
-          ? [{ file: rel(x.s.componentFile)!, under: guards.length ? { via: tag, line, file: x.s.routeFile, guards } : null }] : [])];
+        // 탭 화면이 받는 틀은 그 탭 컴포넌트를 그리는 화면이 받는 틀과 같다. 그 화면을 감싸는 파일들, 그 화면의 틀들,
+        // 그 화면이 자기 라우트 파일에서 물려받는 틀들, 그리고 탭 컴포넌트를 그리는 파일 자체와 그 요소에 걸린 조건.
+        const wrappers = x.entryFiles.filter((file) => file !== x.s.componentFile);
+        const frameFiles: FrameFile[] = [...x.frameFiles, ...wrappers.map((file) => ({ file, under: null })), ...framesOf(path.join(config.srcRoot, x.s.routeFile)), ...(x.s.componentFile
+          ? [{ file: x.s.componentFile, under: guards.length ? { via: tag, line, file: x.s.routeFile, guards } : null }] : [])];
         const made: RouteScreen[] = [];
         for (const item of read.items) {
           const itemLine = item.node.loc!.start.line;
@@ -3236,17 +3241,17 @@ export async function extractClient(config: any) {
             });
           }
         }
-        for (const screen of made) {
-          const tab = sourcedOf(screen);
-          // 탭 화면의 소스는 자기가 그리는 화면의 소스까지다.
-          if (x.s.componentFile) tab.files = [...new Set([...tab.files, ...closureOf(x.s.componentFile, tab.isOtherScreen, routeFileSet).filter((f) => !tab.entryFiles.includes(f))])];
-          sourced.push(tab);
-        }
+        for (const screen of made) tabs.push(screen);
       }
     }
+    // 다른 탭의 컴포넌트 파일은 이 탭의 소스가 아니다. 한 컴포넌트를 그리는 탭 목록의 탭들이 서로의 컴포넌트를 담지 않는다.
+    const tabComponents = new Set(tabs.map((s) => s.componentFile).filter(Boolean) as string[]);
+    for (const screen of tabs) sourced.push(sourcedOf(screen, tabComponents));
   }
   fillOuterAddresses(sourced);
   const { roots: routeRoots, framesOf } = routeTree(drawn, extracted, sourced);
+  // 탭 화면도 라우트 화면과 같은 틀 처리를 받는다. 그래서 그리는 화면의 라우트 파일이 가진 틀을 알아야 한다.
+  addTabScreens();
   // 레이아웃 컴포넌트는 경로를 채우고 라우트 트리를 만든 뒤에 붙인다.
   const inheritedFrames = new Map<string, FrameFile[]>();
   for (const x of sourced) {
@@ -3262,7 +3267,8 @@ export async function extractClient(config: any) {
       if (!known.some((g) => g.file === under.file && g.line === under.line)) guarded.set(file, [...known, under]);
     }
     x.entryFiles.push(...open);
-    const frameClosure = (f: string) => closureOf(f, x.isOtherScreen, routeFileSet);
+    const cut = x.cut.size ? new Set([...routeFileSet, ...[...x.cut].filter((f) => !x.entryFiles.includes(f))]) : routeFileSet;
+    const frameClosure = (f: string) => closureOf(f, x.isOtherScreen, cut);
     const openFiles = new Set([...x.files, ...open.flatMap(frameClosure)]);
     x.files = [...openFiles];
     for (const [file, unders] of guarded) {
@@ -3274,7 +3280,6 @@ export async function extractClient(config: any) {
       }
     }
   }
-  addTabScreens();
   const appWideEntries = ((config.appWideComponents ?? []) as { import: string; name: string }[]).map((c, i) => ({ ...c, file: exportingFile(`appWideComponents[${i}]`, c) }));
   const besideApp = new Set([...routeFileSet, ...screenFiles, ...sourced.flatMap((x) => [...x.entryFiles, ...x.drawnUnder.map((d) => d.file)])] as string[]);
   const appWideClosure = (f: string) => closureOf(f, (g) => screenFiles.has(g), besideApp);
@@ -3519,5 +3524,7 @@ export async function extractClient(config: any) {
   }
 
   const sagaRuns = sagaSources.length ? { runs: runs.map(({ file, line }) => `${rel(file)}:${line}`), watchers: [...watchesOf.values()].flat().length } : null;
-  return { screens, appWide, apiFunctions, unreferencedApiFunctions, sagaRuns, unrunApiModules: called?.failedModules ?? null, outsideStandIns: called?.outsideStandIns ?? [], silentApiModules: called?.silentModules ?? [], bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, unreadRoutePaths, unreadRoutes, routeTabNotices: routeTabNotices.length ? routeTabNotices : null, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved(), unusedListed: listedComponents.length + listedFunctions.length ? [...listedComponents, ...listedFunctions].filter((e) => !usedListed.has(e)).map((e) => `${e.key} ${e.import} ${e.name}`) : null, madeHistories: [...madeHistories].sort(([a], [b]) => compare(a, b)).map(([file, call]) => ({ file, call })), emptyRouteFiles, takingAddressesUnder: screensTakingAddressesUnder(routeRoots, sourced.map((x) => x.s.path)), framesPickingByAddress: [...framesPickingByAddress.values()].map((f) => ({ ...f, componentFile: rel(f.componentFile)! })).sort((a, b) => compare(a.file, b.file) || a.line - b.line) };
+  // 같은 곳에서 알린 탭 줄은 한 번만 남긴다. 항목의 줄은 그리는 파일을 소스로 갖는 화면마다 다시 읽힌다.
+  const routeTabNoticeLines = routeTabNotices.filter((n, i) => !routeTabNotices.slice(0, i).some((m) => m.file === n.file && m.line === n.line && m.reason === n.reason));
+  return { screens, appWide, apiFunctions, unreferencedApiFunctions, sagaRuns, unrunApiModules: called?.failedModules ?? null, outsideStandIns: called?.outsideStandIns ?? [], silentApiModules: called?.silentModules ?? [], bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, unreadRoutePaths, unreadRoutes, routeTabNotices: routeTabNoticeLines.length ? routeTabNoticeLines : null, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved(), unusedListed: listedComponents.length + listedFunctions.length ? [...listedComponents, ...listedFunctions].filter((e) => !usedListed.has(e)).map((e) => `${e.key} ${e.import} ${e.name}`) : null, madeHistories: [...madeHistories].sort(([a], [b]) => compare(a, b)).map(([file, call]) => ({ file, call })), emptyRouteFiles, takingAddressesUnder: screensTakingAddressesUnder(routeRoots, sourced.map((x) => x.s.path)), framesPickingByAddress: [...framesPickingByAddress.values()].map((f) => ({ ...f, componentFile: rel(f.componentFile)! })).sort((a, b) => compare(a.file, b.file) || a.line - b.line) };
 }

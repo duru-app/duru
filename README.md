@@ -121,20 +121,18 @@ client with example results and a config to start from.
   `path` and `component` the fields of an item holding the tab's address and the component it draws; all five are
   required, and `path` and `component` may be dotted key paths inside the item, such as `"meta.path"`. `import` and
   `name` are read as in `history`, with `default` for a default export. duru finds every screen that draws the
-  component with that prop and reads the list each hands it: a `const` through its value, a `useMemo(() => …)` through
-  the function it calls, the `return`s of the functions that build the list, and every `push(…)` onto it. The
-  conditions written around a `push` are not read, as for the items of a `routeTables` table, so every tab becomes a
-  screen. A tab component that is not handed its list through that prop, and reads it itself, is not read. Each item
-  gives a screen for the address and the component it names, with the ID `<address>#<Component>`: the screen that
-  draws the tab component is its frame, so the tab screen's sources include the drawing screen's, and that screen
-  stays on the map with its own ID. An item address that does not start with `/` gets the drawing screen's path in
-  front, so `billing` under `/settings` gives `/settings/billing`, and an absolute address is kept as it is; what
-  follows `?` or `#` in an address is dropped. A tab whose address is already the path of a route gives no screen,
-  since the route gives it, and a tab that several screens hand the same list for is one screen, framed by the first
-  of them. A list
-  duru cannot read gives no tab screen and a `routeTabs` line, never an error (see "What extract and rebuild
-  print"). An entry of another shape, an `import` that names no file under `srcRoot` or a `name` that file does not
-  export stops the run with an error naming the key. Without the entry, such a component gives no screen for each tab.
+  component with that prop and reads the list each hands it. The conditions written around a `push` are not read, as
+  for the items of a `routeTables` table, so every tab becomes a screen. A tab component that is not handed its list
+  through that prop, and reads it itself, is not read. Each item gives a screen for the address and the component it
+  names, with the ID `<address>#<Component>`: the screen that draws the tab component is its frame, so the tab
+  screen's sources include the drawing screen's, and that screen stays on the map with its own ID. An item address
+  that does not start with `/` gets the drawing screen's path in front, so `billing` under `/settings` gives
+  `/settings/billing`, and an absolute address is kept as it is; what follows `?` or `#` in an address is dropped. A
+  tab whose address is already the path of a route gives no screen, since the route gives it, and a tab that several
+  screens hand the same list for is one screen, framed by the first of them. A list duru cannot read gives no tab
+  screen and a `routeTabs` line, never an error (see "What extract and rebuild print"). An entry of another shape,
+  an `import` that names no file under `srcRoot` or a `name` that file does not export stops the run with an error
+  naming the key. Without the entry, such a component gives no screen for each tab.
 - `redirectElements` — the elements that redirect in the route files (default `Redirect` and
   `Navigate`; a config that lists them uses exactly the names listed).
 - `entryPaths` — route paths of further screens users start from when the code does not show them.
@@ -301,10 +299,10 @@ client with example results and a config to start from.
   `{ "constant": "Settings.appSettings" }` instead: a name in `constants`, alone or followed by a dotted path into
   its value. The root must also be listed in `settingsRoots`.
 - `settingsFunctions` — functions whose returned object holds settings (optional), such as
-  `readSystemSettings({ SIGN_LIST: [] })`, with `import` and `name` read as in `routeTabs`. Each entry is
-  `{ "import", "name", "root", "section" }`: `import` and `name` as the app imports the function (`"default"` for a
-  default export; an `import` starting with `.` is a path from `srcRoot`), and `root` and `section`, the
-  `settingsRoots` entry and the key under it whose settings the function returns. What screens read from the returned object is on the map as settings under that key, and
+  `readSystemSettings({ SIGN_LIST: [] })`. Each entry is `{ "import", "name", "root", "section" }`: `import` and
+  `name` as the app imports the function (`"default"` for a default export; an `import` starting with `.` is a
+  path from `srcRoot`), and `root` and `section`, the `settingsRoots` entry and the key under it whose settings
+  the function returns. What screens read from the returned object is on the map as settings under that key, and
   the object passed to the function gives their defaults, next to the ones `settingsDefaults` gives. On into-sign
   2.0.0:
 
@@ -614,8 +612,7 @@ listing the places whose value the source does not show in full.
   what it shows by the address; its links, requests and settings reads are given to no screen beside it` — a
   component drawn beside a group of routes that draws routes of its own, such as a header that shows a different bar
   for each address. What it shows on each screen is not read, so none of it is on the screens drawn beside it
-  (`framesPickingByAddress`). This line is not printed for a component named in `routeTabs`: the list that screen
-  hands it is read, and each tab gets a screen of its own.
+  (`framesPickingByAddress`).
 - `component file not found for <id> ← <route file>:<line>` — the screen holds only what the components
   wrapping its route bring. For a screen made from a table item, `, table item <key> at <file>:<line>` follows.
 - `history is not set; <file> calls createBrowserHistory, and moves through the history it makes are not read as
