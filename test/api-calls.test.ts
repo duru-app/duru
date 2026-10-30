@@ -1156,6 +1156,25 @@ test('an API function that throws the same error whatever it is given says the i
   assert.equal(fn.inputs, undefined);
 });
 
+test('a function that throws the same error whatever it is given names that error the way it names a failure, so the stand-in marker the message carried does not stay in it', async () => {
+  // 세션을 읽는 패키지는 stub 이라, 그 값은 표지가 붙은 대체 값이다.
+  const module = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    "import session from 'auth-lib';",
+    'export const inputsApi = {',
+    '  save({ data }: { data: Record<string, unknown> }) {',
+    '    if (session) throw new Error(`no session for ${session}`);',
+    "    return executeRequest({ endpoint: { method: 'POST', path: '/save' }, url: '/save', body: { name: data.name } });",
+    '  },',
+    '};',
+    '',
+  ].join('\n');
+  const map = await build(inputsCopy(module));
+  const fn = map.apiFunctions['inputsApi.save'];
+  assert.equal(fn.inputsUnknown, 'throws the same error whatever it is given: no session for {?}');
+  assert.equal(fn.inputs, undefined);
+});
+
 // apiModules 파일을 돌려 인자 자리만 얻는 설정. 이 파일은 정적 읽기가 주소를 찾는 apiModules 파일이기도 하다.
 const API_FILES = ['_ajax/AjaxFunc.ts', 'invoices/api/signer.ts'];
 const MODULES = { apiModules: API_FILES, requestFunction: WITH_BODY.requestFunction };
@@ -1210,6 +1229,34 @@ test('a function exported under another name gets its input keys, found by the n
   assert.deepEqual(map.apiFunctions.a.inputs, { sent: [['0', 'data', 'name']], spread: [] });
 });
 
+test('two exported names for the same function each get the input keys of their own, since one export never stands in for another', async () => {
+  const module = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    'export const b = ({ data }: { data: Record<string, unknown> }) =>',
+    "  executeRequest({ endpoint: { method: 'POST', path: '/save' }, url: '/save', body: { name: data.name } });",
+    'export const a = b;',
+    '',
+  ].join('\n');
+  const map = await build(fixtureCopy({ ...WITH_BODY, apiModules: ['invoices/api/inputs.ts'] }, { 'invoices/api/inputs.ts': module }));
+  assert.deepEqual(map.apiFunctions.b.inputs, { sent: [['0', 'data', 'name']], spread: [] });
+  assert.deepEqual(map.apiFunctions.a.inputs, { sent: [['0', 'data', 'name']], spread: [] });
+});
+
+test('the same error a function in apiModules always throws is named the same way there, with no stand-in marker in it', async () => {
+  const module = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    "import session from 'auth-lib';",
+    'export const moduleSave = ({ data }: { data: Record<string, unknown> }) => {',
+    '  if (session) throw new Error(`no session for ${session}`);',
+    "  return executeRequest({ endpoint: { method: 'POST', path: '/save' }, url: '/save', body: { name: data.name } });",
+    '};',
+    '',
+  ].join('\n');
+  const map = await build(fixtureCopy({ ...WITH_BODY, apiModules: ['invoices/api/inputs.ts'] }, { 'invoices/api/inputs.ts': module }));
+  assert.equal(map.apiFunctions.moduleSave.inputsUnknown, 'throws the same error whatever it is given: no session for {?}');
+  assert.equal(map.apiFunctions.moduleSave.inputs, undefined);
+});
+
 test('an API function that sends a request with fetch rather than requestFunction says its input keys are unknown', async () => {
   const module = [
     'export const a = ({ data }: { data: Record<string, unknown> }) =>',
@@ -1230,6 +1277,26 @@ test('a file whose run stops outside any function leaves its functions with the 
   assert.equal(map.apiFunctions.a.inputs, undefined);
   const result = spawnSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
+});
+
+test('a file whose run stops outside any function leaves only its own functions with the input keys unknown, and the files listed after it in apiModules still give the input keys of theirs', async () => {
+  // 첫 파일은 어느 함수도 도는 중이 아닌 자리에서 워커를 멈추고, 둘째 파일은 요청에 실리는 인자를 읽는다.
+  const stopping = "export const a = new Proxy({}, { ownKeys: () => { process.exit(1); return []; } });\n";
+  const later = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    'export const laterSave = ({ data }: { data: Record<string, unknown> }) =>',
+    "  executeRequest({ endpoint: { method: 'POST', path: '/save' }, url: '/save', body: { name: data.name } });",
+    '',
+  ].join('\n');
+  const configFile = fixtureCopy({ ...WITH_BODY, apiModules: ['invoices/api/stops.ts', 'invoices/api/inputs.ts'] }, {
+    'invoices/api/stops.ts': stopping,
+    'invoices/api/inputs.ts': later,
+  });
+  const map = await build(configFile);
+  assert.equal(map.apiFunctions.a.inputsUnknown, 'the run stopped outside any function');
+  assert.equal(map.apiFunctions.a.inputs, undefined);
+  assert.deepEqual(map.apiFunctions.laterSave.inputs, { sent: [['0', 'data', 'name']], spread: [] });
+  assert.equal(map.apiFunctions.laterSave.inputsUnknown, undefined);
 });
 
 // 함수가 몇 번 불렸는지 전역 카운터로 세고, 그것을 요청 주소에 실어 알리는 함수를 둔다.

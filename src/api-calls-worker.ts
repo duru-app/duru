@@ -20,7 +20,6 @@ export interface WorkerData {
   mark: string;
   markNumber: number;
   inputsOnly?: boolean;
-  // requestFunction 이 있을 때만 인자가 요청에 실린 자리를 잰다.
   readInputs?: boolean;
   exports?: Record<string, Record<string, string>>;
 }

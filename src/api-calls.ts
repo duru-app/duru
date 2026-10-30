@@ -244,8 +244,8 @@ export async function apiModuleInputs(config: any, resolve: ImportResolver['reso
       }
     }
     copier.finish();
-    // 워커는 내보낸 이름으로 알리므로, 지역 이름과 내보낸 이름 둘 다로 찾는다.
-    const staticName = new Map([...apiOf].flatMap(([file, names]) => [...names].flatMap(([name, value]) => [[`${file}\n${value}`, name], [`${file}\n${name}`, name]] as [string, string][])));
+    // 워커는 내보낸 이름으로 알린다.
+    const staticName = new Map([...apiOf].flatMap(([file, names]) => [...names.keys()].map((name) => [`${file}\n${name}`, name] as [string, string])));
     // 실행이 멈출 때 어느 파일을 돌고 있었는지 알기 위해 마지막으로 본 파일을 둔다.
     let lastFile: string | null = null;
     const read = (m: ReportedMessage) => {
@@ -254,7 +254,7 @@ export async function apiModuleInputs(config: any, resolve: ImportResolver['reso
       if (m.type !== 'called') return;
       const name = m.member === null || m.member === undefined ? staticName.get(`${m.file}\n${m.exportName}`) : apiOf.get(m.file)?.has(m.member) ? m.member : undefined;
       if (name === undefined) return;
-      put(m.file, name, { ...(m.inputs && { inputs: m.inputs }), ...(m.inputsUnknown && { inputsUnknown: m.inputsUnknown }) });
+      put(m.file, name, { ...(m.inputs && { inputs: m.inputs }), ...(m.inputsUnknown && { inputsUnknown: unmarked(firstLine(copier.rename(m.inputsUnknown))) }) });
     };
     const gaveUp = new Map<string, { file: string; reason: string }>();
     const retry = new Map<string, { file: string; reason: string }>();
@@ -267,12 +267,14 @@ export async function apiModuleInputs(config: any, resolve: ImportResolver['reso
       });
       if (outcome.done) break;
       if (!outcome.unit) {
-        // 어느 함수에도 속하지 않는 자리에서 멈췄으면 그 파일의 남은 함수는 모름으로 둔다.
+        // 어느 함수에도 속하지 않는 자리에서 멈췄으면 그 파일의 남은 함수는 모름으로 두고 그 파일만 건너뛴다.
         for (const [file, names] of apiOf) {
           if (lastFile !== null && file !== lastFile) continue;
           for (const name of names.keys()) if (!found.has(`${file}\n${name}`)) put(file, name, { inputsUnknown: 'the run stopped outside any function' });
         }
-        break;
+        if (lastFile === null || skip.has(`load\n${lastFile}`)) break;
+        skip.add(`load\n${lastFile}`);
+        continue;
       }
       skip.add(outcome.unit);
       const [kind, file] = outcome.unit.split('\n');
@@ -417,7 +419,7 @@ export async function recordApiCalls(config: any, resolve: ImportResolver['resol
         endpoints,
         ...(c.error && { error: unmarked(firstLine(copier.rename(c.error.message))) }),
         ...(c.inputs && { inputs: c.inputs }),
-        ...(c.inputsUnknown && { inputsUnknown: c.inputsUnknown }),
+        ...(c.inputsUnknown && { inputsUnknown: unmarked(firstLine(copier.rename(c.inputsUnknown))) }),
       };
       exported(key, c.file, c.exportName);
       const sentBody = new Set(c.requests.filter((r) => r.body).map((r) => requestOf(r, server)).map((r) => `${r.method} ${r.url}`));
