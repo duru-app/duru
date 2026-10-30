@@ -14,6 +14,7 @@ import { DEPTHS } from './test-links.ts';
 
 export const MARK_STATUSES = ['needs-more', 'missing', 'fine'];
 export const CASE_STATUSES = ['needed', 'not-needed'];
+export const INPUT_STATUSES = ['not-sent', 'to-check'];
 
 interface MarkTarget {
   story?: string;
@@ -26,6 +27,7 @@ interface MarkTarget {
   depth?: string;
   case?: string;
   part?: Part;
+  input?: { fn: string; key: string };
 }
 
 type OrderStep = { step: number } & StepFields;
@@ -75,6 +77,7 @@ interface NewMark {
 interface MarkableMap {
   screens: (PartScreen & { codeHash?: string })[];
   calls?: { id: string; options?: { key: string }[]; codeHash?: string }[];
+  inputsToCheck?: { screen: string; fn: string; key: string }[];
 }
 
 export interface MarkEntry {
@@ -218,6 +221,14 @@ function caseTarget(target: MarkTarget) {
   return { node: target.node, case: target.case };
 }
 
+function inputTarget(target: MarkTarget) {
+  if (typeof target.node !== 'string' || !target.node) throw new Error('an input mark needs a node ID');
+  const input = (isPlainObject(target.input) ? target.input : {}) as Record<string, unknown>;
+  if (!isText(input.fn) || !isText(input.key)) throw new Error('an input mark needs an API function and a key');
+  if (['option', 'depth', 'case', 'part'].some((k) => (target as Record<string, unknown>)[k] !== undefined)) throw new Error('an input mark takes no option, depth, case or part');
+  return { node: target.node, input: { fn: input.fn, key: input.key } };
+}
+
 function partTarget(target: MarkTarget) {
   if (typeof target.node !== 'string' || !target.node) throw new Error('a part mark needs a node ID');
   if (target.option !== undefined || target.depth !== undefined || target.case !== undefined) throw new Error('a part mark takes no option, depth or case');
@@ -248,7 +259,7 @@ function linkPartKey(key: unknown): LinkKey {
   return byConditions ? { from, conditions: sorted(conditions as string[]) } : { from, guards: sorted(guards as string[]) };
 }
 
-const checkTarget = (target: MarkTarget | undefined): MarkTarget => (target?.candidate !== undefined ? candidateTarget(target) : target?.screens !== undefined ? orderTarget(target) : target?.story !== undefined ? storyTarget(target) : target?.part !== undefined ? partTarget(target) : target?.case !== undefined ? caseTarget(target) : nodeTarget(target));
+const checkTarget = (target: MarkTarget | undefined): MarkTarget => (target?.candidate !== undefined ? candidateTarget(target) : target?.screens !== undefined ? orderTarget(target) : target?.story !== undefined ? storyTarget(target) : target?.input !== undefined ? inputTarget(target) : target?.part !== undefined ? partTarget(target) : target?.case !== undefined ? caseTarget(target) : nodeTarget(target));
 
 export const targetsOf = (m: { target?: MarkTarget; targets?: MarkTarget[] }) => m.targets ?? (m.target ? [m.target] : []);
 
@@ -259,6 +270,7 @@ export function addMark(dir: string, { target, targets, status, note, rule, auth
   if (all.length !== 1) {
     if (hasStatus) throw new Error('a status takes exactly one target; a comment on several targets or none takes no status');
     if (all.some((t) => t.case !== undefined)) throw new Error('a case mark takes exactly one target');
+    if (all.some((t) => t.input !== undefined)) throw new Error('an input mark takes exactly one target');
     if (new Set(all.map(targetKey)).size !== all.length) throw new Error('a mark names the same target twice');
     if (all.filter((t) => t.screens !== undefined).length > 1) throw new Error('a mark takes one screen order at most');
   }
@@ -267,11 +279,11 @@ export function addMark(dir: string, { target, targets, status, note, rule, auth
   if (checked.part && hasStatus) throw new Error('a comment on a part of a screen or call takes no status; put the status on the screen or call itself');
   if (checked.candidate !== undefined && hasStatus) throw new Error('a comment on a story candidate takes no status; accept it as a story to give it one');
   if (checked.screens !== undefined && hasStatus) throw new Error('a comment on a screen order takes no status');
-  const statuses = checked.case !== undefined ? CASE_STATUSES : MARK_STATUSES;
-  const comment = !hasStatus && checked.case === undefined;
+  const statuses = checked.case !== undefined ? CASE_STATUSES : checked.input !== undefined ? INPUT_STATUSES : MARK_STATUSES;
+  const comment = !hasStatus && checked.case === undefined && checked.input === undefined;
   if (comment && (typeof note !== 'string' || !note.trim())) throw new Error('a comment needs a note');
   if (!comment && !statuses.includes(status!)) {
-    throw new Error(`unknown ${checked.case !== undefined ? 'case mark' : 'mark'} status "${status}" (expected one of ${statuses.join(', ')})`);
+    throw new Error(`unknown ${checked.case !== undefined ? 'case mark' : checked.input !== undefined ? 'input mark' : 'mark'} status "${status}" (expected one of ${statuses.join(', ')})`);
   }
   if (rule !== undefined && (checked.case === undefined || status !== 'not-needed')) throw new Error('only a not-needed case mark names the rule it takes its target out of');
   if (of !== undefined && (checked.case === undefined || !hasStatus || via !== undefined)) throw new Error('only a person\'s case mark names the agent mark it answers');
@@ -286,7 +298,7 @@ export function addMark(dir: string, { target, targets, status, note, rule, auth
     date: now.toISOString(),
     ...(via !== undefined && { via }),
     ...(of !== undefined && { of }),
-    ...(codeHash !== undefined && checked.node !== undefined && { codeHash }),
+    ...(codeHash !== undefined && checked.node !== undefined && checked.input === undefined && { codeHash }),
   };
   saveMark(dir, mark);
   return mark;
@@ -312,7 +324,7 @@ const targetKey = (t: MarkTarget) => (t.candidate !== undefined
   ? `order(${orderKey(t.screens)})`
   : t.story !== undefined
   ? [`story(${t.story})`, t.part && `part:${t.part.kind}:${JSON.stringify(t.part.key)}`].filter(Boolean).join(' ')
-  : [t.node, t.option && `${t.option.key}=${t.option.value}`, t.depth, t.case && `case:${t.case}`, t.part && `part:${t.part.kind}:${JSON.stringify(t.part.key)}`].filter(Boolean).join(' '));
+  : [t.node, t.option && `${t.option.key}=${t.option.value}`, t.depth, t.case && `case:${t.case}`, t.part && `part:${t.part.kind}:${JSON.stringify(t.part.key)}`, t.input && `input:${t.input.fn}:${t.input.key}`].filter(Boolean).join(' '));
 
 export function classifyMarks(marks: Mark[], map: MarkableMap, storyIds: string[] = [], caseKinds: string[] = [], tests: PartContext['tests'] = {}, roleGuards: Record<string, string[]> = {}, candidateKeys: string[] = [], storyPaths: StoryPath[] = []): { attached: MarkEntry[]; detached: MarkEntry[] } {
   const nodes = new Map<string, Set<string>>([
@@ -325,7 +337,9 @@ export function classifyMarks(marks: Mark[], map: MarkableMap, storyIds: string[
   const paths = new Map(storyPaths.map((p) => [p.id, p]));
   const screenIds = new Set(map.screens.map((s) => s.id));
   const hashes = nodeHashes(map);
-  const isAttached = (t: MarkTarget) => (t.candidate !== undefined
+  const isAttached = (t: MarkTarget) => (t.input !== undefined
+    ? (map.inputsToCheck ?? []).some((i) => i.screen === t.node && i.fn === t.input!.fn && i.key === t.input!.key)
+    : t.candidate !== undefined
     ? candidates.has(t.candidate)
     : t.screens !== undefined
     ? t.screens.every((id) => screenIds.has(id))
@@ -357,11 +371,21 @@ export function classifyMarks(marks: Mark[], map: MarkableMap, storyIds: string[
       : target.story !== undefined ? path && locateStoryPart(target.part, path, map.screens)
       : nodes.has(target.node!) ? locatePart(target, { tests, screens: map.screens, roleGuards }) : null;
     const current = history.find((m) => m.status !== undefined) ?? null;
-    const changed = current !== null && target.case === undefined && target.node !== undefined && differs(current.codeHash, hashes.get(target.node));
+    const changed = current !== null && target.case === undefined && target.input === undefined && target.node !== undefined && differs(current.codeHash, hashes.get(target.node));
     const entry = { key, target, current, history, ...(target.part && { where: where ?? null }), ...(changed && { codeChanged: true as const }) };
     // 읽지 못한 스토리 파일의 단계는 맞춰 볼 수 없으므로, 스토리 코멘트처럼 「목록 밖 스토리 코멘트」에 남긴다.
     const located = !target.part || where || (target.story !== undefined && !path);
     (isAttached(target) && located ? attached : detached).push(entry);
   }
   return { attached, detached };
+}
+
+// 화면·API 함수·키마다 가장 나중 상태가 not-sent 인 것. 키는 JSON.stringify([screen, fn, key]).
+export function notSentInputs(marks: Mark[]): Set<string> {
+  const last = new Map<string, string>();
+  for (const m of [...marks].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))) {
+    if (m.status === undefined) continue;
+    for (const t of targetsOf(m)) if (t.input !== undefined) last.set(JSON.stringify([t.node, t.input.fn, t.input.key]), m.status);
+  }
+  return new Set([...last].filter(([, status]) => status === 'not-sent').map(([key]) => key));
 }

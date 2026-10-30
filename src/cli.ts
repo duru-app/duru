@@ -13,7 +13,7 @@ import { MOST_ADDRESSES } from './address-functions.ts';
 import { UNKNOWN } from './client.ts';
 import { buildMap, readsAnAddress, sendingParts, sentAtAppStart, unreadSites } from './map.ts';
 import { applyJudgments, judgmentFile, loadJudgments } from './judgments.ts';
-import { addReply } from './marks.ts';
+import { addReply, loadMarks, notSentInputs } from './marks.ts';
 import { checkNeeds } from './needs.ts';
 import { CANDIDATES } from './stories.ts';
 import { SOURCE_SYNTAX_ERROR } from './parse.ts';
@@ -326,8 +326,11 @@ if (command === 'tasks') {
   }
   for (const [name, fn] of Object.entries<any>(map.apiFunctions)) if (fn.error && !fn.endpoints.length) console.log(`  api method ${name} ← ${fn.file ?? '?'}${fn.line ? `:${fn.line}` : ''}: ${fn.error}`);
   if (map.inputsToCheck) {
-    console.log(`input keys to check ${map.inputsToCheck.length}`);
-    for (const { screen, fn, key, file, line } of map.inputsToCheck) console.log(`  ${screen} ${fn} ${key} ${file}:${line}`);
+    const marked = notSentInputs(loadMarks(config.marksDir));
+    const toCheck = map.inputsToCheck.filter(({ screen, fn, key }) => !marked.has(JSON.stringify([screen, fn, key])));
+    console.log(`input keys to check ${toCheck.length}`);
+    for (const { screen, fn, key, file, line } of toCheck) console.log(`  ${screen} ${fn} ${key} ${file}:${line}`);
+    if (toCheck.length < map.inputsToCheck.length) console.log(`input keys marked as not sent ${map.inputsToCheck.length - toCheck.length}`);
     const reasons = new Map<string, number>();
     for (const { reason } of map.unknownInputs ?? []) reasons.set(reason, (reasons.get(reason) ?? 0) + 1);
     console.log(`input keys unknown ${map.unknownInputs?.length ?? 0}${reasons.size ? `: ${[...reasons].map(([reason, n]) => `${n} ${reason}`).join('; ')}` : ''}`);

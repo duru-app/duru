@@ -5150,6 +5150,20 @@ by moving the browser, get neither. `ajaxWorkspaceDocumentBffUpdateSigner` sends
 `.cellPhone`, and `0.data.signer.attribute.enabledAuth`, `.authType`, `.authPassword`, `.authPasswordHint`,
 `.notificationTypes`, `.notificationContexts`, and not `signer.attribute.pkiSignType`, which it never copies.
 
+**A person's "not sent on purpose" is a mark on the screen, the API function and the key.**
+A key a screen writes and the API function does not carry stays in the map's `inputsToCheck`, and the review page
+writes a mark with the screen as its node and the function and key in `input`, in the same marks folder as the other
+decisions. `rebuild` leaves a line a person marked `not-sent` out of its `input keys to check` list and counts those
+lines in an `input keys marked as not sent` line under it, while the map keeps the key; marking it `to-check` brings
+the line back.
+Alternatives compared:
+- A list of keys in the config file: the review page cannot write it as a person looks at a row, so a person would
+  have to edit the config for each key and say where it is read from.
+- A mark on the file and line that wrote the key: a few lines moved in the code drop the mark, though the screen, the
+  function and the key are the same.
+Reason: the mark is kept with the other decisions, merges in git without clashes like them, and stays on the key when
+its lines move; a key the map no longer lists leaves the mark as a mark outside the map.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

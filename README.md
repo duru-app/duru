@@ -563,6 +563,9 @@ listing the places whose value the source does not show in full.
   and passes to an API function, which the function's request does not carry. Each one follows on its own
   indented line, `<screen> <API function> <key> <file>:<line>`, with the place the key is written. The map lists
   them under `inputsToCheck`; they are worth a test of what the screen sends and what reaches the server.
+- `input keys marked as not sent N` — printed under that line when the review page marked some of its keys
+  「보내지 않는 게 맞음」: the number of lines that were taken out of the list. The mark stays in the marks folder,
+  and the map keeps those keys under `inputsToCheck`; taking the mark back brings the lines back.
 - `input keys unknown N: N <reason>; …` — printed with the line above: the calls of an API function whose screen
   argument traces to a state whose keys duru could not read, each with the reason, grouped by reason with the
   count of calls for each. The map lists them under `unknownInputs` with their `callSite`; nothing about the input
@@ -1078,7 +1081,12 @@ screen's tests by depth and its API calls, with
 a row per option value. The table holds the calls the screen's own code sends; the calls it gets only from a component
 around or beside its route (`layout`) and those of `appWide` are folded below it under 「공통 N」, with the same
 columns, and stay open or folded on other screens until toggled. Choosing such a call shows, after where this screen
-calls it, 「앱 시작 때 부르는 곳」 for an `appWide` call. A screen that opens only under a role or a setting carries 「역할」 or 「설정」 next to its
+calls it, 「앱 시작 때 부르는 곳」 for an `appWide` call. With `requestFunction` set, 「입력 키 N」 follows the call
+table: the state keys the screen writes and hands to an API function that does not send them (see `input keys to
+check`), one row per function and key with every place it is written. ✓ marks a row 「보내지 않는 게 맞음」, which
+takes it out of the `input keys to check` list of the next `rebuild` and folds it under 「확인함 N」, where ✕ takes
+the mark back and puts the row in the list again; a folded 「모름 N」 lists the calls of the screen whose keys could
+not be read, with the reason. A screen that opens only under a role or a setting carries 「역할」 or 「설정」 next to its
 name, as its line in the flow does. Under the tables, 「화면 정보」 starts folded, with the number of links into the
 screen other than a menu's, links out of it from its own code and settings it reads on its line. Opened, it says under 「접근 조건」 what it takes to open
 the screen, then shows the tests of each role and setting case by depth under 「관점별 테스트」, the links into it

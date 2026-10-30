@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { addMark, addReply, classifyMarks, loadMarks } from '../src/marks.ts';
+import { addMark, addReply, classifyMarks, loadMarks, notSentInputs } from '../src/marks.ts';
 
 const MAP = { screens: [{ id: '/home#Home' }, { id: '/lab#Lab' }], calls: [{ id: 'GET:/api/v1/document/list' }] };
 
@@ -250,6 +250,38 @@ test('a case mark is written with only its node and kind in its target, in the n
   });
 });
 
+test('an input mark is written with its screen in the node and its API function and key in the input, and no code hash is kept for it', () => {
+  withMarksDir((dir: string) => {
+    const mark = addMark(dir, { target: { node: '/home#Home', input: { fn: 'ajaxUpdateSigner', key: 'signer.attribute.authNumber' } }, status: 'not-sent', author: 'a', codeHash: 'abc123' }, new Date('2026-10-02T01:00:00Z'));
+    assert.deepEqual(mark.target, { node: '/home#Home', input: { fn: 'ajaxUpdateSigner', key: 'signer.attribute.authNumber' } });
+    assert.deepEqual(Object.keys(mark.target!), ['node', 'input']);
+    assert.equal(mark.codeHash, undefined);
+    assert.deepEqual(fs.readdirSync(dir), ['_home#Home']);
+  });
+});
+
+test('an input mark stays on its screen while the map lists that screen, API function and key, and is detached once the map leaves the key out', () => {
+  withMarksDir((dir: string) => {
+    addMark(dir, { target: { node: '/home#Home', input: { fn: 'ajaxList', key: 'keyword' } }, status: 'not-sent', author: 'a' });
+    const withKey = { screens: MAP.screens, inputsToCheck: [{ screen: '/home#Home', fn: 'ajaxList', key: 'keyword' }] };
+    assert.deepEqual(classifyMarks(loadMarks(dir), withKey).attached.map((m) => m.key), ['/home#Home input:ajaxList:keyword']);
+    const withoutKey = { screens: MAP.screens, inputsToCheck: [{ screen: '/home#Home', fn: 'ajaxList', key: 'status' }] };
+    assert.deepEqual(classifyMarks(loadMarks(dir), withoutKey).detached.map((m) => m.key), ['/home#Home input:ajaxList:keyword']);
+  });
+});
+
+test('the not sent inputs are the keys whose latest input mark is not sent, and marking one to check again takes it out', () => {
+  withMarksDir((dir: string) => {
+    const target = { node: '/home#Home', input: { fn: 'ajaxList', key: 'keyword' } };
+    addMark(dir, { target, status: 'not-sent', author: 'a' }, new Date('2026-10-02T01:00:00Z'));
+    assert.deepEqual([...notSentInputs(loadMarks(dir))], [JSON.stringify(['/home#Home', 'ajaxList', 'keyword'])]);
+    addMark(dir, { target, status: 'to-check', author: 'b' }, new Date('2026-10-02T02:00:00Z'));
+    assert.deepEqual([...notSentInputs(loadMarks(dir))], []);
+    addMark(dir, { target, status: 'not-sent', author: 'a' }, new Date('2026-10-02T03:00:00Z'));
+    assert.deepEqual([...notSentInputs(loadMarks(dir))], [JSON.stringify(['/home#Home', 'ajaxList', 'keyword'])]);
+  });
+});
+
 test('a case mark whose kind is gone from the config, or whose node is gone from the map, is detached', () => {
   withMarksDir((dir: string) => {
     addMark(dir, { target: { node: '/home#Home', case: 'boundary' }, status: 'needed', author: 'a' });
@@ -261,6 +293,8 @@ test('a case mark whose kind is gone from the config, or whose node is gone from
     assert.deepEqual(classifyMarks(loadMarks(dir), MAP).attached, []);
   });
 });
+
+const INPUT = { fn: 'ajaxList', key: 'keyword' };
 
 for (const [name, input] of [
   ['an unknown status', { target: { node: '/home#Home' }, status: 'done', author: 'a' }],
@@ -284,6 +318,15 @@ for (const [name, input] of [
   ['a case with no node', { target: { case: 'boundary' }, status: 'needed', author: 'a' }],
   ['a case kind outside the name rule', { target: { node: '/home#Home', case: 'two words' }, status: 'needed', author: 'a' }],
   ['a case kind that is not text', { target: { node: '/home#Home', case: 7 }, status: 'needed', author: 'a' }],
+  ['an input target and no status', { target: { node: '/home#Home', input: INPUT }, author: 'a' }],
+  ['an input target with a mark status', { target: { node: '/home#Home', input: INPUT }, status: 'missing', author: 'a' }],
+  ['an input target with a case status', { target: { node: '/home#Home', input: INPUT }, status: 'needed', author: 'a' }],
+  ['an input target and an option', { target: { node: '/home#Home', input: INPUT, option: { key: 'withHistory', value: true } }, status: 'not-sent', author: 'a' }],
+  ['an input target and a depth', { target: { node: '/home#Home', input: INPUT, depth: 'ui' }, status: 'not-sent', author: 'a' }],
+  ['an input target and a case', { target: { node: '/home#Home', input: INPUT, case: 'empty' }, status: 'not-sent', author: 'a' }],
+  ['an input target without a node', { target: { input: INPUT }, status: 'not-sent', author: 'a' }],
+  ['an input target without an API function', { target: { node: '/home#Home', input: { key: 'signer.name' } }, status: 'not-sent', author: 'a' }],
+  ['an input target without a key', { target: { node: '/home#Home', input: { fn: 'ajaxList' } }, status: 'not-sent', author: 'a' }],
 ]) {
   test(`a mark with ${name} is refused and nothing is written`, () => {
     withMarksDir((dir: string) => {
@@ -667,6 +710,7 @@ test('a mark on several targets or none takes no status, no case, and no target 
       [{ targets: [{ node: '/lab#Lab' }, { node: '/home#Home' }], status: 'missing', note: 'x' }, /a status takes exactly one target; a comment on several targets or none takes no status/],
       [{ targets: [], status: 'fine' }, /a status takes exactly one target/],
       [{ targets: [{ node: '/lab#Lab', case: 'empty' }, { node: '/home#Home' }], note: 'x' }, /a case mark takes exactly one target/],
+      [{ targets: [{ node: '/lab#Lab', input: INPUT }, { node: '/home#Home' }], note: 'x' }, /an input mark takes exactly one target/],
       [{ targets: [{ node: '/lab#Lab' }, { node: '/lab#Lab' }], note: 'x' }, /a mark names the same target twice/],
       [{ targets: [], note: ' ' }, /a comment needs a note/],
       [{ targets: { node: '/lab#Lab' }, note: 'x' }, /mark targets must be a list/],

@@ -258,7 +258,7 @@ function caseSection(node) {
           onclick: () => (ruled ? askTakeOut(node.id, kind, `${scope} .case-kinds button[data-kind="${kind}"]`) : pickCase({ node: node.id, case: kind }, on ? 'not-needed' : 'needed')),
         }, text);
       })),
-      state.caseError?.node === node.id ? h('p', { class: 'error' }, state.caseError.message) : null,
+      state.caseError?.node === node.id && !state.caseError.input ? h('p', { class: 'error' }, state.caseError.message) : null,
     ] : null);
 }
 
@@ -299,14 +299,14 @@ async function saveCase(target, post) {
     id = await post();
   } catch (err) {
     state.caseSaving = false;
-    state.caseError = { node: target.node, message: `「${targetName(target)}」 코멘트를 저장하지 못했습니다: ${err.message}` };
+    state.caseError = { node: target.node, input: target.input !== undefined, message: `「${targetName(target)}」 코멘트를 저장하지 못했습니다: ${err.message}` };
     if (!state.ended) renderCenter();
     return null;
   }
   try {
     await load();
   } catch (err) {
-    state.caseError = { node: target.node, message: `「${targetName(target)}」 코멘트는 저장했지만 다시 읽지 못했습니다: ${err.message}` };
+    state.caseError = { node: target.node, input: target.input !== undefined, message: `「${targetName(target)}」 코멘트는 저장했지만 다시 읽지 못했습니다: ${err.message}` };
   }
   state.caseSaving = false;
   render();

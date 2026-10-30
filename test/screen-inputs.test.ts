@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { loadConfig } from '../src/config.ts';
+import { addMark } from '../src/marks.ts';
 import { buildMap } from '../src/map.ts';
 import type { ScreenMap } from '../src/map.ts';
 
@@ -52,6 +53,47 @@ export const ajaxUpdateSigner = async ({ id, data }) => {
 export const ajaxList = async ({ data }) => Ajax.request({ info: Option.REST_API.MEMBER.LIST, data: { status: data.status } });
 
 export const ajaxSpread = async ({ data }) => Ajax.request({ info: Option.REST_API.MEMBER.LIST, data: { ...data } });
+`;
+
+// 검색어와 상태를 함께 상태에 쓰지만, API 함수는 상태만 보낸다.
+const SEARCH = `import { useState } from 'react';
+import { ajaxList } from '_ajax/AjaxFunc';
+
+export default function Search() {
+  const [search, setSearch] = useState({ keyword: '', status: '' });
+
+  const handleSearch = (type, value) => {
+    setSearch({ ...search, [type]: value });
+  };
+
+  const list = async () => {
+    await ajaxList({ data: search });
+  };
+
+  return (
+    <div>
+      <input onChange={(e) => handleSearch('keyword', e.target.value)} />
+      <input onChange={(e) => handleSearch('status', e.target.value)} />
+      <button onClick={list}>list</button>
+    </div>
+  );
+}
+`;
+
+// PKI 키 목록에 없는 키까지 상태에 쓰는 자식. 부모의 API 함수는 그 키를 옮기지 않는다.
+const SIGNER_PKI_AUTH_NUMBER = `export default function SignerPki({ data, onChange }) {
+  const handleChange = (type, value) => {
+    onChange({ ...data, [type]: value });
+  };
+
+  return (
+    <div>
+      <button onClick={() => handleChange('signer.attribute.pkiSignType', 'KICA')}>pki</button>
+      <button onClick={() => handleChange('signer.attribute.authNumber', '1234')}>auth</button>
+      <input onChange={(e) => handleChange('signer.name', e.target.value)} />
+    </div>
+  );
+}
 `;
 
 // 실제 화면처럼 부모가 자식이 넘긴 키를 상태에 합치고, 저장할 때 그 상태를 API 함수에 넘긴다.
@@ -166,32 +208,7 @@ test('a key a child component writes into the parent state and that the API func
 });
 
 test('a key the screen writes into its search state, which the API function sends only one of, is listed to check', async () => {
-  const map = await build(fixtureCopy({
-    ...base,
-    'components/Search.js': `import { useState } from 'react';
-import { ajaxList } from '_ajax/AjaxFunc';
-
-export default function Search() {
-  const [search, setSearch] = useState({ keyword: '', status: '' });
-
-  const handleSearch = (type, value) => {
-    setSearch({ ...search, [type]: value });
-  };
-
-  const list = async () => {
-    await ajaxList({ data: search });
-  };
-
-  return (
-    <div>
-      <input onChange={(e) => handleSearch('keyword', e.target.value)} />
-      <input onChange={(e) => handleSearch('status', e.target.value)} />
-      <button onClick={list}>list</button>
-    </div>
-  );
-}
-`,
-  }));
+  const map = await build(fixtureCopy({ ...base, 'components/Search.js': SEARCH }));
   const calls = map.screens.find((s) => s.id.includes('Search'))!.apiCalls.filter((c) => c.fn === 'ajaxList');
   assert.equal(calls.length, 1);
   assert.deepEqual(map.inputsToCheck!.filter((k) => k.fn === 'ajaxList').map((k) => k.key), ['keyword']);
@@ -314,4 +331,18 @@ test('the rebuild output has one line counting the keys to check with a line per
   assert.ok(lines.some((l) => /^input keys to check \d+$/.test(l)), output);
   assert.ok(lines.some((l) => /^ {2}\S+ ajaxUpdateSigner signer\.attribute\.pkiSignType components\/SignerEdit\.js:\d+$/.test(l)), output);
   assert.ok(lines.some((l) => /^input keys unknown \d+.*spread/.test(l)), output);
+});
+
+test('a key a person marked as not sent in the marks folder leaves the input keys to check on the next rebuild, and a line under the list counts the lines taken out', () => {
+  const configFile = fixtureCopy({ ...base, 'components/SignerPki.js': SIGNER_PKI_AUTH_NUMBER, 'components/Search.js': SEARCH }, { requestFunction: REQUEST, marksDir: 'input-marks' });
+  const rebuild = () => execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+  const first = rebuild();
+  assert.match(first, /^ {2}\S+ ajaxUpdateSigner signer\.attribute\.authNumber components\/SignerEdit\.js:\d+$/m);
+  assert.match(first, /^ {2}\S+ ajaxList keyword components\/Search\.js:\d+$/m);
+  const searchScreen = first.split('\n').find((l) => / ajaxList keyword components\/Search\.js:/.test(l))!.trim().split(' ')[0];
+  addMark(path.join(path.dirname(configFile), 'input-marks'), { target: { node: searchScreen, input: { fn: 'ajaxList', key: 'keyword' } }, status: 'not-sent', author: 'tester' });
+  const second = rebuild();
+  assert.doesNotMatch(second, /^ {2}\S+ ajaxList keyword /m);
+  assert.match(second, /^input keys marked as not sent 1$/m);
+  assert.match(second, /^ {2}\S+ ajaxUpdateSigner signer\.attribute\.authNumber components\/SignerEdit\.js:\d+$/m);
 });

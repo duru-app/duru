@@ -165,7 +165,8 @@ function renderScreenRight(info, dock) {
   fill(dock, markForm(state.target, 'draft', targetLabelOf(state.target, call)));
 }
 
-const talkIn = (marks, target) => marks.filter((m) => !isPick(m) && (target.candidate !== undefined ? m.target.candidate === target.candidate
+// 입력 키 표시는 화면의 「입력 키」 표에 나오므로 화면 대화에 싣지 않는다.
+const talkIn = (marks, target) => marks.filter((m) => !isPick(m) && m.target.input === undefined && (target.candidate !== undefined ? m.target.candidate === target.candidate
   : target.screens !== undefined ? m.key === keyOf(target)
   : target.story !== undefined ? m.target.story === target.story : m.target.story === undefined && m.target.node === target.node));
 const talkOf = (target) => talkIn([...state.data.marks.attached, ...state.data.marks.detached], target);
