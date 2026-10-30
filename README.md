@@ -575,8 +575,7 @@ listing the places whose value the source does not show in full.
 - `input calls not read N on M screens` — printed with the lines above, also when N is 0: the calls of an API
   function whose request body carries keys, whose first argument comes from something duru does not read as
   screen state, such as a class component's state, a parameter or a form library, counted over the screens that
-  hold them. A key a function puts only in the address of its request does not make it such a function. The map
-  lists them under `unreadInputCalls`, one entry per screen; nothing can be said about whether
+  hold them. The map lists them under `unreadInputCalls`, one entry per screen; nothing can be said about whether
   the screen values of those calls are sent.
 - `input keys not checked: give body in requestFunction, the place of the request body among the values the request
   function is given, such as "body": "0.data"` — printed in place of the input key lines when `requestFunction`
