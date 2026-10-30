@@ -1178,3 +1178,70 @@ test('without requestFunction the same files give no input keys', async () => {
   assert.equal(map.apiFunctions.signerSave.inputs, undefined);
   assert.equal(map.apiFunctions.signerSave.inputsUnknown, undefined);
 });
+
+test('a function exported under another name gets its input keys, found by the name it is exported as', async () => {
+  const module = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    'const b = ({ data }: { data: Record<string, unknown> }) =>',
+    "  executeRequest({ endpoint: { method: 'POST', path: '/save' }, url: '/save', body: { name: data.name } });",
+    'export const a = b;',
+    '',
+  ].join('\n');
+  const map = await build(fixtureCopy({ ...WITH_BODY, apiModules: ['invoices/api/inputs.ts'] }, { 'invoices/api/inputs.ts': module }));
+  assert.deepEqual(map.apiFunctions.a.inputs, { sent: [['0', 'data', 'name']], spread: [] });
+});
+
+test('an API function that sends a request with fetch rather than requestFunction says its input keys are unknown', async () => {
+  const module = [
+    'export const a = ({ data }: { data: Record<string, unknown> }) =>',
+    "  fetch('/save', { method: 'POST', body: JSON.stringify({ name: data.name }) });",
+    '',
+  ].join('\n');
+  const map = await build(fixtureCopy({ ...WITH_BODY, apiModules: ['invoices/api/inputs.ts'] }, { 'invoices/api/inputs.ts': module }));
+  assert.equal(map.apiFunctions.a.inputsUnknown, 'sent a request outside requestFunction');
+  assert.equal(map.apiFunctions.a.inputs, undefined);
+});
+
+test('a file whose run stops outside any function leaves its functions with the input keys unknown rather than stopping the build', async () => {
+  // 파일을 불러온 뒤, 어느 함수도 도는 중이 아닌 자리에서 워커를 멈춘다.
+  const module = "export const a = new Proxy({}, { ownKeys: () => { process.exit(1); return []; } });\n";
+  const configFile = fixtureCopy({ ...WITH_BODY, apiModules: ['invoices/api/inputs.ts'] }, { 'invoices/api/inputs.ts': module });
+  const map = await build(configFile);
+  assert.equal(map.apiFunctions.a.inputsUnknown, 'the run stopped outside any function');
+  assert.equal(map.apiFunctions.a.inputs, undefined);
+  const result = spawnSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+// 함수가 몇 번 불렸는지 전역 카운터로 세고, 그것을 요청 주소에 실어 알리는 함수를 둔다.
+const COUNTER = [
+  'let calls = 0;',
+  'export const counted = () => fetch(`/count/${++calls}`);',
+  'export const seen = () => fetch(`/seen/${calls}`);',
+  '',
+].join('\n');
+const seenUrl = (map: ScreenMap) => map.apiFunctions.seen.endpoints.map((e) => e.url);
+
+test('without requestFunction a function that sends a request is called once, as it was before the input keys were read', async () => {
+  const map = await build(fixtureCopy({ calledApiModules: ['invoices/api/count.ts'], requestFunction: undefined }, { 'invoices/api/count.ts': COUNTER }));
+  assert.deepEqual(seenUrl(map), ['/seen/1']);
+});
+
+// fake 모양에서는 던지고 leaves 모양에서만 요청을 보낸다. 표지를 단 값으로는 다시 던지므로 withInputs 가 leaves 를 다시 시도한다.
+const LEAVES = [
+  'let calls = 0;',
+  'export const counted = ({ data }: { data: unknown }) => {',
+  '  calls += 1;',
+  "  if (calls === 1) throw new Error('no data value');",
+  "  if (calls > 2) throw new Error('called more than twice');",
+  '  return fetch(`/count/${calls}`);',
+  '};',
+  'export const seen = () => fetch(`/seen/${calls}`);',
+  '',
+].join('\n');
+
+test('a shape that was already tried is not tried again, so a function that sends with the leaves shape and fails with tagged values is called three times rather than four', async () => {
+  const map = await build(fixtureCopy({ ...CALLED, calledApiModules: ['invoices/api/leaves.ts', ...CALLED.calledApiModules] }, { 'invoices/api/leaves.ts': LEAVES }));
+  assert.equal(map.apiFunctions.counted.inputsUnknown, 'threw with tagged values: called more than twice');
+  assert.deepEqual(seenUrl(map), ['/seen/3']);
+});

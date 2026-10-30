@@ -244,8 +244,13 @@ export async function apiModuleInputs(config: any, resolve: ImportResolver['reso
       }
     }
     copier.finish();
-    const staticName = new Map([...apiOf].flatMap(([file, names]) => [...names].map(([name, value]) => [`${file}\n${value}`, name])));
+    // 워커는 내보낸 이름으로 알리므로, 지역 이름과 내보낸 이름 둘 다로 찾는다.
+    const staticName = new Map([...apiOf].flatMap(([file, names]) => [...names].flatMap(([name, value]) => [[`${file}\n${value}`, name], [`${file}\n${name}`, name]] as [string, string][])));
+    // 실행이 멈출 때 어느 파일을 돌고 있었는지 알기 위해 마지막으로 본 파일을 둔다.
+    let lastFile: string | null = null;
     const read = (m: ReportedMessage) => {
+      if (m.type === 'loaded') lastFile = m.unit.slice('load\n'.length);
+      else if ('file' in m) lastFile = m.file;
       if (m.type !== 'called') return;
       const name = m.member === null || m.member === undefined ? staticName.get(`${m.file}\n${m.exportName}`) : apiOf.get(m.file)?.has(m.member) ? m.member : undefined;
       if (name === undefined) return;
@@ -254,14 +259,21 @@ export async function apiModuleInputs(config: any, resolve: ImportResolver['reso
     const gaveUp = new Map<string, { file: string; reason: string }>();
     const retry = new Map<string, { file: string; reason: string }>();
     const skip = new Set<string>();
-    const run: WorkerData = { modules, skip: [], request: { method: method ?? null, url: url ?? '0', body: body ?? null }, timeoutMs: CALL_TIMEOUT_MS, mark: FAKE_MARK, markNumber: FAKE_NUMBER, inputsOnly: true, exports: wanted };
+    const run: WorkerData = { modules, skip: [], request: { method: method ?? null, url: url ?? '0', body: body ?? null }, timeoutMs: CALL_TIMEOUT_MS, mark: FAKE_MARK, markNumber: FAKE_NUMBER, inputsOnly: true, readInputs: true, exports: wanted };
     for (;;) {
       const outcome = await runWorker({ ...run, skip: [...skip] }, (m) => {
         if ('unit' in m && gaveUp.has(m.unit)) return;
         read(m);
       });
       if (outcome.done) break;
-      if (!outcome.unit) throw new Error(`apiModules: the run stopped outside any module or function: ${firstLine(outcome.error.message)}`);
+      if (!outcome.unit) {
+        // 어느 함수에도 속하지 않는 자리에서 멈췄으면 그 파일의 남은 함수는 모름으로 둔다.
+        for (const [file, names] of apiOf) {
+          if (lastFile !== null && file !== lastFile) continue;
+          for (const name of names.keys()) if (!found.has(`${file}\n${name}`)) put(file, name, { inputsUnknown: 'the run stopped outside any function' });
+        }
+        break;
+      }
       skip.add(outcome.unit);
       const [kind, file] = outcome.unit.split('\n');
       const reason = firstLine(copier.rename(outcome.error.message));
@@ -332,7 +344,7 @@ export async function recordApiCalls(config: any, resolve: ImportResolver['resol
       else if (m.type === 'classes') classes.set(`${m.file}\n${m.exportName}`, m.locations);
     };
     for (;;) {
-      const outcome = await runWorker({ modules, skip: [...skip], request: { method: method ?? null, url: url ?? '0', body: body ?? null }, timeoutMs: CALL_TIMEOUT_MS, mark: FAKE_MARK, markNumber: FAKE_NUMBER }, onMessage);
+      const outcome = await runWorker({ modules, skip: [...skip], request: { method: method ?? null, url: url ?? '0', body: body ?? null }, timeoutMs: CALL_TIMEOUT_MS, mark: FAKE_MARK, markNumber: FAKE_NUMBER, readInputs: Boolean(from) }, onMessage);
       if (outcome.done) break;
       if (!outcome.unit) throw new Error(`calledApiModules: the run stopped outside any module or method: ${firstLine(outcome.error.message)}`);
       skip.add(outcome.unit);

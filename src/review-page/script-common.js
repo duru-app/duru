@@ -95,6 +95,7 @@ const tagLabel = (t) => {
   if (t.story !== undefined) return '스토리';
   if (t.part?.kind === 'condition') return conditionLabel(t.part.key);
   if (t.part?.kind === 'link') return `${t.part.key.from} 에서 오는 링크`;
+  if (t.part?.kind === 'input') return `입력 키 ${t.part.key.fn} · ${t.part.key.key}`;
   if (t.part) return `테스트 「${t.part.key.title}」`;
   return [t.option && optionLabel(t.option), t.depth && `${DEPTH_LABELS[t.depth]} 깊이`, t.case && `경우 ${state.data.caseKinds[t.case]?.text ?? t.case}`].filter(Boolean).join(' · ') || (callOf(t.node) ? '호출 전체' : '화면 전체');
 };

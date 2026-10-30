@@ -431,3 +431,73 @@ test('a key marked fine comes back once the code of its screen changes', () => {
   assert.equal(keywordLines(after).length, 1, after.join('\n'));
   assert.equal(checkedCount(after), `input keys to check ${count}`);
 });
+
+test('a key the screen writes into the state is not listed to check when the API function passes the object it is given whole into the body', async () => {
+  // fixture 의 AjaxFunc.ajaxReportArchive 는 받은 data 를 통째로 본문에 싣는다.
+  const map = await build(fixtureCopy({
+    'components/Search.js': `import { useState } from 'react';
+import { ajaxReportArchive } from '_ajax/AjaxFunc';
+
+export default function Search() {
+  const [search, setSearch] = useState({ keyword: '', status: '' });
+
+  const handleSearch = (type, value) => {
+    setSearch({ ...search, [type]: value });
+  };
+
+  const archive = async () => {
+    await ajaxReportArchive({ data: search });
+  };
+
+  return (
+    <div>
+      <input onChange={(e) => handleSearch('keyword', e.target.value)} />
+      <input onChange={(e) => handleSearch('status', e.target.value)} />
+      <button onClick={archive}>archive</button>
+    </div>
+  );
+}
+`,
+  }, { requestFunction: { ...REQUEST, body: '0.body' } }));
+  const calls = map.screens.find((s) => s.id.includes('Search'))!.apiCalls.filter((c) => c.fn === 'ajaxReportArchive');
+  assert.equal(calls.length, 1);
+  assert.deepEqual(map.apiFunctions.ajaxReportArchive.inputs, { sent: [['0', 'data']], spread: [] });
+  assert.deepEqual(map.inputsToCheck!.filter((k) => k.fn === 'ajaxReportArchive'), []);
+});
+
+test('a screen key is unknown rather than listed to check when the API function sends its request with fetch instead of requestFunction', async () => {
+  const map = await build(fixtureCopy({
+    ...base,
+    // requestFunction 이 아닌 길로 보낸 요청은 본문에 실린 키를 읽을 수 없다.
+    '_ajax/AjaxFunc.js': `${AJAX_FUNC}
+export const ajaxFetchOnly = async ({ data }) => { await fetch('/report/fetch', { method: 'POST', body: JSON.stringify(data) }); };
+`,
+    'components/Search.js': `import { useState } from 'react';
+import { ajaxFetchOnly } from '_ajax/AjaxFunc';
+
+export default function Search() {
+  const [search, setSearch] = useState({ keyword: '' });
+
+  const handleSearch = (type, value) => {
+    setSearch({ ...search, [type]: value });
+  };
+
+  const send = async () => {
+    await ajaxFetchOnly({ data: search });
+  };
+
+  return (
+    <div>
+      <input onChange={(e) => handleSearch('keyword', e.target.value)} />
+      <button onClick={send}>send</button>
+    </div>
+  );
+}
+`,
+  }));
+  assert.equal(map.apiFunctions.ajaxFetchOnly.inputsUnknown, 'sent a request outside requestFunction');
+  assert.deepEqual(map.inputsToCheck!.filter((k) => k.fn === 'ajaxFetchOnly'), []);
+  const unknown = map.unknownInputs!.filter((u) => u.fn === 'ajaxFetchOnly');
+  assert.equal(unknown.length, 1);
+  assert.equal(unknown[0].reason, 'sent a request outside requestFunction');
+});

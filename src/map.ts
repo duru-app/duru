@@ -290,6 +290,8 @@ function checkInputs(screens: { id: string; apiCalls: (ClientScreen['apiCalls'][
   const toCheck = new Map<string, NonNullable<ScreenMap['inputsToCheck']>[number]>();
   const unknown = new Map<string, NonNullable<ScreenMap['unknownInputs']>[number]>();
   const precededBy = (short: string[], long: string[]) => short.length <= long.length && short.every((k, i) => k === long[i]);
+  // 보낸 경로와 입력 경로 가운데 한쪽이 다른 쪽의 앞부분이면 그 키는 요청에 실린다.
+  const sentPath = (input: string[], sent: string[][]) => sent.some((p) => precededBy(input, p) || precededBy(p, input));
   for (const s of screens) {
     for (const c of s.apiCalls) {
       const api = apiFunctions[c.fn];
@@ -302,7 +304,7 @@ function checkInputs(screens: { id: string; apiCalls: (ClientScreen['apiCalls'][
       }
       for (const { key, file, line, at } of c.inputs.keys) {
         const input = ['0', ...c.inputs.argPath, key];
-        if (api.inputs!.sent.some((p) => precededBy(input, p))) continue;
+        if (sentPath(input, api.inputs!.sent)) continue;
         const spread = api.inputs!.spread.find((p) => precededBy(p, input));
         if (spread) {
           const reason = `the function spreads ${spread.join('.')} without reading its keys`;

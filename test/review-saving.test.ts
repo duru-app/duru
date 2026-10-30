@@ -510,3 +510,21 @@ test('in a browser, a key to check takes ✓ as a fine mark on the screen, the A
     );
   });
 });
+
+test('in a browser, a mark on an input key shows the function and the key as its tag instead of a test title', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    const mapFile = path.join(config.outDir, 'map.json');
+    fs.writeFileSync(mapFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(mapFile, 'utf8')), inputsToCheck: INPUT_KEYS }));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await chooseScreen(p, '/lab');
+        await p.waitForSelector('#center-body table.inputs');
+        await p.locator('#center-body > table.inputs tbody tr', { hasText: 'keyword' }).locator('button').click();
+        await p.waitForSelector('#center-body details.inputs-marked > summary:has-text("확인함 1")');
+        await p.waitForSelector('#right .history li .tag-label');
+        assert.equal(await p.textContent('#right .history li .tag-label'), '입력 키 ajaxLabExperiment · keyword');
+      }),
+    );
+  });
+});

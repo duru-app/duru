@@ -20,6 +20,8 @@ export interface WorkerData {
   mark: string;
   markNumber: number;
   inputsOnly?: boolean;
+  // requestFunction 이 있을 때만 인자가 요청에 실린 자리를 잰다.
+  readInputs?: boolean;
   exports?: Record<string, Record<string, string>>;
 }
 
@@ -68,7 +70,7 @@ export interface FunctionLocation {
 
 type Callable = Function;
 
-const { modules, skip, request, timeoutMs, mark, markNumber, inputsOnly, exports: exportsWanted }: WorkerData = workerData;
+const { modules, skip, request, timeoutMs, mark, markNumber, inputsOnly, readInputs, exports: exportsWanted }: WorkerData = workerData;
 const skipped = new Set(skip);
 const send = (message: object) => parentPort!.postMessage(message);
 
@@ -395,7 +397,9 @@ function inputsOf(requests: SentRequest[], t: Tagged, paths: string[][], spread:
 }
 
 async function withInputs(tried: Attempt, kind: string, unit: string, self: unknown, fn: Callable): Promise<Attempt> {
-  const kinds: ('fake' | 'leaves' | 'idsAsText')[] = kind === 'idsAsText' ? ['idsAsText', 'leaves'] : [kind === 'fake' ? 'fake' : 'leaves', 'leaves'];
+  if (!readInputs) return tried;
+  // 이미 요청을 보낸 모양은 다시 시도하지 않는다.
+  const kinds: ('fake' | 'leaves' | 'idsAsText')[] = kind === 'idsAsText' ? ['idsAsText', 'leaves'] : kind === 'fake' ? ['fake', 'leaves'] : ['leaves'];
   let reason = '';
   for (const shape of kinds) {
     const paths: string[][] = [];
@@ -421,6 +425,8 @@ async function withInputs(tried: Attempt, kind: string, unit: string, self: unkn
       reason = ran.requests.length ? `sent ${ran.requests.length} ${ran.requests.length === 1 ? 'request' : 'requests'} with tagged values instead of ${tried.requests.length}` : 'sent no request with tagged values';
       continue;
     }
+    // 요청 함수 밖으로 보낸 요청은 그 요청에 실린 키를 읽을 수 없다.
+    if (ran.requests.some((r) => r.sent === undefined)) return { ...tried, inputsUnknown: 'sent a request outside requestFunction' };
     return { ...tried, inputs: inputsOf(ran.requests, t, paths, spread) };
   }
   return { ...tried, inputsUnknown: reason || 'no clean run' };
@@ -510,6 +516,7 @@ for (const { file, url } of modules) {
       if (valueName !== exportName) {
         const unit = `call\n${file}\n${exportName}\n`;
         if (skipped.has(unit)) continue;
+        send({ type: 'begin', unit, location: null });
         const { requests, error, inputs, inputsUnknown } = await call(unit, undefined, value as Callable);
         send({ type: 'called', unit, file, exportName, member: null, location: null, requests: requests.map((r) => ({ method: r.method, url: r.url, body: r.body })), error, ...(inputs && { inputs }), ...(inputsUnknown && { inputsUnknown }) });
         continue;
