@@ -511,6 +511,40 @@ test('in a browser, a key to check takes ✓ as a fine mark on the screen, the A
   });
 });
 
+const LONG_INPUT_KEYS = [{
+  screen: '/lab/result#LabResult',
+  fn: `ajaxLabExperiment${'InAVeryLongApiFunctionName'.repeat(4)}`,
+  key: `keyword${'OfAVeryLongInputName'.repeat(4)}`,
+  file: `client/src/api/${'laboratory/experiments/'.repeat(3)}ajaxLabExperiment.js`,
+  line: 8,
+  at: `client/src/components/${'laboratory/experiments/'.repeat(3)}LabExperimentPanel.js:208 → client/src/api/${'laboratory/experiments/'.repeat(3)}ajaxLabExperiment.js:8`,
+}];
+
+test('in a browser, a narrow center pane wraps the input keys so ✓ stays inside the pane without a horizontal scroll', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    const mapFile = path.join(config.outDir, 'map.json');
+    fs.writeFileSync(mapFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(mapFile, 'utf8')), inputsToCheck: LONG_INPUT_KEYS }));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.setViewportSize({ width: 1060, height: 900 });
+        await p.waitForSelector('#screen-list li');
+        await chooseScreen(p, '/lab/result');
+        await p.waitForSelector('#center-body > table.inputs');
+        assert.deepEqual(await p.locator('#center-body > table.inputs td.muted.mono').allTextContents(), LONG_INPUT_KEYS.map((k) => k.at));
+        const pane = await p.evaluate(() => {
+          const center = document.getElementById('center')!;
+          const button = document.querySelector('#center-body > table.inputs button[aria-label="보내지 않는 게 맞음"]')!.getBoundingClientRect();
+          return { clientWidth: center.clientWidth, scrollWidth: center.scrollWidth, buttonWidth: button.width, buttonRight: button.right, paneRight: center.getBoundingClientRect().right };
+        });
+        assert.ok(pane.clientWidth > 380 && pane.clientWidth < 420, `the center pane is ${pane.clientWidth}px wide`);
+        assert.ok(pane.buttonWidth > 0, '✓ is drawn in the pane');
+        assert.ok(pane.scrollWidth <= pane.clientWidth, `the center pane scrolls sideways: ${pane.scrollWidth} of ${pane.clientWidth}`);
+        assert.ok(pane.buttonRight <= pane.paneRight, `✓ ends at ${pane.buttonRight}, the pane at ${pane.paneRight}`);
+      }),
+    );
+  });
+});
+
 test('in a browser, a mark on an input key shows the function and the key as its tag instead of a test title', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) => {
     const mapFile = path.join(config.outDir, 'map.json');
