@@ -120,7 +120,8 @@ export type ScreenMap = {
   bodyTypeNotices?: NonNullable<Client['bodyTypeNotices']>;
   deadCalls: { screen: string; fn: string; method: string | null; url: string | null; callSite: string }[];
   // 화면이 상태에 써서 API 함수에 넘긴 키 가운데 그 함수가 요청에 싣는지 알 수 없는 것과, 키를 알 수 없는 호출.
-  inputsToCheck?: { screen: string; fn: string; key: string; file: string; line: number }[];
+  // file·line 은 그 화면 코드 안의 자리, at 은 키를 글자로 적은 자리다.
+  inputsToCheck?: { screen: string; fn: string; key: string; file: string; line: number; at: string }[];
   unknownInputs?: { screen: string; fn: string; callSite: string; reason: string }[];
   duplicateIds: { id: string; places: { file: string; line: number }[] }[];
   calls: MapCall[];
@@ -302,7 +303,7 @@ function checkInputs(screens: { id: string; apiCalls: (ClientScreen['apiCalls'][
         unknown.set(JSON.stringify([s.id, c.fn, callSite]), { screen: s.id, fn: c.fn, callSite, reason });
         continue;
       }
-      for (const { key, file, line } of c.inputs.keys) {
+      for (const { key, file, line, at } of c.inputs.keys) {
         const input = ['0', ...c.inputs.argPath, key];
         if (api.inputs!.sent.some((p) => precededBy(input, p))) continue;
         // 펼쳐 넘긴 자리 아래의 키는 함수가 키를 읽지 않으므로 키마다가 아니라 호출 하나로 남긴다.
@@ -312,12 +313,12 @@ function checkInputs(screens: { id: string; apiCalls: (ClientScreen['apiCalls'][
           unknown.set(JSON.stringify([s.id, c.fn, callSite, reason]), { screen: s.id, fn: c.fn, callSite, reason });
           continue;
         }
-        toCheck.set(JSON.stringify([s.id, c.fn, key, file, line]), { screen: s.id, fn: c.fn, key, file, line });
+        toCheck.set(JSON.stringify([s.id, c.fn, key, at]), { screen: s.id, fn: c.fn, key, file, line, at });
       }
     }
   }
   return {
-    inputsToCheck: [...toCheck.values()].sort((a, b) => compare(a.screen, b.screen) || compare(a.fn, b.fn) || compare(a.key, b.key) || compare(a.file, b.file) || a.line - b.line),
+    inputsToCheck: [...toCheck.values()].sort((a, b) => compare(a.screen, b.screen) || compare(a.fn, b.fn) || compare(a.key, b.key) || compare(a.at, b.at) || compare(a.file, b.file) || a.line - b.line),
     unknownInputs: [...unknown.values()].sort((a, b) => compare(a.screen, b.screen) || compare(a.fn, b.fn) || compare(a.callSite, b.callSite)),
   };
 }

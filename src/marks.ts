@@ -32,10 +32,16 @@ type OrderStep = { step: number } & StepFields;
 
 export interface Part {
   kind: string;
-  key: TestRef | string | LinkKey | StepKey | HopKey;
+  key: TestRef | string | LinkKey | StepKey | HopKey | InputPartKey;
 }
 
-export const PART_KINDS = ['test', 'condition', 'link'];
+// 키를 글자로 적은 함수와 그 키. 화면이 그 키를 요청에 싣지 않아도 되는지는 fine 이 말한다.
+export interface InputPartKey {
+  fn: string;
+  key: string;
+}
+
+export const PART_KINDS = ['test', 'condition', 'link', 'input'];
 
 export interface MarkRule {
   index: number;
@@ -223,7 +229,7 @@ function partTarget(target: MarkTarget) {
   if (target.option !== undefined || target.depth !== undefined || target.case !== undefined) throw new Error('a part mark takes no option, depth or case');
   const { kind, key }: Partial<Part> = isPlainObject(target.part) ? target.part! : {};
   if (!PART_KINDS.includes(kind!)) throw new Error(`unknown part kind "${kind}" (expected ${PART_KINDS.join(', ')})`);
-  return { node: target.node, part: { kind: kind!, key: kind === 'condition' ? conditionKey(key) : kind === 'link' ? linkPartKey(key) : testKey(key) } };
+  return { node: target.node, part: { kind: kind!, key: kind === 'condition' ? conditionKey(key) : kind === 'link' ? linkPartKey(key) : kind === 'input' ? inputPartKey(key) : testKey(key) } };
 }
 
 function testKey(key: unknown) {
@@ -248,6 +254,12 @@ function linkPartKey(key: unknown): LinkKey {
   return byConditions ? { from, conditions: sorted(conditions as string[]) } : { from, guards: sorted(guards as string[]) };
 }
 
+function inputPartKey(key: unknown): InputPartKey {
+  const { fn, key: name } = isPlainObject(key) ? key as Record<string, unknown> : {};
+  if (!isText(fn) || !isText(name)) throw new Error('an input part needs the API function and the key the screen writes, both text');
+  return { fn, key: name };
+}
+
 const checkTarget = (target: MarkTarget | undefined): MarkTarget => (target?.candidate !== undefined ? candidateTarget(target) : target?.screens !== undefined ? orderTarget(target) : target?.story !== undefined ? storyTarget(target) : target?.part !== undefined ? partTarget(target) : target?.case !== undefined ? caseTarget(target) : nodeTarget(target));
 
 export const targetsOf = (m: { target?: MarkTarget; targets?: MarkTarget[] }) => m.targets ?? (m.target ? [m.target] : []);
@@ -264,7 +276,8 @@ export function addMark(dir: string, { target, targets, status, note, rule, auth
   }
   const checked: MarkTarget = all.length === 1 ? all[0] : {};
   if (checked.story !== undefined && checked.part && hasStatus) throw new Error('a comment on a step or a hop of a story takes no status; put the status on the story itself');
-  if (checked.part && hasStatus) throw new Error('a comment on a part of a screen or call takes no status; put the status on the screen or call itself');
+  // 전송 키 자리의 「충분」은 그 화면이 그 키를 보내지 않아도 된다는 뜻이라 상태를 받는다.
+  if (checked.part && hasStatus && checked.part.kind !== 'input') throw new Error('a comment on a part of a screen or call takes no status; put the status on the screen or call itself');
   if (checked.candidate !== undefined && hasStatus) throw new Error('a comment on a story candidate takes no status; accept it as a story to give it one');
   if (checked.screens !== undefined && hasStatus) throw new Error('a comment on a screen order takes no status');
   const statuses = checked.case !== undefined ? CASE_STATUSES : MARK_STATUSES;

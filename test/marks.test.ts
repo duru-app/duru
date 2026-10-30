@@ -318,7 +318,7 @@ test('a test part takes a comment only: a status, an empty note, a depth, an opt
       [{ target: { node: '/home#Home', depth: 'ui', part }, note: 'x' }, /a part mark takes no option, depth or case/],
       [{ target: { node: 'GET:/api/v1/document/list', option: { key: 'k', value: true }, part }, note: 'x' }, /a part mark takes no option, depth or case/],
       [{ target: { node: '/home#Home', case: 'empty', part }, note: 'x' }, /a part mark takes no option, depth or case/],
-      [{ target: { node: '/home#Home', part: { kind: 'row', key: LIST_TEST } }, note: 'x' }, /unknown part kind "row" \(expected test, condition, link\)/],
+      [{ target: { node: '/home#Home', part: { kind: 'row', key: LIST_TEST } }, note: 'x' }, /unknown part kind "row" \(expected test, condition, link, input\)/],
       [{ target: { node: '/home#Home', part: { kind: 'test', key: { file: 'e2e/list.spec.ts', title: 't' } } }, note: 'x' }, /a test part needs a result file, a test file and a title/],
       [{ target: { node: '/home#Home', part: { kind: 'test', key: { source: 'r.json', file: 'e2e/list.spec.ts', title: ' ' } } }, note: 'x' }, /a test part needs a result file, a test file and a title/],
       [{ target: { story: 'run-lab', part }, note: 'x' }, /unknown story part kind "test" \(expected step, hop\)/],
@@ -610,7 +610,7 @@ test('a comment on a step or on the link between two steps of a story is written
       [{ target: { story: 'run-lab', part: { kind: 'step', key: { step: 2 } } }, note: 'x' }, /a step part needs its step number/],
       [{ target: { story: 'run-lab', part: { kind: 'hop', key: { step: 1, from: '/home#Home' } } }, note: 'x' }, /a hop part needs the number of the step it leaves, counted from 1, and the screens it leaves and reaches/],
       [{ target: { story: 'run-lab', node: '/lab#Lab', part: STEP }, note: 'x' }, /a story mark takes no screens, node, option, depth or case/],
-      [{ target: { node: '/lab#Lab', part: STEP }, note: 'x' }, /unknown part kind "step" \(expected test, condition, link\)/],
+      [{ target: { node: '/lab#Lab', part: STEP }, note: 'x' }, /unknown part kind "step" \(expected test, condition, link, input\)/],
     ];
     for (const [input, message] of refused) assert.throws(() => addMark(dir, { ...input, author: 'a' } as Parameters<typeof addMark>[1]), message);
     assert.equal(loadMarks(dir).length, 3);
@@ -687,5 +687,31 @@ test('a comment on several targets is in the history of each, stays on the ones 
       ['general()', null, ['in general']],
     ]);
     assert.deepEqual(detached.map((m) => [m.key, m.target, m.history.map((h) => h.note)]), [['/gone#Gone', { node: '/gone#Gone' }, ['both?']]]);
+  });
+});
+
+const INPUT_KEY = { fn: 'ajaxList', key: 'keyword' };
+const SEARCH_SCREEN = { id: '/search#Search', routeFile: 'Routes.js', line: 5, componentFile: 'components/Search.js', inputsToCheck: [{ screen: '/search#Search', fn: 'ajaxList', key: 'keyword', file: 'components/Search.js', line: 3, at: 'components/Search.js:10 → components/Search.js:3' }] };
+
+test('a mark on a key the screen passes to an API function is written with the function and the key, takes the status fine, carries where the key is written, and is detached once the map has no such key', () => {
+  withMarksDir((dir: string) => {
+    const target = { node: '/search#Search', part: { kind: 'input', key: INPUT_KEY } };
+    const fine = addMark(dir, { target, status: 'fine', author: 'a' });
+    assert.deepEqual(fine.target, target);
+    const { attached } = classifyMarks(loadMarks(dir), { screens: [SEARCH_SCREEN] });
+    assert.deepEqual(attached.map((m) => [m.current?.status, m.where]), [['fine', { places: [{ from: 'keys', file: 'components/Search.js', line: 3 }] }]]);
+
+    for (const [part, message] of [
+      [{ kind: 'input', key: { fn: '', key: 'x' } }, /an input part needs the API function and the key the screen writes, both text/],
+      [{ kind: 'input', key: { fn: 'ajaxList', key: ' ' } }, /an input part needs the API function and the key the screen writes, both text/],
+      [{ kind: 'input', key: { fn: 'ajaxList' } }, /an input part needs the API function and the key the screen writes, both text/],
+      [{ kind: 'input', key: 'ajaxList keyword' }, /an input part needs the API function and the key the screen writes, both text/],
+    ] as [object, RegExp][]) assert.throws(() => addMark(dir, { target: { node: '/search#Search', part } as never, status: 'fine', author: 'a' }), message);
+
+    const other = addMark(dir, { target: { node: '/search#Search', part: { kind: 'input', key: { fn: 'ajaxList', key: 'status' } } }, status: 'fine', author: 'a' });
+    const moved = classifyMarks(loadMarks(dir), { screens: [{ ...SEARCH_SCREEN, inputsToCheck: [] }] });
+    assert.deepEqual(moved.attached, []);
+    assert.deepEqual(moved.detached.map((m) => [m.target, m.where]), [[fine.target, null], [other.target, null]]);
+    assert.deepEqual(classifyMarks([other], { screens: [{ id: '/lab#Lab' }] }).detached.map((m) => m.target), [other.target]);
   });
 });

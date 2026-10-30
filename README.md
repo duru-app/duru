@@ -561,8 +561,12 @@ listing the places whose value the source does not show in full.
   entry can come out of the config (`keptBodyTypeExclusions`).
 - `input keys to check N` — printed when there is `requestFunction`: the screen state keys that a screen writes
   and passes to an API function, which the function's request does not carry. Each one follows on its own
-  indented line, `<screen> <API function> <key> <file>:<line>`, with the place the key is written. The map lists
-  them under `inputsToCheck`; they are worth a test of what the screen sends and what reaches the server.
+  indented line, `<screen> <API function> <key> <file>:<line>`, with the place the key is written as text: the
+  literal in the child component that writes it, or the literal a function is called with, rather than the merge
+  in the screen that holds the state. The map lists them under `inputsToCheck`; they are worth a test of what the
+  screen sends and what reaches the server. An entry whose `input` part mark (below) is `fine` and whose screen
+  code has not changed since the mark was saved is left out of the count and of the lines, and the count says
+  how many were left out, as `input keys to check N (M marked fine)`.
 - `input keys unknown N: N <reason>; …` — printed with the line above: the calls of an API function whose screen
   argument traces to a state whose keys duru could not read, each with the reason, grouped by reason with the
   count of calls for each. The map lists them under `unknownInputs` with their `callSite`; nothing about the input
@@ -1356,6 +1360,13 @@ title without tags, as a judgment does. A part takes a comment only: a status se
 reason, and it never changes the current status of the screen or call. A row with comments shows their number;
 pressing it narrows the conversation to that test. A comment whose test is no longer among the results after a
 `rebuild` (its title or file changed, or it left the results) shows under 「떨어져 나감」 with the test title.
+
+**Marks on a key to check.** A mark on one of the `inputsToCheck` entries is saved as `"part": { "kind": "input",
+"key": { "fn", "key" } }`, the API function and the key, with the screen in `target.node` and no line number, so
+it stays while only the lines move. It takes a status: `fine` says the screen is right not to send that key, so a
+`rebuild` leaves it out of `input keys to check` until the code of its screen changes; any other status, or a
+mark whose screen changed since it was saved, keeps the key in. The mark shows under 「떨어져 나감」 once a
+`rebuild` no longer lists that key of that function on the screen.
 
 **Comments on a condition or an incoming link.** Under 「접근 조건」 in 「화면 정보」, each role (「필요한 역할: …」, one
 line per role) and each setting (「필요한 설정: …」) has the same bubble and count, and so has the head line of each

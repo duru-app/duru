@@ -131,7 +131,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   `matches no call` or `matches no on/off option …` names an entry that took nothing out.
 - An `input keys to check N` line lists the state keys a screen writes and hands to an API function that the
   function's request does not carry, each on its own line as `<screen> <API function> <key> <file>:<line>`; tell
-  the user these are worth a test of what the screen sends and what reaches the server. An `input keys unknown N: …`
+  the user these are worth a test of what the screen sends and what reaches the server. A key a reviewer marked
+  fine leaves the list, and the count after it says how many as `(N marked fine)`, until the code of its screen
+  changes. An `input keys unknown N: …`
   line counts the calls whose screen argument traces to a state whose keys duru could not read, with the reasons;
   do not tell the user anything about those calls' keys (`unknownInputs`).
 - A screen's API calls and links are the ones its code reaches, each with the file and line where it is written,

@@ -12,8 +12,10 @@ import type { CaseKind } from './config.ts';
 import { MOST_ADDRESSES } from './address-functions.ts';
 import { UNKNOWN } from './client.ts';
 import { buildMap, readsAnAddress, sendingParts, sentAtAppStart, unreadSites } from './map.ts';
+import type { ScreenMap } from './map.ts';
 import { applyJudgments, judgmentFile, loadJudgments } from './judgments.ts';
-import { addReply } from './marks.ts';
+import { addReply, classifyMarks, loadMarks, mergedStatus } from './marks.ts';
+import type { InputPartKey } from './marks.ts';
 import { checkNeeds } from './needs.ts';
 import { CANDIDATES } from './stories.ts';
 import { SOURCE_SYNTAX_ERROR } from './parse.ts';
@@ -69,6 +71,18 @@ async function sendToReview(server: string, route: string, body: unknown) {
     .catch((err) => Promise.reject(new Error(`could not reach the review page at ${server}: ${err.cause?.message ?? err.message}`)));
   if (!res.ok) throw new Error(await res.text());
   return res;
+}
+
+// 「충분」이 붙은 input 자리의 키. 그 화면 코드가 바뀐 표시는 세지 않는다.
+function inputFines(map: ScreenMap, config: ReturnType<typeof loadConfig>) {
+  const screens = map.screens.map((s) => ({ id: s.id, codeHash: s.codeHash, inputsToCheck: map.inputsToCheck }));
+  const { attached } = classifyMarks(loadMarks(config.marksDir).map(mergedStatus), { screens });
+  return attached
+    .filter(({ target, current, codeChanged }) => target.part?.kind === 'input' && current?.status === 'fine' && !codeChanged)
+    .map(({ target }) => {
+      const key = target.part!.key as InputPartKey;
+      return `${target.node}\n${key.fn}\n${key.key}`;
+    });
 }
 
 function readCandidate(from: string) {
@@ -326,8 +340,11 @@ if (command === 'tasks') {
   }
   for (const [name, fn] of Object.entries<any>(map.apiFunctions)) if (fn.error && !fn.endpoints.length) console.log(`  api method ${name} ← ${fn.file ?? '?'}${fn.line ? `:${fn.line}` : ''}: ${fn.error}`);
   if (map.inputsToCheck) {
-    console.log(`input keys to check ${map.inputsToCheck.length}`);
-    for (const { screen, fn, key, file, line } of map.inputsToCheck) console.log(`  ${screen} ${fn} ${key} ${file}:${line}`);
+    // 화면이 보내도 되는 키로 「충분」을 받았고 그 화면 코드가 그대로면 목록에서 뺀다.
+    const fines = new Set(inputFines(map, config));
+    const toCheck = map.inputsToCheck.filter((k) => !fines.has(`${k.screen}\n${k.fn}\n${k.key}`));
+    console.log(`input keys to check ${toCheck.length}${fines.size ? ` (${fines.size} marked fine)` : ''}`);
+    for (const { screen, fn, key, at } of toCheck) console.log(`  ${screen} ${fn} ${key} ${at}`);
     const reasons = new Map<string, number>();
     for (const { reason } of map.unknownInputs ?? []) reasons.set(reason, (reasons.get(reason) ?? 0) + 1);
     console.log(`input keys unknown ${map.unknownInputs?.length ?? 0}${reasons.size ? `: ${[...reasons].map(([reason, n]) => `${n} ${reason}`).join('; ')}` : ''}`);

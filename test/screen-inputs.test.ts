@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { loadConfig } from '../src/config.ts';
+import { addMark } from '../src/marks.ts';
 import { buildMap } from '../src/map.ts';
 import type { ScreenMap } from '../src/map.ts';
 
@@ -165,6 +166,16 @@ test('a key a child component writes into the parent state and that the API func
   assert.deepEqual(map.unknownInputs!.filter((u) => u.fn === 'ajaxUpdateSigner'), []);
 });
 
+test('a key a child component writes is listed at the literal it is written as, in the child file, not at where the parent merges it', async () => {
+  const map = await build(fixtureCopy(base));
+  const place = (key: string) => map.inputsToCheck!.find((k) => k.fn === 'ajaxUpdateSigner' && k.key === key)!;
+  // 매개변수로 받은 키는 부른 자리의 글자다. 자식 파일 안의 자리라도 그 글자의 줄을 가리킨다.
+  assert.equal(place('signer.attribute.pkiSignType').at, 'components/SignerPki.js:3 → components/SignerPki.js:8');
+  assert.equal(place('signer.notify.extra').at, 'components/FormNotificationType.js:3 → components/FormNotificationType.js:6');
+  // 고정된 목록이 그대로 옮기는 키는 확인할 목록에 없다.
+  assert.equal(map.inputsToCheck!.find((k) => k.fn === 'ajaxUpdateSigner' && k.key === 'signer.name'), undefined);
+});
+
 test('a key the screen writes into its search state, which the API function sends only one of, is listed to check', async () => {
   const map = await build(fixtureCopy({
     ...base,
@@ -195,6 +206,36 @@ export default function Search() {
   const calls = map.screens.find((s) => s.id.includes('Search'))!.apiCalls.filter((c) => c.fn === 'ajaxList');
   assert.equal(calls.length, 1);
   assert.deepEqual(map.inputsToCheck!.filter((k) => k.fn === 'ajaxList').map((k) => k.key), ['keyword']);
+});
+
+test('a key a screen function takes as a parameter is listed at the literal the function is called with, and the parent state it is merged into says the same', async () => {
+  const map = await build(fixtureCopy({
+    ...base,
+    'components/Child.js': `export default function Child({ data, onChange }) {
+  const handleChange = (type, value) => {
+    onChange({ [type]: value });
+  };
+
+  return <button onClick={() => handleChange('keyword', 'x')}>go</button>;
+}
+`,
+    'components/Search.js': `import { useState } from 'react';
+import { ajaxList } from '_ajax/AjaxFunc';
+import Child from './Child';
+
+export default function Search() {
+  const [search, setSearch] = useState({});
+  const handleChange = (newData) => setSearch({ ...search, ...newData });
+  const list = async () => { await ajaxList({ data: search }); };
+
+  return <div><Child data={search} onChange={handleChange} /><button onClick={list}>list</button></div>;
+}
+`,
+  }));
+  const checked = map.inputsToCheck!.filter((k) => k.fn === 'ajaxList');
+  assert.deepEqual(checked.map(({ key, file, at }) => ({ key, file, at })), [{ key: 'keyword', file: 'components/Search.js', at: 'components/Child.js:3 → components/Child.js:6' }]);
+  // 목록의 자리는 부모가 그 키를 합치는 곳이다. 글자를 읽는 곳은 at 이다.
+  assert.equal(checked[0].line, 7);
 });
 
 test('a call whose argument the API function spreads whole is unknown rather than a list of keys to check', async () => {
@@ -312,6 +353,81 @@ test('the rebuild output has one line counting the keys to check with a line per
   const output = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
   const lines = output.split('\n');
   assert.ok(lines.some((l) => /^input keys to check \d+$/.test(l)), output);
-  assert.ok(lines.some((l) => /^ {2}\S+ ajaxUpdateSigner signer\.attribute\.pkiSignType components\/SignerEdit\.js:\d+$/.test(l)), output);
+  assert.ok(lines.some((l) => /^ {2}\S+ ajaxUpdateSigner signer\.attribute\.pkiSignType components\/SignerPki\.js:\d+ → components\/SignerPki\.js:\d+$/.test(l)), output);
   assert.ok(lines.some((l) => /^input keys unknown \d+.*spread/.test(l)), output);
+});
+
+// 검색 화면을 놓고 확인할 키 keyword 를 표시로 덜어 보는 사본.
+const SEARCH = `import { useState } from 'react';
+import { ajaxList } from '_ajax/AjaxFunc';
+
+export default function Search() {
+  const [search, setSearch] = useState({ keyword: '', status: '' });
+
+  const handleSearch = (type, value) => {
+    setSearch({ ...search, [type]: value });
+  };
+
+  const list = async () => {
+    await ajaxList({ data: search });
+  };
+
+  return (
+    <div>
+      <input onChange={(e) => handleSearch('keyword', e.target.value)} />
+      <input onChange={(e) => handleSearch('status', e.target.value)} />
+      <button onClick={list}>list</button>
+    </div>
+  );
+}
+`;
+
+// 사본의 marksDir 에 표시를 하나 남긴다. codeHash 를 주면 그 화면 코드의 해시다.
+function markSearch(configFile: string, status: string, key = 'keyword') {
+  const config = loadConfig(configFile);
+  const map = JSON.parse(fs.readFileSync(path.join(config.outDir, 'map.json'), 'utf8'));
+  const screen = map.screens.find((s: { id: string }) => s.id.includes('Search')).id;
+  const part = { kind: 'input', key: { fn: 'ajaxList', key } };
+  addMark(config.marksDir, { target: { node: screen, part }, status, note: '', author: 'a', codeHash: map.screens.find((s: { id: string }) => s.id === screen).codeHash });
+  return screen;
+}
+
+const searchCopy = () => fixtureCopy({ ...base, 'components/Search.js': SEARCH });
+const rebuildLines = (configFile: string) => execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' }).split('\n');
+const keywordLines = (lines: string[]) => lines.filter((l) => /^ {2}\S+ ajaxList keyword /.test(l));
+const checkedCount = (lines: string[]) => lines.find((l) => l.startsWith('input keys to check '))!;
+
+test('a key marked fine leaves the list of keys to check, its count and its line, and the count says how many were left out', () => {
+  const configFile = searchCopy();
+  const before = rebuildLines(configFile);
+  assert.equal(keywordLines(before).length, 1, before.join('\n'));
+  assert.match(checkedCount(before), /^input keys to check (\d+)$/);
+  const count = Number(checkedCount(before).split(' ')[4]);
+  markSearch(configFile, 'fine');
+  const after = rebuildLines(configFile);
+  assert.deepEqual(keywordLines(after), []);
+  assert.equal(checkedCount(after), `input keys to check ${count - 1} (1 marked fine)`);
+});
+
+test('a key marked needs-more stays in the list of keys to check, and the count says nothing was left out', () => {
+  const configFile = searchCopy();
+  const before = rebuildLines(configFile);
+  const count = Number(checkedCount(before).split(' ')[4]);
+  markSearch(configFile, 'needs-more');
+  const after = rebuildLines(configFile);
+  assert.equal(keywordLines(after).length, 1, after.join('\n'));
+  assert.equal(checkedCount(after), `input keys to check ${count}`);
+  assert.ok(!after.some((l) => /marked fine/.test(l)), after.join('\n'));
+});
+
+test('a key marked fine comes back once the code of its screen changes', () => {
+  const configFile = searchCopy();
+  const count = Number(checkedCount(rebuildLines(configFile)).split(' ')[4]);
+  markSearch(configFile, 'fine');
+  assert.deepEqual(keywordLines(rebuildLines(configFile)), []);
+  const search = path.join(path.dirname(configFile), 'client/src/components/Search.js');
+  fs.appendFileSync(search, '\n// a line the mark was not saved with\n');
+  const after = rebuildLines(configFile);
+  assert.equal(keywordLines(after).length, 1, after.join('\n'));
+  assert.equal(checkedCount(after), `input keys to check ${count}`);
 });
