@@ -186,6 +186,19 @@ test('a mark on an option the map no longer has is detached while the call stays
   });
 });
 
+test('a mark on an option detaches when the traces no longer send it, while the call stays', () => {
+  withMarksDir((dir: string) => {
+    const node = 'POST:/api/v1/report/export';
+    const sent = { screens: [], calls: [{ id: node, options: [{ key: 'weeklyNow' }] }] };
+    const quiet = { screens: [], calls: [{ id: node, options: [] }] };
+    addMark(dir, { target: { node, option: { key: 'weeklyNow', value: true } }, status: 'missing', author: 'a' });
+    assert.deepEqual(classifyMarks(loadMarks(dir), sent).attached.map((m) => m.key), [`${node} weeklyNow=true`]);
+    const { attached, detached } = classifyMarks(loadMarks(dir), quiet);
+    assert.deepEqual(attached, []);
+    assert.deepEqual(detached.map((m) => m.key), [`${node} weeklyNow=true`]);
+  });
+});
+
 test('a mark on a story is written with only the story in its target, in that story\'s folder under stories, and keeps its history', () => {
   withMarksDir((dir: string) => {
     const first = addMark(dir, { target: { story: 'run-lab' }, status: 'missing', note: 'first', author: 'Kim Min' }, new Date('2026-10-01T01:00:00Z'));

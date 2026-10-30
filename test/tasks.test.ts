@@ -1485,6 +1485,21 @@ test('a mark on an option value of a call is listed with the option key, value a
   });
 });
 
+test('a marked option that a request sent says so in the source line of the task list', () => {
+  withFixtureCopy(({ configFile, cli }) => {
+    cli('rebuild');
+    const { marksDir, outDir } = loadConfig(configFile);
+    editJson(path.join(outDir, 'map.json'), (map) => {
+      const option = map.calls.find((c: any) => c.id === 'POST:/api/v1/report/export').options.find((o: any) => o.key === 'withHistory');
+      option.sources.push('request');
+      option.requests = [{ test: 'exports with history', file: 'export.spec.ts', line: 3, project: 'chromium', values: [true] }];
+    });
+    addMark(marksDir, { target: { node: 'POST:/api/v1/report/export', option: { key: 'withHistory', value: true } }, status: 'missing', author: 'a' }, new Date('2026-10-01T05:00:00Z'));
+    const line = cli('tasks').split('\n').find((l) => l.startsWith('  - withHistory — '))!;
+    assert.match(line, /; also read from a request a test sent$/);
+  });
+});
+
 test('an option mark whose option is gone from the map stays out of the task list', () => {
   withFixtureCopy(({ configFile, cli }) => {
     cli('rebuild');

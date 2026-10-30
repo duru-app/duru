@@ -8,6 +8,7 @@ import { importLinker } from './import-links.ts';
 import { readJunit } from './junit.ts';
 import { readPlaywright } from './playwright.ts';
 import { copyShots } from './playwright-trace.ts';
+import type { SentTrace } from './request-options.ts';
 import { traceLinker } from './trace-links.ts';
 import type { Walks } from './trace-links.ts';
 import { STATUS_RANK, readVerdicts, withProjectRun } from './verdict.ts';
@@ -59,6 +60,23 @@ export function resultFiles(p: string, extensions: string[]) {
     .filter((e) => e.isFile() && extensions.some((ext: string) => e.name.endsWith(ext)))
     .map((e) => path.join(e.parentPath, e.name))
     .sort();
+}
+
+export function sentTraces(config: any): SentTrace[] {
+  const sent: SentTrace[] = [];
+  for (const source of config.tests) {
+    if (source.format !== 'playwright' || !fs.existsSync(source.path)) continue;
+    for (const file of resultFiles(source.path, READERS[source.format].extensions)) {
+      let tests: any[] | null;
+      try {
+        tests = READERS[source.format].read(file);
+      } catch {
+        continue;
+      }
+      for (const t of tests ?? []) if (t.trace) sent.push({ trace: t.trace, title: t.title, file: t.file, line: t.line, project: t.project ?? null, status: t.status });
+    }
+  }
+  return sent;
 }
 
 export function linkTests(config: any, map: any) {

@@ -918,3 +918,16 @@ test('a trace that cannot be read is noticed for its own run, named by its resul
   assert.deepEqual(runs.map((t) => t.project), ['chromium', 'firefox']);
   assert.deepEqual(stepLinks.traceNotices.map((n) => n.test), [{ title: 'opens home without snapshots @screen:/home#Home', file: 'steps.spec.ts', line: 19, source: runs[0].source, project: 'chromium' }]);
 });
+
+test('a request-only option can be tagged with @option like any other', () => {
+  const map = {
+    screens: [],
+    calls: [{ id: 'POST:/api/v1/report/schedule', options: [{ key: 'weeklyNow', values: [true, false], sources: ['request'], sites: [], requests: [{ test: 'sends the report now', file: 'a.spec.ts', line: 1, project: 'chromium', values: [true] }] }] }],
+  };
+  const report = reportOf([{ title: 'a.spec.ts', specs: [spec('sends the report now @call:POST:/api/v1/report/schedule @option:weeklyNow=true', 1)] }]);
+  withResults({ 'e2e.json': report }, (own) => {
+    const result = linkTests(own, map);
+    assert.deepEqual(result.nodes['POST:/api/v1/report/schedule'].map((t) => [t.options, t.status]), [[[{ key: 'weeklyNow', value: true }], 'pass']]);
+    assert.deepEqual(result.unknownTags, []);
+  });
+});

@@ -5168,6 +5168,31 @@ Reason: the mark is kept with the other decisions, merges in git without clashes
 its lines move; a key comes back for a person to look at when its screen's code changes, since a judgment made on the
 old code does not hold for the new; and a key the map no longer lists leaves the mark as a mark outside the map.
 
+**The bodies of the write requests in the traces a test left are a fourth source of a call's on/off options, next
+to the source, the body type and the config; such an option names the tests and the values that sent it, and an
+option only the traces found is no change against the baseline map.**
+Chosen for #495 (2026-10-31). A test that sends a call carries the values it sent in the trace of its run, so the
+options of a call can say which of them a test already sent and which side, before the body type is read and
+without a `@option` tag written by hand for every one. The merge runs in `rebuild` between the built map and the
+baseline comparison, so `map.json`, the `changes since` line and the `@option` tags all see the same options. Every
+test's trace is read, a failing one's too: a failing test that sent an option is the one a reviewer needs to see
+against the caller. The body decides the names, with the same path rule a body type uses (`signers[].notify`), and
+a body that is not JSON, or a request that carries none, adds nothing and says nothing. An option found only in a
+request body has `sources: ["request"]` and no site, like one the config adds; it is tagged and counted with
+`@option:<key>=true|false` like any other, and a mark on it detaches once the traces no longer send it, since the
+marks read the option keys off the map. `compareMaps` compares screens, conditions, screen-calls and the server
+match and never a call's options, so an option that only a request added is not a baseline change without any code
+saying so; it is written down here, with a test, so that comparing options against the baseline stays a decision
+rather than something that happens when the comparison grows.
+Compared:
+- Reading the bodies inside `buildMap`: every caller would get them, but the map tests would then need result
+  folders, and `buildMap` would need the test readers it never touches.
+- Shrinking an option's `values` to the sides the requests sent: `values` is the option's domain and the review page
+  draws a row for each of `[true, false]`, so a side no test sent would lose its row and the sides that were sent
+  would need a place of their own anyway.
+- Growing `values` and skipping `requests`: the page and the task list would still have to join `tests.json` to name
+  the tests that sent the values.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
