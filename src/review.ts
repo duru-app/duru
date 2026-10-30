@@ -475,11 +475,16 @@ export async function startReviewServer(config: any, { port = 0, author = review
     const found = map && readOrNull(() => (checkStoryFiles(map, config.storiesDir, mapFile).list as StoryPath[]).find((s) => s.id === story));
     return found ? locateStoryPart(part!, found, map.screens) : null;
   };
-  const partWhere = (target: Target) => (target.story !== undefined ? storyPartWhere(target) : locatePart(target, {
-    tests: (target.part!.kind === 'test' && readOrNull(() => readTests(config))) || {},
-    screens: (target.part!.kind !== 'test' && readOrNull(() => readMap(mapFile))?.screens) || [],
-    roleGuards: config.roleGuards,
-  }));
+  const partWhere = (target: Target) => {
+    if (target.story !== undefined) return storyPartWhere(target);
+    const map = target.part!.kind === 'test' ? undefined : readOrNull(() => readMap(mapFile));
+    return locatePart(target, {
+      tests: (target.part!.kind === 'test' && readOrNull(() => readTests(config))) || {},
+      screens: (target.part!.kind !== 'test' && map?.screens) || [],
+      roleGuards: config.roleGuards,
+      inputsToCheck: map?.inputsToCheck,
+    });
+  };
   const findCandidate = (key: unknown) => storyCandidates(config, readMap(mapFile), mapFile, readTests(config).traced).list.find((c) => c.key === key);
   const candidateWhere = (key: string) => {
     try {

@@ -2,7 +2,7 @@ import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 import _traverse from '@babel/traverse';
 import type { ClassMethod, ClassPrivateMethod, ClassProperty, TSParameterProperty } from '@babel/types';
-import type { AttemptError, FunctionLocation, SentRequest, WorkerData } from './api-calls-worker.ts';
+import type { AttemptError, FunctionInputs, FunctionLocation, SentRequest, WorkerData } from './api-calls-worker.ts';
 import type { BodyMethod, BodyTypeNotice } from './body-types.ts';
 import { UNKNOWN } from './client.ts';
 import { moduleCopier } from './constants.ts';
@@ -12,7 +12,7 @@ import type { ImportResolver } from './resolve.ts';
 import { cleanAddress, pathOnSite } from './sent-address.ts';
 
 type NameNode = { name?: string; value?: string };
-type Failure = { message: string; stack: string };
+type Failure = { message: string; stack: string; late?: boolean };
 type Place = ReturnType<ReturnType<typeof moduleCopier>['place']>;
 
 type WorkerMessage =
@@ -23,7 +23,7 @@ type WorkerMessage =
   | { type: 'failed'; unit: string; file: string; error: Failure }
   | { type: 'same'; file: string; exportName: string; as: { file: string; exportName: string } }
   | { type: 'classes'; file: string; exportName: string; locations: FunctionLocation[] }
-  | { type: 'called'; unit: string; file: string; exportName: string; member: string | null; location: FunctionLocation | null; requests: SentRequest[]; error: AttemptError | null };
+  | { type: 'called'; unit: string; file: string; exportName: string; member: string | null; location: FunctionLocation | null; requests: SentRequest[]; error: AttemptError | null; inputs?: FunctionInputs; inputsUnknown?: string };
 
 type ReportedMessage = Exclude<WorkerMessage, { type: 'end' | 'attempt' | 'begin' }>;
 
@@ -36,6 +36,8 @@ interface CalledUnit {
   location: FunctionLocation | null;
   requests: SentRequest[];
   error: Failure | null;
+  inputs?: FunctionInputs;
+  inputsUnknown?: string;
 }
 
 export interface ApiEndpoint {
@@ -50,6 +52,8 @@ export interface ApiFunction {
   line: number | null;
   endpoints: ApiEndpoint[];
   error?: string;
+  inputs?: FunctionInputs;
+  inputsUnknown?: string;
 }
 
 const traverse = _traverse.default ?? _traverse;
@@ -181,6 +185,121 @@ export function requestFunctionFile(config: any, resolve: ImportResolver['resolv
   return target;
 }
 
+function exportedValues(file: string, names: string[]) {
+  const values = new Map(names.map((name) => [name, name]));
+  let ast;
+  try {
+    ({ ast } = parseSource(file));
+  } catch {
+    return values;
+  }
+  for (const node of ast.program.body) {
+    if (node.type !== 'ExportNamedDeclaration' || node.exportKind === 'type') continue;
+    if (!node.source) {
+      for (const sp of node.specifiers) {
+        if (sp.type !== 'ExportSpecifier' || sp.exportKind === 'type') continue;
+        const exported = sp.exported.type === 'Identifier' ? sp.exported.name : sp.exported.value;
+        if (values.has(exported)) values.set(exported, sp.local.name);
+      }
+    }
+    if (node.declaration?.type === 'VariableDeclaration') {
+      for (const d of node.declaration.declarations) {
+        if (d.id.type !== 'Identifier' || d.init?.type !== 'Identifier') continue;
+        if (values.get(d.id.name) === d.id.name) values.set(d.id.name, d.init.name);
+      }
+    }
+  }
+  return values;
+}
+
+export async function apiModuleInputs(config: any, resolve: ImportResolver['resolve'], exports: Record<string, string[]>) {
+  const { import: from, name, method, url, body, object } = config.requestFunction ?? {};
+  if (!from) return [];
+  const relative = Boolean(from.startsWith('.'));
+  const target = requestFunctionFile(config, resolve);
+  const recorder = `const record = globalThis.${object ? '__duruRequestObject' : '__duruRecorder'};\nexport { record as ${name === 'default' ? 'default' : JSON.stringify(name)} };`;
+  const copier = moduleCopier({ ...config, constantStubs: { ...PACKAGE_STAND_INS, ...config.constantStubs } }, resolve, {
+    label: 'apiModules',
+    fillMissing: true,
+    replacement: (spec, resolved) => (!((!relative && spec === from) || (target && resolved === target)) ? null : recorder),
+  });
+  const apiOf = new Map<string, Map<string, string>>();
+  const reasons = new Map<string, string>();
+  const found = new Map<string, { inputs?: FunctionInputs; inputsUnknown?: string }>();
+  const put = (file: string, name: string, inputs: { inputs?: FunctionInputs; inputsUnknown?: string }) => {
+    found.set(`${file}\n${name}`, inputs);
+  };
+  try {
+    const modules: { file: string; url: string }[] = [];
+    const wanted: Record<string, Record<string, string>> = {};
+    for (const [relFile, names] of Object.entries(exports)) {
+      if (!names.length) continue;
+      const file = path.join(config.srcRoot, relFile);
+      apiOf.set(file, exportedValues(file, names));
+      wanted[file] = Object.fromEntries(apiOf.get(file)!);
+      try {
+        modules.push({ file, url: copier.url(copier.copy(file)) });
+      } catch (e: any) {
+        reasons.set(file, firstLine(String(e?.message ?? e)));
+      }
+    }
+    copier.finish();
+    // 워커는 내보낸 이름으로 알린다.
+    const staticName = new Map([...apiOf].flatMap(([file, names]) => [...names.keys()].map((name) => [`${file}\n${name}`, name] as [string, string])));
+    // 실행이 멈출 때 어느 파일을 돌고 있었는지 알기 위해 마지막으로 본 파일을 둔다.
+    let lastFile: string | null = null;
+    const read = (m: ReportedMessage) => {
+      if (m.type === 'loaded') lastFile = m.unit.slice('load\n'.length);
+      else if ('file' in m) lastFile = m.file;
+      if (m.type !== 'called') return;
+      const name = m.member === null || m.member === undefined ? staticName.get(`${m.file}\n${m.exportName}`) : apiOf.get(m.file)?.has(m.member) ? m.member : undefined;
+      if (name === undefined) return;
+      put(m.file, name, { ...(m.inputs && { inputs: m.inputs }), ...(m.inputsUnknown && { inputsUnknown: unmarked(firstLine(copier.rename(m.inputsUnknown))) }) });
+    };
+    const gaveUp = new Map<string, { file: string; reason: string }>();
+    const retry = new Map<string, { file: string; reason: string }>();
+    const skip = new Set<string>();
+    const run: WorkerData = { modules, skip: [], request: { method: method ?? null, url: url ?? '0', body: body ?? null }, timeoutMs: CALL_TIMEOUT_MS, mark: FAKE_MARK, markNumber: FAKE_NUMBER, inputsOnly: true, readInputs: true, exports: wanted };
+    for (;;) {
+      const outcome = await runWorker({ ...run, skip: [...skip] }, (m) => {
+        if ('unit' in m && gaveUp.has(m.unit)) return;
+        read(m);
+      });
+      if (outcome.done) break;
+      if (!outcome.unit) {
+        // 어느 함수에도 속하지 않는 자리에서 멈췄으면 그 파일의 남은 함수는 모름으로 두고 그 파일만 건너뛴다.
+        for (const [file, names] of apiOf) {
+          if (lastFile !== null && file !== lastFile) continue;
+          for (const name of names.keys()) if (!found.has(`${file}\n${name}`)) put(file, name, { inputsUnknown: 'the run stopped outside any function' });
+        }
+        if (lastFile === null || skip.has(`load\n${lastFile}`)) break;
+        skip.add(`load\n${lastFile}`);
+        continue;
+      }
+      skip.add(outcome.unit);
+      const [kind, file] = outcome.unit.split('\n');
+      const reason = firstLine(copier.rename(outcome.error.message));
+      if (kind === 'load' && outcome.error?.late) retry.set(outcome.unit, { file, reason });
+      else gaveUp.set(outcome.unit, { file, reason });
+    }
+    for (const [file, names] of apiOf) {
+      const reason = reasons.get(file) ?? [...retry.values(), ...gaveUp.values()].find((s) => s.file === file)?.reason;
+      for (const name of names.keys()) if (!found.has(`${file}\n${name}`)) put(file, name, { inputsUnknown: reason ?? `the file exports no ${name}` });
+    }
+    for (const { file } of new Set([...retry.values(), ...gaveUp.values()])) {
+      const outcome = await runWorker({ ...run, modules: [{ file, url: modules.find((m) => m.file === file)!.url }] }, read);
+      if (!outcome.done && !outcome.unit && outcome.error) for (const name of apiOf.get(file)!.keys()) if (!found.has(`${file}\n${name}`)) put(file, name, { inputsUnknown: firstLine(copier.rename(outcome.error.message)) });
+    }
+    const rel = (f: string) => path.relative(config.srcRoot, f);
+    return [...found].flatMap(([key, inputs]) => {
+      const [file, name] = key.split('\n');
+      return name === '' || !apiOf.get(file)?.has(name) ? [] : [{ file: rel(file), exportName: name, found: inputs }];
+    });
+  } finally {
+    copier.cleanup();
+  }
+}
+
 // functions 는 「export 한 이름.메서드」마다 { file, line, endpoints, error? }, keyOf 는 (파일, export 한 이름) 에서 그 이름을 돌려준다.
 export async function recordApiCalls(config: any, resolve: ImportResolver['resolve'], taken = new Set<string>()) {
   const { import: from, name, method, url, body, object } = config.requestFunction ?? {};
@@ -227,7 +346,7 @@ export async function recordApiCalls(config: any, resolve: ImportResolver['resol
       else if (m.type === 'classes') classes.set(`${m.file}\n${m.exportName}`, m.locations);
     };
     for (;;) {
-      const outcome = await runWorker({ modules, skip: [...skip], request: { method: method ?? null, url: url ?? '0', body: body ?? null }, timeoutMs: CALL_TIMEOUT_MS, mark: FAKE_MARK, markNumber: FAKE_NUMBER }, onMessage);
+      const outcome = await runWorker({ modules, skip: [...skip], request: { method: method ?? null, url: url ?? '0', body: body ?? null }, timeoutMs: CALL_TIMEOUT_MS, mark: FAKE_MARK, markNumber: FAKE_NUMBER, readInputs: Boolean(from) }, onMessage);
       if (outcome.done) break;
       if (!outcome.unit) throw new Error(`calledApiModules: the run stopped outside any module or method: ${firstLine(outcome.error.message)}`);
       skip.add(outcome.unit);
@@ -299,6 +418,8 @@ export async function recordApiCalls(config: any, resolve: ImportResolver['resol
         line,
         endpoints,
         ...(c.error && { error: unmarked(firstLine(copier.rename(c.error.message))) }),
+        ...(c.inputs && { inputs: c.inputs }),
+        ...(c.inputsUnknown && { inputsUnknown: unmarked(firstLine(copier.rename(c.inputsUnknown))) }),
       };
       exported(key, c.file, c.exportName);
       const sentBody = new Set(c.requests.filter((r) => r.body).map((r) => requestOf(r, server)).map((r) => `${r.method} ${r.url}`));

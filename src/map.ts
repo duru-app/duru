@@ -1,4 +1,5 @@
 import path from 'node:path';
+import type { FunctionInputs } from './api-calls-worker.ts';
 import { extractClient, UNKNOWN } from './client.ts';
 import { clientPath, loadServerEndpoints, matchEndpoint } from './server.ts';
 import { addressesUnderRoutes, linkTargets, screenAccess } from './access.ts';
@@ -17,6 +18,7 @@ type ClientScreen = Client['screens'][number];
 type Access = ReturnType<typeof screenAccess>;
 
 interface MapConfig extends AccessConfig {
+  requestFunction: { body?: string; object?: boolean } | null;
   srcRoot: string;
   outDir?: string;
   marksDir?: string;
@@ -53,6 +55,8 @@ export interface ApiFunction {
   line: number | null;
   endpoints: Endpoint[];
   error?: string;
+  inputs?: FunctionInputs;
+  inputsUnknown?: string;
 }
 
 interface ApiFunctions {
@@ -60,6 +64,7 @@ interface ApiFunctions {
 }
 
 type MapApiCall = Omit<ClientScreen['apiCalls'][number], 'request' | 'navigation'> & { direct?: true; endpoints: Endpoint[] | null };
+type CallInputs = NonNullable<ClientScreen['apiCalls'][number]['inputs']>;
 
 export type MapScreen = Omit<ClientScreen, 'apiCalls' | 'links'> & {
   id: string;
@@ -113,6 +118,11 @@ export type ScreenMap = {
   sagas?: NonNullable<Client['sagaRuns']>;
   bodyTypeNotices?: NonNullable<Client['bodyTypeNotices']>;
   deadCalls: { screen: string; fn: string; method: string | null; url: string | null; callSite: string }[];
+  // file·line 은 호출 위치를, at 은 키를 문자열로 적은 위치를 가리킨다.
+  inputsToCheck?: { screen: string; fn: string; key: string; file: string; line: number; at: string }[];
+  unknownInputs?: { screen: string; fn: string; callSite: string; reason: string }[];
+  // 화면 상태가 아닌 인자를 받아 어떤 키가 실렸는지 읽지 못한 호출. 화면마다 하나다.
+  unreadInputCalls?: { screen: string; calls: { fn: string; callSite: string }[] }[];
   duplicateIds: { id: string; places: { file: string; line: number }[] }[];
   calls: MapCall[];
   unknownBodyOptionCalls: string[];
@@ -278,6 +288,55 @@ function buildCalls(apiFunctions: ApiFunctions, screens: any[], appWide: { apiCa
   return { calls: nodes, unknownBodyOptionCalls: unknownBodyOptionCalls.sort(), leftOutBodyTypeFields, keptBodyTypeExclusions, unknownBodyTypeExclusions: unknown };
 }
 
+function checkInputs(screens: { id: string; apiCalls: (ClientScreen['apiCalls'][number] & { inputs?: CallInputs })[] }[], apiFunctions: ApiFunctions) {
+  const toCheck = new Map<string, NonNullable<ScreenMap['inputsToCheck']>[number]>();
+  const unknown = new Map<string, NonNullable<ScreenMap['unknownInputs']>[number]>();
+  const unread = new Map<string, NonNullable<ScreenMap['unreadInputCalls']>[number]>();
+  const precededBy = (short: string[], long: string[]) => short.length <= long.length && short.every((k, i) => k === long[i]);
+  // 보낸 경로와 입력 경로 가운데 한쪽이 다른 쪽의 앞부분이면 그 키는 요청에 실린다.
+  const sentPath = (input: string[], sent: string[][]) => sent.some((p) => precededBy(input, p) || precededBy(p, input));
+  for (const s of screens) {
+    for (const c of s.apiCalls) {
+      const api = apiFunctions[c.fn];
+      if (!c.inputs) continue;
+      const callSite = `${c.file}:${c.line}`;
+      // 어떤 키가 실렸는지 읽지 못한 인자를 받은 호출은, 요청 본문에 키를 싣는 함수일 때만 센다.
+      if ('unread' in c.inputs) {
+        if (!api?.inputs?.body.length) continue;
+        const entry = unread.get(s.id) ?? { screen: s.id, calls: [] };
+        if (!entry.calls.some((call) => call.fn === c.fn && call.callSite === callSite)) entry.calls.push({ fn: c.fn, callSite });
+        unread.set(s.id, entry);
+        continue;
+      }
+      if (!api?.inputs && !api?.inputsUnknown) continue;
+      const reason = c.inputs.unknown ?? api.inputsUnknown;
+      if (reason) {
+        unknown.set(JSON.stringify([s.id, c.fn, callSite]), { screen: s.id, fn: c.fn, callSite, reason });
+        continue;
+      }
+      for (const { key, file, line, at } of c.inputs.keys) {
+        const input = ['0', ...c.inputs.argPath, key];
+        if (sentPath(input, api.inputs!.sent)) continue;
+        const spread = api.inputs!.spread.find((p) => precededBy(p, input));
+        if (spread) {
+          const reason = `the function spreads ${spread.join('.')} without reading its keys`;
+          unknown.set(JSON.stringify([s.id, c.fn, callSite, reason]), { screen: s.id, fn: c.fn, callSite, reason });
+          continue;
+        }
+        toCheck.set(JSON.stringify([s.id, c.fn, key, at]), { screen: s.id, fn: c.fn, key, file, line, at });
+      }
+    }
+  }
+  const unreadInputCalls = [...unread.values()]
+    .map((e) => ({ ...e, calls: [...e.calls].sort((a, b) => compare(a.fn, b.fn) || compare(a.callSite, b.callSite)) }))
+    .sort((a, b) => compare(a.screen, b.screen));
+  return {
+    inputsToCheck: [...toCheck.values()].sort((a, b) => compare(a.screen, b.screen) || compare(a.fn, b.fn) || compare(a.key, b.key) || compare(a.at, b.at) || compare(a.file, b.file) || a.line - b.line),
+    unknownInputs: [...unknown.values()].sort((a, b) => compare(a.screen, b.screen) || compare(a.fn, b.fn) || compare(a.callSite, b.callSite)),
+    ...(unreadInputCalls.length && { unreadInputCalls }),
+  };
+}
+
 export async function buildMap(config: MapConfig): Promise<ScreenMap> {
   const { screens, appWide, apiFunctions, unreferencedApiFunctions, sagaRuns, unrunApiModules, outsideStandIns, silentApiModules, bodyTypeNotices, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports, unusedListed, madeHistories, emptyRouteFiles, takingAddressesUnder, framesPickingByAddress } = await extractClient(config);
   const server = config.serverEndpoints.flatMap(loadServerEndpoints);
@@ -294,7 +353,7 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
   // 서버 목록은 apiPathPrefix 를 뗀 경로라, 그 접두사 없이 적힌 주소가 목록과 맞는 것은 같은 경로가 아니다.
   const listed = (e: { url: string | null; server: EndpointMatch }) => ['match', 'method-mismatch'].includes(e.server.status) && e.url!.startsWith(apiPathPrefix);
   const goesToServer = (e: { url: string | null; server: EndpointMatch }) => listed(e) || (config.app?.apiPaths ?? []).some((prefix) => e.url!.startsWith(prefix));
-  const withEndpoints = (apiCalls: ClientScreen['apiCalls']): MapApiCall[] => apiCalls.flatMap(({ request, navigation, ...c }) => {
+  const withEndpoints = (apiCalls: ClientScreen['apiCalls']): MapApiCall[] => apiCalls.flatMap(({ request, navigation, inputs, ...c }) => {
     if (!request) return [{ ...c, endpoints: apiFunctions[c.fn]?.endpoints ?? null }];
     const { unresolved, ...sent } = request;
     const e = { ...sent, line: c.line, server: unresolved ? { status: 'unresolved' as const, reason: unresolved } : matchEndpoint(server, sent.method, sent.url, apiPathPrefix), callId: null as string | null };
@@ -329,6 +388,9 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
   }
 
   const bodyTypeExclusions = config.bodyTypeExclusions ?? {};
+  // 요청 본문 자리가 없으면 인자가 요청에 실렸는지 볼 수 없어 입력 키를 확인하지 않는다.
+  const inputCheck = config.requestFunction?.body ? checkInputs(screens.map((s, i) => ({ id: mapped[i].id, apiCalls: s.apiCalls })), apiFunctions) : null;
+
   const { calls, unknownBodyOptionCalls, leftOutBodyTypeFields, keptBodyTypeExclusions, unknownBodyTypeExclusions } = buildCalls(apiFunctions, mapped, appWideMapped, apiPathPrefix, config.bodyOptions ?? {}, bodyTypeExclusions);
 
   const unreferenced = new Set(unreferencedApiFunctions);
@@ -357,6 +419,7 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
     ...(sagaRuns && { sagas: sagaRuns }),
     ...(bodyTypeNotices && { bodyTypeNotices }),
     deadCalls,
+    ...inputCheck,
     duplicateIds,
     calls,
     unknownBodyOptionCalls,

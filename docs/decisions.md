@@ -5122,6 +5122,52 @@ without its API code and mattermost (`components/root`) send none with an addres
 `layout`, none with an address. outline (17 entries on 17 screens) and appsmith (none) have no component named, as
 their `App` is not exported. Apart from `layout`, `appWide` and that line, the seven maps are the same.
 
+**Which input keys reach a request is learned by running the API function once more with values that carry their
+path.**
+When `requestFunction` is set, each file of `apiModules` is run in the same pass that records `calledApiModules`, with
+the request function replaced by a recorder, and each function the static reading found in that file is called once
+with marked values. A marked value records the place it was read from (`0.data.user.name`), so a request body built
+by copying keys out of what a screen passes (`['user.name'].forEach((k) => { if (k in data) body[k] = data[k] })`)
+says which keys of the screen's values it carries. What the run gives is added to that function as `inputs`, and a
+function that throws or times out as marked values is `inputsUnknown` with the first line of the error. The static
+reading stays the only source of the function's endpoints, file and line: the run adds no api function, changes no
+endpoint and adds no call, and a name and a file that both match are the only way a field is attached.
+Alternatives compared:
+- Reading the function body for each shape that copies keys: every shape (a `forEach` over a list, a `switch`, a
+  `reduce`, a helper that takes the key list) needs its own reader, and a shape nobody wrote a reader for passes as
+  having sent nothing, which is the wrong answer read as a good one.
+- Running only the files of `calledApiModules`: into-sign 1.6.0 then leaves 22 of its 198 calls without the keys,
+  21 of them downloads that do not go through `Ajax.axios`.
+Reason: the run already happens for the addresses of `calledApiModules`, the marked pass reads every shape that
+copies keys at once, and a key the function enumerates over, or a function that behaves differently with marked
+values, is reported as unknown instead of guessed.
+Measured: on into-sign 1.6.0 with `requestFunction` at `./_ajax/Ajax.axios` and its three API files in `apiModules`,
+the map has 198 calls, the same as without `requestFunction`, and the same 217 api functions with the same endpoints,
+files and lines; 175 get `inputs`, 18 get `inputsUnknown` (7 `threw with tagged values: Unexpected token '_',
+"__duru_fake__" is not valid JSON`, 7 `needs numbers`, 3 `threw with tagged values: __duru_fake__`, 1 `threw with
+tagged values: window.location.reload is not a function`), and the 24 the run never reaches, the downloads that send
+by moving the browser, get neither. `ajaxWorkspaceDocumentBffUpdateSigner` sends `0.data.signer.name`, `.email`,
+`.cellPhone`, and `0.data.signer.attribute.enabledAuth`, `.authType`, `.authPassword`, `.authPasswordHint`,
+`.notificationTypes`, `.notificationContexts`, and not `signer.attribute.pkiSignType`, which it never copies.
+
+**A person's "fine" on a key to check is a mark on a part of the screen: the API function and the key.**
+A key a screen writes and the API function does not carry stays in the map's `inputsToCheck`, and the review page
+writes a mark with the screen as its node and `"part": { "kind": "input", "key": { "fn", "key" } }`, in the same
+marks folder as the other decisions. `rebuild` leaves a line whose mark says `fine` and whose screen code has not
+changed since the mark out of its `input keys to check` list, and counts those lines as marked fine under it, while
+the map keeps the key; any other status, and a screen whose code changed since the mark, keeps or brings the line
+back, and the page marks such a row 「코드 바뀜」.
+Alternatives compared:
+- A list of keys in the config file: the review page cannot write it as a person looks at a row, so a person would
+  have to edit the config for each key and say where it is read from.
+- A mark on the file and line that wrote the key: a few lines moved in the code drop the mark, though the screen, the
+  function and the key are the same.
+- A mark that stays after the screen's code changes: a judgment made on old code would keep hiding a key the new code
+  may now need to send.
+Reason: the mark is kept with the other decisions, merges in git without clashes like them, and stays on the key when
+its lines move; a key comes back for a person to look at when its screen's code changes, since a judgment made on the
+old code does not hold for the new; and a key the map no longer lists leaves the mark as a mark outside the map.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

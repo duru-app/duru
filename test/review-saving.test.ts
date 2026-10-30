@@ -471,3 +471,163 @@ test('in a browser, a mark an older duru saved as missing shows as 「테스트 
     );
   });
 });
+
+const INPUT_KEYS = [
+  { screen: '/lab#Lab', fn: 'ajaxLabExperiment', key: 'keyword', file: 'Components/Lab.js', line: 8, at: 'Components/Lab.js:20 → Components/Lab.js:8' },
+  { screen: '/lab#Lab', fn: 'ajaxLabExperiment', key: 'status', file: 'Components/Lab.js', line: 9, at: 'Components/Lab.js:20 → Components/Lab.js:9' },
+];
+
+test('in a browser, a key to check takes ✓ as a fine mark on the screen, the API function and the key, folds under 「확인함」, and ✕ puts it back in the list', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    const mapFile = path.join(config.outDir, 'map.json');
+    fs.writeFileSync(mapFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(mapFile, 'utf8')), inputsToCheck: INPUT_KEYS }));
+    const target = { node: '/lab#Lab', part: { kind: 'input', key: { fn: 'ajaxLabExperiment', key: 'keyword' } } };
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await chooseScreen(p, '/lab');
+        await p.waitForSelector('#center-body table.inputs');
+        assert.equal(await p.textContent('#center-body > h2:has-text("입력 키")'), '입력 키 2');
+        assert.equal(await p.locator('#center-body > table.inputs tbody tr').count(), 2);
+        assert.deepEqual(await p.locator('#center-body > table.inputs td.muted.mono').allTextContents(), INPUT_KEYS.map((k) => k.at));
+        assert.equal(await p.locator('#center-body > table.inputs button[aria-label="보내지 않는 게 맞음"]').count(), 2);
+
+        await p.locator('#center-body > table.inputs tbody tr', { hasText: 'keyword' }).locator('button').click();
+        await p.waitForSelector('#center-body details.inputs-marked > summary:has-text("확인함 1")');
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status]), [[target, 'fine']]);
+        assert.equal(await p.textContent('#center-body > h2:has-text("입력 키")'), '입력 키 1');
+        assert.equal(await p.locator('#center-body > table.inputs tbody tr').count(), 1);
+        assert.deepEqual(await p.locator('#center-body details.inputs-marked table.inputs td span.mono').allTextContents(), ['ajaxLabExperiment', 'keyword']);
+
+        await p.click('#center-body details.inputs-marked > summary');
+        await p.locator('#center-body details.inputs-marked table.inputs button[aria-label="다시 확인할 입력 키로"]').click();
+        await p.waitForSelector('#center-body details.inputs-marked', { state: 'detached' });
+        assert.equal(await p.textContent('#center-body > h2:has-text("입력 키")'), '입력 키 2');
+        assert.equal(await p.locator('#center-body > table.inputs .chip').count(), 0);
+        assert.deepEqual(await p.locator('#center-body > table.inputs td.muted.mono').allTextContents(), INPUT_KEYS.map((k) => k.at));
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status]).sort((a, b) => String(a[1]).localeCompare(String(b[1]))), [[target, 'fine'], [target, 'needs-more']]);
+      }),
+    );
+  });
+});
+
+const LONG_INPUT_KEYS = [{
+  screen: '/lab/result#LabResult',
+  fn: `ajaxLabExperiment${'InAVeryLongApiFunctionName'.repeat(4)}`,
+  key: `keyword${'OfAVeryLongInputName'.repeat(4)}`,
+  file: `client/src/api/${'laboratory/experiments/'.repeat(3)}ajaxLabExperiment.js`,
+  line: 8,
+  at: `client/src/components/${'laboratory/experiments/'.repeat(3)}LabExperimentPanel.js:208 → client/src/api/${'laboratory/experiments/'.repeat(3)}ajaxLabExperiment.js:8`,
+}];
+
+test('in a browser, a narrow center pane wraps the input keys so ✓ stays inside the pane without a horizontal scroll', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    const mapFile = path.join(config.outDir, 'map.json');
+    fs.writeFileSync(mapFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(mapFile, 'utf8')), inputsToCheck: LONG_INPUT_KEYS }));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.setViewportSize({ width: 1060, height: 900 });
+        await p.waitForSelector('#screen-list li');
+        await chooseScreen(p, '/lab/result');
+        await p.waitForSelector('#center-body > table.inputs');
+        assert.deepEqual(await p.locator('#center-body > table.inputs td.muted.mono').allTextContents(), LONG_INPUT_KEYS.map((k) => k.at));
+        const pane = await p.evaluate(() => {
+          const center = document.getElementById('center')!;
+          const button = document.querySelector('#center-body > table.inputs button[aria-label="보내지 않는 게 맞음"]')!.getBoundingClientRect();
+          return { clientWidth: center.clientWidth, scrollWidth: center.scrollWidth, buttonWidth: button.width, buttonRight: button.right, paneRight: center.getBoundingClientRect().right };
+        });
+        assert.ok(pane.clientWidth > 380 && pane.clientWidth < 420, `the center pane is ${pane.clientWidth}px wide`);
+        assert.ok(pane.buttonWidth > 0, '✓ is drawn in the pane');
+        assert.ok(pane.scrollWidth <= pane.clientWidth, `the center pane scrolls sideways: ${pane.scrollWidth} of ${pane.clientWidth}`);
+        assert.ok(pane.buttonRight <= pane.paneRight, `✓ ends at ${pane.buttonRight}, the pane at ${pane.paneRight}`);
+      }),
+    );
+  });
+});
+
+test('in a browser, a mark on an input key shows the function and the key as its tag instead of a test title', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    const mapFile = path.join(config.outDir, 'map.json');
+    fs.writeFileSync(mapFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(mapFile, 'utf8')), inputsToCheck: INPUT_KEYS }));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await chooseScreen(p, '/lab');
+        await p.waitForSelector('#center-body table.inputs');
+        await p.locator('#center-body > table.inputs tbody tr', { hasText: 'keyword' }).locator('button').click();
+        await p.waitForSelector('#center-body details.inputs-marked > summary:has-text("확인함 1")');
+        await p.waitForSelector('#right .history li .tag-label');
+        assert.equal(await p.textContent('#right .history li .tag-label'), '입력 키 ajaxLabExperiment · keyword');
+      }),
+    );
+  });
+});
+
+// 화면 값이 아닌 인자를 받아 어떤 키가 실렸는지 읽지 못한 호출. 다른 입력 키 소견이 없는 화면에 놓는다.
+const UNREAD_CALLS = [{ screen: '/lab#Lab', calls: [{ fn: 'ajaxLabExperiment', callSite: 'Components/Lab.js:8' }] }];
+
+test('in a browser, a screen whose input calls duru could not read shows them in the 「모름」 list even when it has no key to check', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    const mapFile = path.join(config.outDir, 'map.json');
+    fs.writeFileSync(mapFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(mapFile, 'utf8')), inputsToCheck: [], unreadInputCalls: UNREAD_CALLS }));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await chooseScreen(p, '/lab');
+        await p.waitForSelector('#center-body details.inputs-unknown > summary:has-text("모름 1")');
+        assert.equal(await p.textContent('#center-body > h2:has-text("입력 키")'), '입력 키 0');
+        await p.click('#center-body details.inputs-unknown > summary');
+        const line = await p.textContent('#center-body details.inputs-unknown li');
+        assert.match(line!, /^화면 값을 읽지 못한 호출 1 /);
+        assert.match(line!, /ajaxLabExperiment$/);
+        assert.equal(await p.getAttribute('#center-body details.inputs-unknown li', 'title'), 'ajaxLabExperiment Components/Lab.js:8');
+      }),
+    );
+  });
+});
+
+// 화면 값을 읽지 못한 호출이 둘인 화면. 「모름」은 화면마다 한 줄이 아니라 호출을 센다.
+const UNREAD_TWO = [{ screen: '/lab#Lab', calls: [
+  { fn: 'ajaxLabExperiment', callSite: 'Components/Lab.js:8' },
+  { fn: 'ajaxLabExperiment', callSite: 'Components/Lab.js:12' },
+] }];
+
+test('in a browser, the 「모름」 count of a screen counts each call duru did not read rather than one line per screen, in its text and its aria-label alike', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    const mapFile = path.join(config.outDir, 'map.json');
+    fs.writeFileSync(mapFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(mapFile, 'utf8')), inputsToCheck: [], unreadInputCalls: UNREAD_TWO }));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await chooseScreen(p, '/lab');
+        await p.waitForSelector('#center-body details.inputs-unknown > summary:has-text("모름 2")');
+        assert.equal(await p.getAttribute('#center-body details.inputs-unknown > summary', 'aria-label'), '요청에 실리는 키를 읽지 못한 호출 2');
+      }),
+    );
+  });
+});
+
+// 같은 함수를 두 곳에서 부른 화면. 「모름」 줄에는 함수 이름이 한 번씩만 나온다.
+const UNREAD_REPEAT = [{ screen: '/lab#Lab', calls: [
+  { fn: 'ajaxLabExperiment', callSite: 'Components/Lab.js:8' },
+  { fn: 'ajaxLabList', callSite: 'Components/Lab.js:10' },
+  { fn: 'ajaxLabExperiment', callSite: 'Components/Lab.js:12' },
+] }];
+
+test('in a browser, the line for the calls duru did not read names each API function once in the order it first appears, and its title keeps every call site', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    const mapFile = path.join(config.outDir, 'map.json');
+    fs.writeFileSync(mapFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(mapFile, 'utf8')), inputsToCheck: [], unreadInputCalls: UNREAD_REPEAT }));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await chooseScreen(p, '/lab');
+        await p.waitForSelector('#center-body details.inputs-unknown > summary:has-text("모름")');
+        await p.click('#center-body details.inputs-unknown > summary');
+        const line = '#center-body details.inputs-unknown li';
+        assert.equal(await p.textContent(line), '화면 값을 읽지 못한 호출 3 ajaxLabExperiment, ajaxLabList');
+        assert.equal(await p.getAttribute(line, 'title'), 'ajaxLabExperiment Components/Lab.js:8, ajaxLabList Components/Lab.js:10, ajaxLabExperiment Components/Lab.js:12');
+      }),
+    );
+  });
+});
