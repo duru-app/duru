@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import { loadConfig } from '../src/config.ts';
-import { applyOverrides, logInAgainOnSignedOut, readSettingsFile, startAppHost, LOGIN_AGAIN_PATH } from '../src/app-host.ts';
+import { applyOverrides, logInAgainOnSignedOut, readSettingsFile, startAppHost, APP_PANE_NAME, LOGIN_AGAIN_PATH } from '../src/app-host.ts';
 import { startReviewServer } from '../src/review.ts';
 import { FIXTURE, withRebuiltFixture, signer, withServer, PASSWORD_ENV, ADMIN_PASSWORD_ENV, AUDITOR_PASSWORD_ENV, ACCOUNTS, withFakeApi, appSettings, SETTINGS_FILE, withSettingsFile, rewrite, rebuild, LIST_API, API_KEY_ENV, API_KEY, ISSUING_API, VIEW_TOKEN_API, VIEW_ROUTE, loginWithHeader, roleSettings, withPasswords, withPassword, ALL_PASSWORDS, pathValueSettings } from './review-helpers.ts';
 import type { Config, PageData } from './review-helpers.ts';
@@ -220,7 +220,8 @@ test('the signed-out port has no login-again path and none of the script that ca
 });
 
 // 로그인 다시 하기 코드를 돌리는 앱 프레임 하나. 같은 탭의 프레임들은 sessionStorage 를 함께 쓴다.
-function appFrame({ at = '/home', name = '', session = new Map<string, string>(), reply = async () => ({ value: '{"accessToken":"cut-2"}' }) }: {
+// 이름이 APP_PANE_NAME 이어야 앱 페이지가 다시 로그인하므로, 기록이나 상자 찾기의 프레임은 다른 이름으로 만든다.
+function appFrame({ at = '/home', name = APP_PANE_NAME, session = new Map<string, string>(), reply = async () => ({ value: '{"accessToken":"cut-2"}' }) }: {
   at?: string;
   name?: string;
   session?: Map<string, string>;
@@ -230,7 +231,6 @@ function appFrame({ at = '/home', name = '', session = new Map<string, string>()
   const replaced: string[] = [];
   const stored: string[] = [];
   const asked: number[] = [];
-  const listeners: ((e: unknown) => void)[] = [];
   const w: any = {
     name,
     parent: { postMessage: () => {} },
@@ -256,9 +256,7 @@ function appFrame({ at = '/home', name = '', session = new Map<string, string>()
         url = new URL(to, url);
       },
     },
-    addEventListener: (type: string, fn: (e: unknown) => void) => {
-      if (type === 'message') listeners.push(fn);
-    },
+    addEventListener: () => {},
     fetch: async () => {
       asked.push(1);
       return { json: reply };
@@ -266,31 +264,27 @@ function appFrame({ at = '/home', name = '', session = new Map<string, string>()
   };
   const context = vm.createContext(w);
   const go = (to: string) => w.history.pushState({}, '', to);
-  const install = () => vm.runInContext(`(${logInAgainOnSignedOut})(["/signin"], ${JSON.stringify(LOGIN_AGAIN_PATH)}, "FAKE_AUTH", ["http://parent.test"]);`, context);
-  // 리뷰 페이지가 프레임에 보내는 쪽지.
-  const say = (data: unknown, { source = w.parent, origin = 'http://parent.test' } = {}) => {
-    for (const fn of listeners) fn({ source, origin, data });
-  };
-  return { w, replaced, stored, asked, session, go, install, say };
+  const install = () => vm.runInContext(`(${logInAgainOnSignedOut})(["/signin"], ${JSON.stringify(LOGIN_AGAIN_PATH)}, "FAKE_AUTH", ["http://parent.test"], ${JSON.stringify(APP_PANE_NAME)});`, context);
+  return { w, replaced, stored, asked, session, go, install };
 }
 
 const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-test('two app frames in one tab each come back to their own address, because each keeps its last address under its own window.name', async () => {
+test('the middle app pane frame keeps one last address under the fixed key, so the pane loaded again at the sign-in screen goes back to the address it was at', async () => {
   const session = new Map<string, string>();
-  const pane = appFrame({ session });
-  const box = appFrame({ at: '/settings', session });
+  const pane = appFrame({ at: '/settings', session });
   pane.install();
-  box.install();
-  assert.match(pane.w.name, /^__duru_/);
-  assert.notEqual(pane.w.name, box.w.name);
+  await settled();
+  // 프레임의 이름은 그대로 두고, 지난 주소는 탭마다 하나인 열쇠에 남긴다.
+  assert.equal(pane.w.name, APP_PANE_NAME);
+  assert.deepEqual([...session.keys()], ['__duru_last']);
 
   pane.go('/signin');
   await settled();
-  assert.deepEqual(pane.replaced, ['/home']);
+  assert.deepEqual(pane.replaced, ['/settings']);
 
-  // 페이지를 새로 불러와도 window.name 이 남아 같은 자리에서 지난 주소를 찾는다.
-  const loaded = appFrame({ at: '/signin', name: box.w.name, session });
+  // 페이지를 새로 불러와도 window.name 이 남아 같은 열쇠에서 지난 주소를 찾는다.
+  const loaded = appFrame({ at: '/signin', session });
   loaded.install();
   await settled();
   assert.deepEqual(loaded.replaced, ['/settings']);
@@ -320,24 +314,45 @@ test('an app frame never goes back to an address that is outside the app, such a
   assert.deepEqual([...frame.session.values()], ['/home']);
 });
 
-test('an app frame the review page told to leave its address alone stays at the sign-in screen the app moved to, and takes that word from no other page or message', async () => {
+test('a frame the review page did not name as the middle app pane never asks for login-again, so a walk being recorded and the box cut stay on the sign-in screen', async () => {
+  // 기록과 상자 찾기가 띄우는 프레임에는 이름이 없고, 앱이 스스로 붙인 다른 이름도 가운데 앱 칸이 아니다.
+  for (const name of ['', 'app-chosen']) {
+    const booted = appFrame({ at: '/signin', name });
+    booted.install();
+    await settled();
+    assert.deepEqual(booted.asked, [], `a frame named ${JSON.stringify(name)} opened at the sign-in screen asks for no login`);
+    assert.deepEqual(booted.replaced, []);
+    assert.deepEqual([...booted.session.values()], [], 'and remembers no address');
+    assert.equal(booted.w.name, name, 'the script leaves the name as it found it');
+
+    const moved = appFrame({ name });
+    moved.install();
+    moved.go('/home');
+    moved.go('/signin');
+    await settled();
+    assert.deepEqual(moved.asked, [], `a frame named ${JSON.stringify(name)} that moves to the sign-in screen asks for no login either`);
+    assert.deepEqual(moved.replaced, []);
+    assert.deepEqual([...moved.session.values()], []);
+  }
+});
+
+test('an app that changes window.name after the script is installed stops going back from the sign-in screen, without a crash', async () => {
   const frame = appFrame();
   frame.install();
-  frame.say({ duru: 'login-again', off: true }, { origin: 'http://elsewhere.test' });
-  frame.say({ duru: 'login-again', off: true }, { source: {} });
-  frame.say({ duru: 'find', off: true });
-  frame.go('/signin');
-  await settled();
-  assert.deepEqual(frame.replaced, ['/home']);
-
-  frame.say({ duru: 'login-again', off: true });
   frame.go('/help');
+  await settled();
+  frame.w.name = 'app-chosen';
   frame.go('/signin');
   await settled();
-  assert.deepEqual(frame.replaced, ['/home']);
-  // 꺼 둔 프레임은 로그인도 청하지 않는다.
-  assert.equal(frame.asked.length, 1);
-  assert.deepEqual(frame.stored, ['{"accessToken":"cut-2"}']);
+  assert.deepEqual(frame.asked, []);
+  assert.deepEqual(frame.replaced, []);
+  assert.deepEqual([...frame.session.values()], ['/help']);
+
+  // 이름을 되돌리면 다시 가운데 앱 칸이 되어 지난 주소로 돌아간다.
+  frame.w.name = APP_PANE_NAME;
+  frame.go('/signin');
+  await settled();
+  assert.deepEqual(frame.replaced, ['/help']);
 });
 
 test('a login-again request whose login throws is never kept, so the next request logs the account in again instead of awaiting the same failure', async () => {

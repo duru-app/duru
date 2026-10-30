@@ -219,7 +219,6 @@ function renderWalkCenter() {
   const stage = appStage(src);
   stage.classList.add('walk-stage');
   const frame = /** @type {HTMLIFrameElement} */ (stage.querySelector('iframe.app'));
-  noLoginAgain(frame);
   frame.src = src;
   fill(head,
     h('div', { class: 'frame-bar walk-bar' },

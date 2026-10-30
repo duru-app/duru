@@ -384,13 +384,17 @@ export const LOGIN_AGAIN_PATH = '/__duru/login-again';
 const LOGIN_AGAIN_WAIT_MS = 60_000;
 const LOGIN_CUT = '다시 로그인한 뒤 1분 안에 또 로그인 화면으로 넘어가 더 시도하지 않습니다. 같은 계정으로 다른 곳에서 로그인했을 수 있습니다';
 
+// 리뷰 페이지가 가운데 앱 칸의 프레임에만 붙이는 이름. 이 이름이 없는 프레임은 다시 로그인하지 않는다.
+export const APP_PANE_NAME = '__duru_app_pane';
+
 // 앱 페이지 안에서 따로 돌기 때문에 바깥 스코프의 변수를 쓰지 않는다.
-export function logInAgainOnSignedOut(signedOutPaths: string[], againPath: string, storageKey: string, origins: string[]) {
+export function logInAgainOnSignedOut(signedOutPaths: string[], againPath: string, storageKey: string, origins: string[], frameName: string) {
   const w: any = globalThis;
   if (w.parent === w) return;
-  // 같은 출처의 앱 프레임은 sessionStorage 를 함께 쓰므로 열쇠를 프레임마다 나눈다. window.name 은 페이지를 새로 불러와도 남는다.
-  if (!w.name) w.name = `__duru_${Math.random().toString(36).slice(2)}`;
-  const lastKey = `__duru_last:${w.name}`;
+  // 가운데 앱 칸이 아닌 프레임(기록, 상자 찾기, 앱 화면 전체)은 로그인 화면에 그대로 머문다. 아무것도 남기지도 감시하지도 않는다.
+  if (w.name !== frameName) return;
+  // 한 탭에 그 이름의 프레임은 하나이므로 열쇠도 하나를 둔다. window.name 은 페이지를 새로 불러와도 남는다.
+  const lastKey = '__duru_last';
   const here = () => w.location.pathname + w.location.search + w.location.hash;
   // 이 앱 안의 주소만 되돌아간다. '//' 로 시작하는 주소는 다른 사이트다.
   const inside = (url: unknown) => typeof url === 'string' && url.startsWith('/') && !url.startsWith('//');
@@ -409,14 +413,10 @@ export function logInAgainOnSignedOut(signedOutPaths: string[], againPath: strin
   };
   let last = remembered();
   let asking = false;
-  // 기록과 상자 찾기는 앱이 옮겨 간 화면의 주소를 그대로 읽으므로, 리뷰 페이지가 그런 프레임에서는 꺼 달라고 알려 온다.
-  let off = false;
   const ask = async () => {
-    if (asking) return;
     asking = true;
     const answer = await w.fetch(againPath, { method: 'POST' }).then((res: any) => res.json()).catch(() => null);
     asking = false;
-    if (off) return;
     if (typeof answer?.value === 'string') {
       w.localStorage.setItem(storageKey, answer.value);
       w.location.replace(last);
@@ -426,8 +426,8 @@ export function logInAgainOnSignedOut(signedOutPaths: string[], againPath: strin
     for (const origin of origins) w.parent.postMessage({ duru: 'walk', signedOut: answer.error }, origin);
   };
   const watch = () => {
-    // 답을 기다리는 동안 로그인 화면이 옮겨 가는 주소는 돌아갈 주소가 아니다. 꺼 둔 프레임은 로그인도 청하지 않는다.
-    if (asking || off) return;
+    // 답을 기다리는 동안 로그인 화면이 옮겨 가는 주소는 돌아갈 주소가 아니다. 앱이 이름을 바꾼 프레임은 더는 가운데 앱 칸이 아니다.
+    if (asking || w.name !== frameName) return;
     if (signedOutPaths.includes(w.location.pathname)) {
       ask();
       return;
@@ -447,10 +447,6 @@ export function logInAgainOnSignedOut(signedOutPaths: string[], againPath: strin
   }
   w.addEventListener('popstate', watch);
   w.addEventListener('hashchange', watch);
-  w.addEventListener('message', (e: any) => {
-    if (e.source !== w.parent || !origins.includes(e.origin) || e.data?.duru !== 'login-again') return;
-    off = e.data.off === true;
-  });
   watch();
 }
 
@@ -485,7 +481,7 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
     const code = [
       login?.storage ? `localStorage.setItem(${key}, ${literal(login.storage.value)});` : '',
       login?.storage && app.signedOutPaths.length
-        ? `(${logInAgainOnSignedOut})(${literal(app.signedOutPaths)}, ${literal(LOGIN_AGAIN_PATH)}, ${key}, ${literal(origins)});`
+        ? `(${logInAgainOnSignedOut})(${literal(app.signedOutPaths)}, ${literal(LOGIN_AGAIN_PATH)}, ${key}, ${literal(origins)}, ${literal(APP_PANE_NAME)});`
         : '',
       origins.length ? `(${answerReviewPage})(${literal(origins)});` : '',
     ].join('');

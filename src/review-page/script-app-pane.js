@@ -180,6 +180,10 @@ window.addEventListener('message', (e) => {
   document.querySelector('#center .app-stage')?.before(h('div', { class: 'error login-cut' }, e.data.signedOut));
 });
 
+// 가운데 앱 칸의 프레임에만 붙이는 이름. 앱 페이지는 이 이름을 가진 프레임에서만 다시 로그인하므로(src/app-host.ts 의 APP_PANE_NAME 과 같아야 한다),
+// 기록이나 상자 찾기, 앱 화면 전체처럼 앱이 옮겨 간 주소를 그대로 읽는 프레임은 이름 없이 띄운다.
+const APP_PANE_NAME = '__duru_app_pane';
+
 /**
  * @param {PageData['map']['screens'][number]} s
  * @param {ReturnType<typeof frameTarget>} target
@@ -231,7 +235,7 @@ function appFrame(s, { link, fallback, opens, missing }, entry) {
       values),
     h('div', { class: 'settings-bar', id: 'settings-bar', hidden: true }),
     cut && h('div', { class: 'error login-cut' }, cut),
-    appStage(opened),
+    appStage(opened, APP_PANE_NAME),
   ];
 }
 
@@ -279,8 +283,12 @@ function appWidthPicker() {
 
 const fitPercent = (room) => appSize.width && Math.max(1, Math.min(100, Math.floor((room / appSize.width) * 100)));
 
-function appStage(src) {
-  const frame = h('iframe', { class: 'app', 'data-src': src, title: '앱 화면', style: appSize.width ? `width: ${appSize.width}px` : null });
+/**
+ * @param {string} src
+ * @param {string} [name] 앱 페이지가 다시 로그인할 프레임의 이름. 가운데 앱 칸에만 붙인다.
+ */
+function appStage(src, name) {
+  const frame = h('iframe', { class: 'app', name, 'data-src': src, title: '앱 화면', style: appSize.width ? `width: ${appSize.width}px` : null });
   const stage = h('div', { class: 'app-stage' }, h('div', { class: 'app-sizer' }, frame));
   appResized.disconnect();
   appResized.observe(stage);
@@ -292,15 +300,6 @@ const appOrigins = () => {
   if (!app) return [];
   return [app.url, ...(app.signedOutUrl ? [app.signedOutUrl] : []), ...app.roles.map((r) => r.url)].map((url) => new URL(url).origin);
 };
-
-// 기록과 상자 찾기는 앱이 옮겨 간 화면의 주소를 그대로 읽으므로, 그 프레임에서는 앱이 로그인 화면으로 넘어가도 다시 로그인하지 않는다.
-/** @param {HTMLIFrameElement} frame */
-function noLoginAgain(frame) {
-  frame.addEventListener('load', () => {
-    if (!frame.src) return;
-    frame.contentWindow?.postMessage({ duru: 'login-again', off: true }, new URL(frame.src).origin);
-  });
-}
 
 function fitApp() {
   const stage = document.querySelector('#center .app-stage');

@@ -144,7 +144,7 @@ function changeField(frame: Frame, id: string, attrs: Record<string, string>, va
 }
 
 test('in a browser, a recorded value cleared in the app leaves its step and the record, a box changed again without a name counts once on its screen, and the app opened again after leaving the story tab goes on from the last address without a step of its own, keeping a login made in the signed-out pane', { skip: browserMissing }, async () => {
-  await withFakeApi((api) =>
+  await withFakeApi((api, _presses, logins) =>
     withPassword('s3cret', () =>
       withRebuiltFixture({ app: { ...appSettings(api).app, signedOutPaths: ['/signin'] } }, (config) =>
         withServer(config, 'reviewer', (base) =>
@@ -163,6 +163,8 @@ test('in a browser, a recorded value cleared in the app leaves its step and the 
             await goTo(frame, '/help');
             await untilWalkSteps(p, 3);
             assert.deepEqual(await walkSteps(p), ['/ 맵에 없는 화면/', '/signin/signin값을 적지 않은 입력 2개', '/help/help']);
+            // 기록 중인 앱은 로그인 화면으로 넘어가도 다시 로그인하지 않고 그 화면에 머문다.
+            assert.deepEqual(logins, ['duru-admin']);
 
             await p.click('#view-list');
             await p.click(storiesTab);
