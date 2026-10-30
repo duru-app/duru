@@ -274,7 +274,8 @@ function inputSection(s) {
   const marked = rows.filter(fine);
   const toCheck = rows.filter((r) => !fine(r));
   const unknown = (state.data.map.unknownInputs ?? []).filter((u) => u.screen === s.id);
-  if (!toCheck.length && !marked.length && !unknown.length) return null;
+  const unread = (state.data.map.unreadInputCalls ?? []).find((u) => u.screen === s.id);
+  if (!toCheck.length && !marked.length && !unknown.length && !unread) return null;
   const busy = state.caseSaving || state.bulkBusy;
   const table = (list, status, label, title) => h('table', { class: 'inputs' }, h('tbody', {}, list.map((r) => h('tr', {},
     h('td', {}, h('span', { class: 'mono' }, r.fn)),
@@ -288,9 +289,13 @@ function inputSection(s) {
     marked.length ? h('details', { class: 'inputs-marked', open: state.inputsMarkedOpen, ontoggle: (e) => { state.inputsMarkedOpen = e.currentTarget.open; } },
       h('summary', { title: '보내지 않는 게 맞다고 표시한 입력 키', 'aria-label': `보내지 않는 게 맞다고 표시한 입력 키 ${marked.length}` }, `확인함 ${marked.length}`),
       table(marked, 'needs-more', '✕', '다시 확인할 입력 키로')) : null,
-    unknown.length ? h('details', { class: 'inputs-unknown', open: state.inputsUnknownOpen, ontoggle: (e) => { state.inputsUnknownOpen = e.currentTarget.open; } },
-      h('summary', { title: '요청에 실리는 키를 읽지 못한 호출', 'aria-label': `요청에 실리는 키를 읽지 못한 호출 ${unknown.length}` }, `모름 ${unknown.length}`),
-      h('ul', { class: 'plain' }, unknown.map((u) => h('li', {}, h('span', { class: 'mono' }, u.fn), ' ', h('span', { class: 'muted mono' }, u.callSite), ' ', u.reason)))) : null,
+    unknown.length || unread ? h('details', { class: 'inputs-unknown', open: state.inputsUnknownOpen, ontoggle: (e) => { state.inputsUnknownOpen = e.currentTarget.open; } },
+      h('summary', { title: '요청에 실리는 키를 읽지 못한 호출', 'aria-label': `요청에 실리는 키를 읽지 못한 호출 ${unknown.length + (unread ? 1 : 0)}` }, `모름 ${unknown.length + (unread ? 1 : 0)}`),
+      h('ul', { class: 'plain' },
+        unknown.map((u) => h('li', {}, h('span', { class: 'mono' }, u.fn), ' ', h('span', { class: 'muted mono' }, u.callSite), ' ', u.reason)),
+        unread ? h('li', { title: unread.calls.map((c) => `${c.fn} ${c.callSite}`).join(', ') },
+          `화면 값을 읽지 못한 호출 ${unread.calls.length} `,
+          h('span', { class: 'mono' }, unread.calls.map((c) => c.fn).join(', '))) : null)) : null,
   ];
 }
 

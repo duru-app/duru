@@ -562,3 +562,26 @@ test('in a browser, a mark on an input key shows the function and the key as its
     );
   });
 });
+
+// 화면 값이 아닌 인자를 받아 어떤 키가 실렸는지 읽지 못한 호출. 다른 입력 키 소견이 없는 화면에 놓는다.
+const UNREAD_CALLS = [{ screen: '/lab#Lab', calls: [{ fn: 'ajaxLabExperiment', callSite: 'Components/Lab.js:8' }] }];
+
+test('in a browser, a screen whose input calls duru could not read shows them in the 「모름」 list even when it has no key to check', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    const mapFile = path.join(config.outDir, 'map.json');
+    fs.writeFileSync(mapFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(mapFile, 'utf8')), inputsToCheck: [], unreadInputCalls: UNREAD_CALLS }));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await chooseScreen(p, '/lab');
+        await p.waitForSelector('#center-body details.inputs-unknown > summary:has-text("모름 1")');
+        assert.equal(await p.textContent('#center-body > h2:has-text("입력 키")'), '입력 키 0');
+        await p.click('#center-body details.inputs-unknown > summary');
+        const line = await p.textContent('#center-body details.inputs-unknown li');
+        assert.match(line!, /^화면 값을 읽지 못한 호출 1 /);
+        assert.match(line!, /ajaxLabExperiment$/);
+        assert.equal(await p.getAttribute('#center-body details.inputs-unknown li', 'title'), 'ajaxLabExperiment Components/Lab.js:8');
+      }),
+    );
+  });
+});

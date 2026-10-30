@@ -347,6 +347,12 @@ if (command === 'tasks') {
     const reasons = new Map<string, number>();
     for (const { reason } of map.unknownInputs ?? []) reasons.set(reason, (reasons.get(reason) ?? 0) + 1);
     console.log(`input keys unknown ${map.unknownInputs?.length ?? 0}${reasons.size ? `: ${[...reasons].map(([reason, n]) => `${n} ${reason}`).join('; ')}` : ''}`);
+    const unread = map.unreadInputCalls ?? [];
+    console.log(`input calls not read ${unread.reduce((n, u) => n + u.calls.length, 0)} on ${unread.length} screens`);
+  } else if (config.requestFunction) {
+    console.log(config.requestFunction.object
+      ? "input keys not checked: duru does not read the request body of a request object's calls"
+      : 'input keys not checked: give body in requestFunction, the place of the request body among the values the request function is given, such as "body": "0.data"');
   }
   console.log(`dead calls reachable from screens: ${map.deadCalls.length}`);
   console.log(`calls ${map.calls.length} | dead screens ${map.screens.filter((s: any) => s.dead).length}`);

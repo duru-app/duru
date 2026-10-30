@@ -136,6 +136,10 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   changes. An `input keys unknown N: …`
   line counts the calls whose screen argument traces to a state whose keys duru could not read, with the reasons;
   do not tell the user anything about those calls' keys (`unknownInputs`).
+  An `input calls not read N on M screens` line counts the calls whose screen values duru did not read; tell the
+  user those screens' input keys were not checked, not that they have none (`unreadInputCalls`). An
+  `input keys not checked: …` line means no input key line was made: tell the user to add `body` to
+  `requestFunction`, or that the calls of a request object cannot be checked.
 - A screen's API calls and links are the ones its code reaches, each with the file and line where it is written,
   while its `sourceFiles` hold whole files. A call or link written in one of those files is not the screen's when
   the screen does not use the function or component holding it, so do not write a test of that call or link for

@@ -22,12 +22,15 @@ interface State {
   unknown: string | null;
 }
 
-export interface CallInputs {
+export type CallInputs = {
   // 인자 위치: ['0'] 또는 ['0', 'data'] 처럼 객체 리터럴의 속성 이름을 이어 적는다.
   argPath: string[];
   keys: InputKey[];
   unknown: string | null;
-}
+} | {
+  // 화면 상태가 아닌 첫 인자를 받아, 어떤 키가 실렸는지 읽지 못한 호출.
+  unread: true;
+};
 
 interface Reading {
   srcRoot: string;
@@ -429,14 +432,13 @@ export function screenInputReader({ srcRoot, resolve }: Reading) {
 
   function callInputs(file: string) {
     const found = new Map<number, CallInputs>();
-    if (!statesIn(file).size) return found;
     traverse(parse(file).ast, {
       CallExpression(p: NodePath<CallExpression>) {
         const fn = memberChain(p.node.callee)?.join('.');
         const arg = p.get('arguments')[0] as NodePath<any> | undefined;
         if (!fn || !arg?.node) return;
         const state = argumentState(file, arg);
-        if (!state) return;
+        if (!state) return void found.set(p.node.start!, { unread: true });
         const entry = keysIn(file).get(state.name)!;
         const keys = [...entry.keys].sort((a, b) => compare(a.file, b.file) || a.line - b.line || compare(a.key, b.key));
         found.set(p.node.start!, { argPath: state.argPath, keys, unknown: entry.unknown });

@@ -18,7 +18,7 @@ type ClientScreen = Client['screens'][number];
 type Access = ReturnType<typeof screenAccess>;
 
 interface MapConfig extends AccessConfig {
-  requestFunction: unknown;
+  requestFunction: { body?: string; object?: boolean } | null;
   srcRoot: string;
   outDir?: string;
   marksDir?: string;
@@ -121,6 +121,8 @@ export type ScreenMap = {
   // file·line 은 호출 위치를, at 은 키를 문자열로 적은 위치를 가리킨다.
   inputsToCheck?: { screen: string; fn: string; key: string; file: string; line: number; at: string }[];
   unknownInputs?: { screen: string; fn: string; callSite: string; reason: string }[];
+  // 화면 상태가 아닌 인자를 받아 어떤 키가 실렸는지 읽지 못한 호출. 화면마다 하나다.
+  unreadInputCalls?: { screen: string; calls: { fn: string; callSite: string }[] }[];
   duplicateIds: { id: string; places: { file: string; line: number }[] }[];
   calls: MapCall[];
   unknownBodyOptionCalls: string[];
@@ -289,14 +291,24 @@ function buildCalls(apiFunctions: ApiFunctions, screens: any[], appWide: { apiCa
 function checkInputs(screens: { id: string; apiCalls: (ClientScreen['apiCalls'][number] & { inputs?: CallInputs })[] }[], apiFunctions: ApiFunctions) {
   const toCheck = new Map<string, NonNullable<ScreenMap['inputsToCheck']>[number]>();
   const unknown = new Map<string, NonNullable<ScreenMap['unknownInputs']>[number]>();
+  const unread = new Map<string, NonNullable<ScreenMap['unreadInputCalls']>[number]>();
   const precededBy = (short: string[], long: string[]) => short.length <= long.length && short.every((k, i) => k === long[i]);
   // 보낸 경로와 입력 경로 가운데 한쪽이 다른 쪽의 앞부분이면 그 키는 요청에 실린다.
   const sentPath = (input: string[], sent: string[][]) => sent.some((p) => precededBy(input, p) || precededBy(p, input));
   for (const s of screens) {
     for (const c of s.apiCalls) {
       const api = apiFunctions[c.fn];
-      if (!c.inputs || (!api?.inputs && !api?.inputsUnknown)) continue;
+      if (!c.inputs) continue;
       const callSite = `${c.file}:${c.line}`;
+      // 어떤 키가 실렸는지 읽지 못한 인자를 받은 호출은, 요청 본문에 키를 싣는 함수일 때만 센다.
+      if ('unread' in c.inputs) {
+        if (!api?.inputs?.sent.length) continue;
+        const entry = unread.get(s.id) ?? { screen: s.id, calls: [] };
+        if (!entry.calls.some((call) => call.fn === c.fn && call.callSite === callSite)) entry.calls.push({ fn: c.fn, callSite });
+        unread.set(s.id, entry);
+        continue;
+      }
+      if (!api?.inputs && !api?.inputsUnknown) continue;
       const reason = c.inputs.unknown ?? api.inputsUnknown;
       if (reason) {
         unknown.set(JSON.stringify([s.id, c.fn, callSite]), { screen: s.id, fn: c.fn, callSite, reason });
@@ -315,9 +327,13 @@ function checkInputs(screens: { id: string; apiCalls: (ClientScreen['apiCalls'][
       }
     }
   }
+  const unreadInputCalls = [...unread.values()]
+    .map((e) => ({ ...e, calls: [...e.calls].sort((a, b) => compare(a.fn, b.fn) || compare(a.callSite, b.callSite)) }))
+    .sort((a, b) => compare(a.screen, b.screen));
   return {
     inputsToCheck: [...toCheck.values()].sort((a, b) => compare(a.screen, b.screen) || compare(a.fn, b.fn) || compare(a.key, b.key) || compare(a.at, b.at) || compare(a.file, b.file) || a.line - b.line),
     unknownInputs: [...unknown.values()].sort((a, b) => compare(a.screen, b.screen) || compare(a.fn, b.fn) || compare(a.callSite, b.callSite)),
+    ...(unreadInputCalls.length && { unreadInputCalls }),
   };
 }
 
@@ -372,7 +388,8 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
   }
 
   const bodyTypeExclusions = config.bodyTypeExclusions ?? {};
-  const inputCheck = config.requestFunction ? checkInputs(screens.map((s, i) => ({ id: mapped[i].id, apiCalls: s.apiCalls })), apiFunctions) : null;
+  // 요청 본문 자리가 없으면 인자가 요청에 실렸는지 볼 수 없어 입력 키를 확인하지 않는다.
+  const inputCheck = config.requestFunction?.body ? checkInputs(screens.map((s, i) => ({ id: mapped[i].id, apiCalls: s.apiCalls })), apiFunctions) : null;
 
   const { calls, unknownBodyOptionCalls, leftOutBodyTypeFields, keptBodyTypeExclusions, unknownBodyTypeExclusions } = buildCalls(apiFunctions, mapped, appWideMapped, apiPathPrefix, config.bodyOptions ?? {}, bodyTypeExclusions);
 

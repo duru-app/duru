@@ -1433,7 +1433,7 @@ export async function extractClient(config: any) {
     },
   });
 
-  const screenInputs = config.requestFunction ? screenInputReader({ srcRoot: config.srcRoot, resolve: imports.resolve }) : null;
+  const screenInputs = config.requestFunction?.body ? screenInputReader({ srcRoot: config.srcRoot, resolve: imports.resolve }) : null;
 
   const routeFileSet = new Set((config.routeFiles as string[]).map((f) => path.join(config.srcRoot, f)));
   const historyFile = config.history ? exportingFile('history', config.history) : null;

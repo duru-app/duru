@@ -172,12 +172,13 @@ client with example results and a config to start from.
 - `calledApiModules`, `requestFunction` — for API code whose methods find their address somewhere else, such as in a
   table or through a prefix added when the request is sent. `calledApiModules` lists the files that export the API
   objects, API functions or API classes. `requestFunction` names the function the app sends its requests through:
-  `import` and `name` as the API code imports it, and `method` and `url`, the place of each among the values that
-  function is given, written as the position of the value counted from 0 followed by the keys inside it. An `import`
-  starting with `.` is a path from `srcRoot`. duru runs the listed files with that function replaced by a recorder,
-  calls every exported function, every method of every exported object and every static method of every exported
-  class once with fake values, and puts the method and address of each request on the map as that function's or
-  method's call, with the prefix the app adds. A piece of an address that comes from a fake value is written `{?}`.
+  `import` and `name` as the API code imports it, and `method`, `url` and `body`, the place of each among the values
+  that function is given, written as the position of the value counted from 0 followed by the keys inside it. `body`
+  is the place of the request body and may be left out; without it duru does not check the input keys of the screens.
+  An `import` starting with `.` is a path from `srcRoot`. duru runs the listed files with that function replaced by a
+  recorder, calls every exported function, every method of every exported object and every static method of every
+  exported class once with fake values, and puts the method and address of each request on the map as that function's
+  or method's call, with the prefix the app adds. A piece of an address that comes from a fake value is written `{?}`.
   Requests the listed files send with the global `fetch` are recorded too, so API code that sends only through
   `fetch` lists its files in `calledApiModules` and leaves `requestFunction` out. So are the requests a method sends
   by moving the browser (a link it makes and clicks, `window.open`, an address given to `location`), each as a
@@ -559,7 +560,7 @@ listing the places whose value the source does not show in full.
 - `bodyTypeExclusions <call ID> <field> stays an option, given by <where>` — a field the config names that is
   still an option of that call, with where it comes from: `the source`, `bodyOptions`, or both joined by `and`. The
   entry can come out of the config (`keptBodyTypeExclusions`).
-- `input keys to check N` — printed when there is `requestFunction`: the screen state keys that a screen writes
+- `input keys to check N` — printed with `body` in `requestFunction`: the screen state keys that a screen writes
   and passes to an API function, which the function's request does not carry. Each one follows on its own
   indented line, `<screen> <API function> <key> <file>:<line>`, with the place the key is written as text: the
   literal in the child component that writes it, or the literal a function is called with, rather than the merge
@@ -571,6 +572,17 @@ listing the places whose value the source does not show in full.
   argument traces to a state whose keys duru could not read, each with the reason, grouped by reason with the
   count of calls for each. The map lists them under `unknownInputs` with their `callSite`; nothing about the input
   keys of those calls can be said.
+- `input calls not read N on M screens` — printed with the lines above, also when N is 0: the calls of an API
+  function that sends keys in the request body, whose first argument comes from something duru does not read as
+  screen state, such as a class component's state, a parameter or a form library, counted over the screens that
+  hold them. The map lists them under `unreadInputCalls`, one entry per screen; nothing can be said about whether
+  the screen values of those calls are sent.
+- `input keys not checked: give body in requestFunction, the place of the request body among the values the request
+  function is given, such as "body": "0.data"` — printed in place of the input key lines when `requestFunction`
+  has no `body`: with no place for the request body duru cannot tell which screen values reach the request, so the
+  map has no `inputsToCheck`, `unknownInputs` or `unreadInputCalls`.
+- `input keys not checked: duru does not read the request body of a request object's calls` — the same line for
+  `"object": true`, whose calls send a body that duru does not read.
 - `<component> at <file>:<line> is drawn beside routes but draws its own routes in <component file>, so it picks
   what it shows by the address; its links, requests and settings reads are given to no screen beside it` — a
   component drawn beside a group of routes that draws routes of its own, such as a header that shows a different bar
@@ -1082,12 +1094,14 @@ screen's tests by depth and its API calls, with
 a row per option value. The table holds the calls the screen's own code sends; the calls it gets only from a component
 around or beside its route (`layout`) and those of `appWide` are folded below it under 「공통 N」, with the same
 columns, and stay open or folded on other screens until toggled. Choosing such a call shows, after where this screen
-calls it, 「앱 시작 때 부르는 곳」 for an `appWide` call. With `requestFunction` set, 「입력 키 N」 follows the call
-table: the state keys the screen writes and hands to an API function that does not send them (see `input keys to
+calls it, 「앱 시작 때 부르는 곳」 for an `appWide` call. With `body` in `requestFunction`, 「입력 키 N」 follows the
+call table: the state keys the screen writes and hands to an API function that does not send them (see `input keys to
 check`), one row per function and key with every place the key is written. ✓ saves `fine` on that key — the screen,
 the function and the key — and folds the row under 「확인함 N」; ✕ on a folded row saves `needs-more` and puts the
 row back in the list, where a row whose mark was saved before the screen's code changed carries 「코드 바뀜」. A
-folded 「모름 N」 lists the calls of the screen whose input keys could not be read, with the reason.
+folded 「모름 N」 lists the calls of the screen whose input keys could not be read, with the reason. It also carries
+one line per screen counting the calls whose arguments duru does not read as screen state,
+`화면 값을 읽지 못한 호출 K`, with the API functions of those calls (see `input calls not read`).
 A screen that opens only under a role or a setting carries 「역할」 or 「설정」 next to its
 name, as its line in the flow does. Under the tables, 「화면 정보」 starts folded, with the number of links into the
 screen other than a menu's, links out of it from its own code and settings it reads on its line. Opened, it says under 「접근 조건」 what it takes to open

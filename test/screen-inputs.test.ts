@@ -501,3 +501,89 @@ export default function Search() {
   assert.equal(unknown.length, 1);
   assert.equal(unknown[0].reason, 'sent a request outside requestFunction');
 });
+
+// 요청 본문 자리가 없는 requestFunction. 인자가 요청에 실렸는지 볼 수 없어 입력 키 목록을 만들지 않는다.
+const NO_BODY = { import: './_ajax/Ajax', name: 'request', method: '0.info.METHOD', url: '0.info.URL' };
+
+test('without body in requestFunction the map has no input keys to check, no unknown input calls and no calls whose values were not read, and rebuild says to give body', async () => {
+  const configFile = fixtureCopy(base, { requestFunction: NO_BODY });
+  const map = await build(configFile);
+  assert.equal(map.inputsToCheck, undefined);
+  assert.equal(map.unknownInputs, undefined);
+  assert.equal(map.unreadInputCalls, undefined);
+  const lines = rebuildLines(configFile);
+  assert.ok(lines.includes('input keys not checked: give body in requestFunction, the place of the request body among the values the request function is given, such as "body": "0.data"'), lines.join('\n'));
+});
+
+// 본문에 키를 싣지 않는 API 함수. 이런 함수를 부르는 호출은 세지 않는다.
+const AJAX_NO_BODY = `${AJAX_FUNC}
+export const ajaxPing = async (value) => Ajax.request({ info: { METHOD: 'GET', URL: '/ping' } });
+`;
+
+// 화면 상태가 아니라 매개변수로 받은 값을 API 함수에 넘기는 화면. 어떤 키가 실렸는지 읽을 수 없다.
+const PROPS_SIGNER = `import { useState } from 'react';
+import { ajaxUpdateSigner, ajaxList, ajaxPing } from '_ajax/AjaxFunc';
+
+export default function SignerEdit(props) {
+  const [data, setData] = useState({});
+
+  const save = async () => {
+    await ajaxUpdateSigner({ id: props.id, data: props.values });
+  };
+
+  const list = async () => {
+    await ajaxList();
+  };
+
+  const ping = async () => {
+    await ajaxPing(props.values);
+  };
+
+  return (
+    <div>
+      <button onClick={save}>save</button>
+      <button onClick={list}>list</button>
+      <button onClick={ping}>ping</button>
+    </div>
+  );
+}
+`;
+
+test('a call whose argument is not screen state but whose API function puts keys in the body is counted as a call duru did not read, while one with no argument or with no body key is not', async () => {
+  const map = await build(fixtureCopy({ ...base, 'components/SignerEdit.js': PROPS_SIGNER, '_ajax/AjaxFunc.js': AJAX_NO_BODY }));
+  const screen = map.screens.find((s) => s.id.includes('SignerEdit'))!;
+  assert.deepEqual(screen.apiCalls.map((c) => c.fn).sort(), ['ajaxList', 'ajaxPing', 'ajaxUpdateSigner']);
+  assert.deepEqual(map.unreadInputCalls, [{ screen: screen.id, calls: [{ fn: 'ajaxUpdateSigner', callSite: 'components/SignerEdit.js:8' }] }]);
+  assert.ok(map.apiFunctions.ajaxUpdateSigner.inputs!.sent.length > 0);
+  assert.equal(map.apiFunctions.ajaxPing.inputs!.sent.length, 0);
+});
+
+// useState 가 없는 클래스 컴포넌트 화면. 상태는 this.state 에 있어 인자를 읽지 못한다.
+const CLASS_SIGNER = `import { Component } from 'react';
+import { ajaxUpdateSigner } from '_ajax/AjaxFunc';
+
+export default class SignerEdit extends Component {
+  state = { form: {} };
+
+  save = async () => {
+    await ajaxUpdateSigner(this.state.form);
+  };
+
+  render() {
+    return <button onClick={this.save}>save</button>;
+  }
+}
+`;
+
+test('a class component screen that hands its own state to an API function is counted though the file has no useState state', async () => {
+  const map = await build(fixtureCopy({ ...base, 'components/SignerEdit.js': CLASS_SIGNER }));
+  const screen = map.screens.find((s) => s.id.includes('SignerEdit'))!;
+  assert.deepEqual(map.unreadInputCalls, [{ screen: screen.id, calls: [{ fn: 'ajaxUpdateSigner', callSite: 'components/SignerEdit.js:8' }] }]);
+});
+
+test('the rebuild output counts the calls whose screen values were not read, on the screens that have them, and prints the count when it is 0 too', () => {
+  const configFile = fixtureCopy({ ...base, 'components/SignerEdit.js': PROPS_SIGNER, '_ajax/AjaxFunc.js': AJAX_NO_BODY });
+  const lines = rebuildLines(configFile);
+  assert.ok(lines.includes('input calls not read 1 on 1 screens'), lines.join('\n'));
+  assert.ok(rebuildLines(fixtureCopy(base)).includes('input calls not read 0 on 0 screens'));
+});
