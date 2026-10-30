@@ -1132,9 +1132,28 @@ test('an API function that needs a number where it reads the input it is given s
   const map = await build(inputsCopy(module));
   const without = await build(inputsCopy(module, { requestFunction: CALLED.requestFunction }));
   const fn = map.apiFunctions['inputsApi.save'];
-  assert.equal(fn.inputsUnknown, 'needs numbers');
+  assert.equal(fn.inputsUnknown, 'throws the same error whatever it is given: count must be a number');
   assert.equal(fn.inputs, undefined);
   assert.deepEqual(endpointsOf(map, 'inputsApi.save'), endpointsOf(without, 'inputsApi.save'));
+});
+
+test('an API function that throws the same error whatever it is given says the input keys are unknown with that error, since nothing about the values it was given is the reason', async () => {
+  // 로그인하지 않은 동안은 무엇을 받든 같은 오류로 끝난다.
+  const module = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    'const loggedIn: boolean = false;',
+    'export const inputsApi = {',
+    '  save({ data }: { data: Record<string, unknown> }) {',
+    "    if (!loggedIn) throw new Error('not logged in');",
+    "    return executeRequest({ endpoint: { method: 'POST', path: '/save' }, url: '/save', body: { name: data.name } });",
+    '  },',
+    '};',
+    '',
+  ].join('\n');
+  const map = await build(inputsCopy(module));
+  const fn = map.apiFunctions['inputsApi.save'];
+  assert.equal(fn.inputsUnknown, 'throws the same error whatever it is given: not logged in');
+  assert.equal(fn.inputs, undefined);
 });
 
 // apiModules 파일을 돌려 인자 자리만 얻는 설정. 이 파일은 정적 읽기가 주소를 찾는 apiModules 파일이기도 하다.

@@ -455,7 +455,7 @@ async function call(unit: string, self: unknown, fn: Callable): Promise<Attempt>
   const failure = picked.error;
   const valueErrors = failure && !failure.late && errors.every((message) => message !== undefined) && !errors.some((message) => message?.startsWith('sent more than'));
   if (!failure || !valueErrors) return picked;
-  if (errors.every((message) => message === errors[0])) return { ...picked, inputsUnknown: 'needs numbers' };
+  if (errors.every((message) => message === errors[0])) return { ...picked, inputsUnknown: `throws the same error whatever it is given: ${firstLine(failure.message)}` };
   return { ...picked, inputsUnknown: `threw with tagged values: ${firstLine(failure.message)}` };
 }
 
