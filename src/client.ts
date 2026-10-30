@@ -3121,7 +3121,7 @@ export async function extractClient(config: any) {
   }
 
   // 이름 지은 컴포넌트를 items prop 과 함께 그리는 요소들. 그것을 그리는 화면이 탭 화면들의 부모다.
-  type TabDrawing = { x: Sourced; element: NodePath<JSXElement>; value: NodePath | null; tag: string; guards: string[] };
+  type TabDrawing = { x: Sourced; file: string; element: NodePath<JSXElement>; value: NodePath | null; tag: string; guards: string[] };
 
   function tabDrawings(entry: RouteTab & { file: string }): TabDrawing[] {
     // 한 파일은 한 번만 읽고, 그 파일을 소스로 갖는 화면마다 찾은 요소를 붙인다.
@@ -3139,7 +3139,7 @@ export async function extractClient(config: any) {
           const tag = tagOf(p.node.openingElement.name);
           if (!tag || resolveTag(p.scope, tag, file) !== entry.file) return;
           const written = attr.get('value') as NodePath<any>;
-          found.push({ element: p, value: written.isJSXExpressionContainer() ? (written.get('expression') as NodePath) : written.node ? written as NodePath : null, tag, guards: guardsOf(p, src, note) });
+          found.push({ file, element: p, value: written.isJSXExpressionContainer() ? (written.get('expression') as NodePath) : written.node ? written as NodePath : null, tag, guards: guardsOf(p, src, note) });
         },
       });
       inFile.set(file, found);
@@ -3169,7 +3169,7 @@ export async function extractClient(config: any) {
       // 한 파일을 여러 화면이 그려도 그 목록은 한 번만 읽고, 멈춘 곳도 한 번만 알린다.
       const reads = new Map<Node, TabRead>();
       const told = new Set<Node>();
-      for (const { x, element, value, tag, guards } of drawings) {
+      for (const { x, file: drawingFile, element, value, tag, guards } of drawings) {
         const line = element.node.loc!.start.line;
         let read = reads.get(element.node);
         if (!read) {
@@ -3185,7 +3185,7 @@ export async function extractClient(config: any) {
         // 그 화면이 자기 라우트 파일에서 물려받는 틀들, 그리고 탭 컴포넌트를 그리는 파일 자체와 그 요소에 걸린 조건.
         const wrappers = x.entryFiles.filter((file) => file !== x.s.componentFile);
         const frameFiles: FrameFile[] = [...x.frameFiles, ...wrappers.map((file) => ({ file, under: null })), ...framesOf(path.join(config.srcRoot, x.s.routeFile)), ...(x.s.componentFile
-          ? [{ file: x.s.componentFile, under: guards.length ? { via: tag, line, file: x.s.routeFile, guards } : null }] : [])];
+          ? [{ file: x.s.componentFile, under: guards.length ? { via: tag, line, file: rel(drawingFile)!, guards } : null }] : [])];
         const made: RouteScreen[] = [];
         for (const item of read.items) {
           const itemLine = item.node.loc!.start.line;
@@ -3244,13 +3244,13 @@ export async function extractClient(config: any) {
         for (const screen of made) tabs.push(screen);
       }
     }
-    // 다른 탭의 컴포넌트 파일은 이 탭의 소스가 아니다. 한 컴포넌트를 그리는 탭 목록의 탭들이 서로의 컴포넌트를 담지 않는다.
+    // 다른 탭의 컴포넌트 파일은 이 탭의 소스가 아니다. routeTabs 의 모든 탭이 서로의 컴포넌트를 담지 않는다.
     const tabComponents = new Set(tabs.map((s) => s.componentFile).filter(Boolean) as string[]);
     for (const screen of tabs) sourced.push(sourcedOf(screen, tabComponents));
   }
   fillOuterAddresses(sourced);
   const { roots: routeRoots, framesOf } = routeTree(drawn, extracted, sourced);
-  // 탭 화면도 라우트 화면과 같은 틀 처리를 받는다. 그래서 그리는 화면의 라우트 파일이 가진 틀을 알아야 한다.
+  // framesOf 를 쓰므로 routeTree 뒤에, 틀을 붙이는 아래 반복보다 앞에 탭 화면을 만든다.
   addTabScreens();
   // 레이아웃 컴포넌트는 경로를 채우고 라우트 트리를 만든 뒤에 붙인다.
   const inheritedFrames = new Map<string, FrameFile[]>();

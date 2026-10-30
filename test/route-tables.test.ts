@@ -1266,7 +1266,7 @@ export default function Settings({ isAdmin }) {
   const line = drawing.split('\n').findIndex((l) => l.includes('<RouteTab ')) + 1;
   await withTabCopy(async ({ configFile }) => {
     const map = await build(configFile);
-    const under = { via: 'RouteTab', line, guards: ['isAdmin'], file: 'Routes.js' };
+    const under = { via: 'RouteTab', line, guards: ['isAdmin'], file: 'admin/Settings.js' };
     for (const id of ['/settings/billing#Billing', '/settings/members#Members']) {
       const found = screen(map, id);
       const [link] = found.links.filter((l) => l.file === 'admin/Settings.js');
@@ -1303,4 +1303,27 @@ export default function Shell({ children }) {
       assert.ok(found.sourceFiles.includes('admin/Settings.js'), id);
     }
   }, { files, routes: [['Settings', '/settings']], edits });
+});
+
+test('a tab screen takes the frames of the screen that draws its tabs, such as a header drawn beside the routes', async () => {
+  const files = {
+    'admin/settingsTabs.js': tabList('settingsTabs', [['/settings/billing', 'Billing']]),
+    'admin/Billing.js': page('Billing'),
+    'admin/Settings.js': tabPage('Settings', 'settingsTabs'),
+    'components/Header.js': `import { Link } from 'react-router-dom';
+
+export default function Header() {
+  return <nav><Link to="/help">help</Link></nav>;
+}
+`,
+  };
+  await withTabCopy(async ({ src, configFile }) => {
+    const routes = path.join(src, 'Routes.js');
+    const text = fs.readFileSync(routes, 'utf8');
+    fs.writeFileSync(routes, `import Header from './components/Header';\n${text.replace('  return (\n    <Switch>\n', '  return (\n    <>\n    <Header />\n    <Switch>\n').replace('    </Switch>\n  );\n}', '    </Switch>\n    </>\n  );\n}')}`);
+    const map = await build(configFile);
+    const billing = screen(map, '/settings/billing#Billing');
+    assert.ok(billing.sourceFiles.includes('components/Header.js'));
+    assert.ok(billing.links.some((l) => l.file === 'components/Header.js' && l.to === '/help'));
+  }, { files, routes: [['Settings', '/settings']] });
 });
