@@ -5,6 +5,7 @@ import type { TableItem } from './client.ts';
 import type { InputPartKey, Part } from './marks.ts';
 import type { ScreenMap } from './map.ts';
 import { checkStories, linksFromOldDuru } from './story-paths.ts';
+import { STATUS_RANK } from './verdict.ts';
 
 interface LinkedTest {
   title: string;
@@ -67,8 +68,6 @@ export interface SourcePlaces {
 }
 
 export type LinkKey = { from: string; conditions: string[] } | { from: string; guards: string[] };
-
-const STATUS_RANK: Record<string, number> = { pass: 0, pending: 1, fail: 2 };
 
 const relationOf = (list: string, t: LinkedTest) => (list === 'nodes' ? 'tagged' : list === 'importers' ? 'imported' : t.level === 'call' ? 'called' : 'passed');
 

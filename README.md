@@ -733,8 +733,8 @@ test is tagged with, and shows under that case wherever a reviewer has picked th
 kind with values, with a value the kind does not list, or with a value on a kind without values counts for no case
 and is listed with the tags that point at nothing on the map.
 
-`tests.json` lists the tests per node and per story with depth, status (pass, fail, pending; skipped and todo
-count as pending) and `tags`, every tag read for the test, without the `@`. It also lists the tags that point at
+`tests.json` lists the tests per node and per story with depth, status (pass, limit, pending, fail; skipped and
+todo count as pending) and `tags`, every tag read for the test, without the `@`. It also lists the tags that point at
 nothing on the map, and the tests with no tag as `untagged`. An untagged Playwright test carries the projects it ran
 in as `projects`, each with the worst status of the test's runs in it. `traced`
 lists each Playwright test that passed, with the trace of its passing run, as its report, its title, its file and
@@ -760,8 +760,14 @@ VERDICT empty form save: FIXED — saving an empty form shows a message @screen:
 ```
 
 The name runs up to the first `: `. The word after it decides the status: `UPHOLDS`, `FIXED`, `HEALTHY` pass;
+`WITHIN_LIMIT` is `limit`, a result inside a limit the app decided to accept, shown apart from passing and failing
+and never counted as a failure;
 `REPRODUCES`, `VIOLATE`, `VIOLATES`, `REGRESSED`, `BROKEN` fail; any other word is pending. The text after `— `
 (an em dash) is kept as the detail. Tags go at the end of the line.
+
+The text after `— ` on a `WITHIN_LIMIT` line must name where the limit was decided — a `http(s)` link, `#<number>`
+or a `.md` decision document. A `WITHIN_LIMIT` line that names none reads as pending, and its detail starts with
+`출처 없음 — ` (`출처 없음` when the line has no detail).
 
 ## Stories
 
@@ -1504,7 +1510,8 @@ in the task list; for a condition or a link,
 link starts on, and for a condition the `guard` as written, `via` when it sits in a function the link calls,
 `roleGuardsKey` when `roleGuards` gave its roles, or `inherited` for a link that passes on the condition of the screen
 it starts on; or `null` when the part is no longer found. A failure message is not copied in; it is read from the
-result file named in `source`. A comment or reply on a `candidate` carries `"where": {"name","source","screens"}`:
+result file named in `source`. A test's own `status` may be `limit`, and its `detail` starts with `출처 없음 — ` when
+a `WITHIN_LIMIT` line names no source for the limit. A comment or reply on a `candidate` carries `"where": {"name","source","screens"}`:
 `screens` is the screen order, and `source` is `{"record","steps"}`, the visit record and its first and last step,
 with `stepRanges` giving the steps behind each screen, or `{"report","tests"}`, the result file and the titles of the
 tests that passed through that order. It is `null` once the candidate is no longer listed. A comment or reply on a

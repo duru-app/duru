@@ -268,7 +268,7 @@ export function callRegressions(c: TestComparison, calls: { id: string; screens:
     if (!tagged.length || tagged.some((r) => r.kind !== 'call')) continue;
     const counted = new Set(rows.filter((r) => r.kind === 'screen' && r.listed && r.status !== 'pass').map((r) => r.node));
     const sent = new Map<string, typeof tagged>();
-    for (const r of tagged.filter((t) => t.status !== 'pass')) {
+    for (const r of tagged.filter((t) => t.status !== 'pass' && t.status !== 'limit')) {
       for (const screen of senders.get(r.node) ?? []) if (!counted.has(screen)) sent.set(screen, [...(sent.get(screen) ?? []), r]);
     }
     for (const [screen, failing] of sent) {

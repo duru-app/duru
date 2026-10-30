@@ -21,10 +21,10 @@ function ancestorsOf(screens, id) {
 }
 
 const NO_TESTS = '테스트 없음';
-const statusOf = (c) => (c.fail ? 's-fail' : c.pending ? 's-pending' : c.pass ? 's-pass' : 's-none');
-const STATUS_WORD = { 's-pass': TEST_STATUS.pass, 's-fail': TEST_STATUS.fail, 's-pending': TEST_STATUS.pending, 's-none': NO_TESTS };
-const countText = (c) => (c.pass + c.fail + c.pending
-  ? [c.pass ? h('span', { class: 'ok' }, `✓${c.pass} `) : null, c.fail ? h('span', { class: 'ng' }, `✕${c.fail} `) : null, c.pending ? h('span', { class: 'wait' }, `○${c.pending}`) : null]
+const statusOf = (c) => (c.fail ? 's-fail' : c.pending ? 's-pending' : c.limit ? 's-limit' : c.pass ? 's-pass' : 's-none');
+const STATUS_WORD = { 's-pass': TEST_STATUS.pass, 's-limit': TEST_STATUS.limit, 's-fail': TEST_STATUS.fail, 's-pending': TEST_STATUS.pending, 's-none': NO_TESTS };
+const countText = (c) => (c.pass + c.fail + c.pending + c.limit
+  ? [c.pass ? h('span', { class: 'ok' }, `✓${c.pass} `) : null, c.limit ? h('span', { class: 'lim' }, `△${c.limit} `) : null, c.fail ? h('span', { class: 'ng' }, `✕${c.fail} `) : null, c.pending ? h('span', { class: 'wait' }, `○${c.pending}`) : null]
   : NO_TESTS);
 const guardText = (alternatives) => alternatives.map((alt) => alt.map((g) => g.guard).join(' & ')).join(' 또는 ');
 

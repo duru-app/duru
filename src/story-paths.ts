@@ -99,7 +99,7 @@ export const testsAt = (byId: Record<string, StoryTest[]> | undefined, id: strin
 
 function statusOf(story: { id: string; screens: string[] }, tests: StoryTests) {
   const own = testsAt(tests.stories, story.id);
-  if (own.length) return own.some((t) => t.status === 'fail') ? 'fail' : own.some((t) => t.status === 'pending') ? 'pending' : 'pass';
+  if (own.length) return own.some((t) => t.status === 'fail') ? 'fail' : own.some((t) => t.status === 'pending') ? 'pending' : own.some((t) => t.status === 'limit') ? 'limit' : 'pass';
   return story.screens.some((id: string) => testsAt(tests.nodes, id).length) ? 'partial' : 'untested';
 }
 

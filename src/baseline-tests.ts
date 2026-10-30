@@ -298,7 +298,7 @@ export function compareTests(baseline: BaselineTests, current: CurrentTests, map
     else {
       compared += 1;
       const nowStatus = worst(withoutSkipped(match.flatMap((t) => t.statuses), statuses.filter((s) => s === 'pending').length));
-      if (status !== 'pass' || nowStatus === 'pass') continue;
+      if (status !== 'pass' || nowStatus === 'pass' || nowStatus === 'limit') continue;
       const under = match.filter((t) => t.rows.length);
       const results = new Set(tests.map((t) => t.result));
       regressions.push({
@@ -331,7 +331,7 @@ function countsByNode(regressed: TestRow[][]) {
   const byNode: Record<string, { listed: Counts; chipOnly: Counts }> = {};
   for (const rows of regressed) {
     for (const node of new Set(rows.map((r) => r.node))) {
-      const failing = rows.filter((r) => r.node === node && r.status !== 'pass');
+      const failing = rows.filter((r) => r.node === node && r.status !== 'pass' && r.status !== 'limit');
       const listed = failing.filter((r) => r.listed);
       const counted = listed.length ? listed : failing;
       if (!counted.length) continue;

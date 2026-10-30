@@ -5,6 +5,7 @@ export interface FlowCounts {
   pass: number;
   fail: number;
   pending: number;
+  limit: number;
 }
 
 export interface FlowGuard {
@@ -101,7 +102,7 @@ const GROUP_FROM = 100;
 const GROUP_MAX = 20;
 
 const countOf = (tests: FlowTests['nodes'][string] | undefined): FlowCounts => {
-  const c: FlowCounts = { pass: 0, fail: 0, pending: 0 };
+  const c: FlowCounts = { pass: 0, fail: 0, pending: 0, limit: 0 };
   for (const t of tests ?? []) c[t.status] += 1;
   return c;
 };
@@ -229,7 +230,7 @@ function summarize(trees: FlowScreenNode[]): FlowSummary {
   const screens: FlowScreenNode[] = [];
   const walk = (n: FlowScreenNode): void => { screens.push(n); n.children.forEach(walk); };
   trees.forEach(walk);
-  const tagged = (n: FlowScreenNode) => n.counts.pass + n.counts.fail + n.counts.pending > 0;
+  const tagged = (n: FlowScreenNode) => n.counts.pass + n.counts.fail + n.counts.pending + n.counts.limit > 0;
   return {
     screens: screens.length,
     tested: screens.filter(tagged).length,

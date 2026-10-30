@@ -127,7 +127,7 @@ function callRows(apiCalls, seen = new Set()) {
 }
 
 function countsOf(tests) {
-  const counts = { pass: 0, fail: 0, pending: 0 };
+  const counts = { pass: 0, fail: 0, pending: 0, limit: 0 };
   for (const t of tests) counts[t.status] += 1;
   return tests.length ? countText(counts) : h('span', { class: 'muted' }, '—');
 }

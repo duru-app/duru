@@ -128,6 +128,18 @@ test('a regressed test tagged only on calls counts once on each screen that send
   });
 });
 
+test('a within-limit test on a call is counted on the call, not as a regression', () => {
+  const was = (title: string) => ({ title, tags: [], file: 'a.spec.ts', line: 1, project: null, status: 'pass' as const, result: 'e2e.json' });
+  const row = (title: string, status: string) => ({ title, status, file: 'a.spec.ts', line: 1, project: null, source: 'e2e.json', format: 'playwright', tags: [] });
+  const baseline = { folder: 'releases/1.5.0', label: '1.5.0', results: [{ result: 'e2e.json', startedAt: '2026-09-30T00:00:00.000Z' }], tests: [was('saves'), was('reads')] };
+  const calls = [{ id: 'POST:/save', screens: ['/a#A'] }];
+  const limited = compareTests(baseline, { nodes: { 'POST:/save': [row('saves', 'limit')] } }, { screens: ['/a#A'], calls: ['POST:/save'] });
+  assert.deepEqual(limited.regressions, []);
+  assert.deepEqual(callRegressions(limited, calls), {});
+  const mixed = compareTests(baseline, { nodes: { 'POST:/save': [row('saves', 'pending'), row('reads', 'limit')] } }, { screens: ['/a#A'], calls: ['POST:/save'] });
+  assert.deepEqual(callRegressions(mixed, calls), { '/a#A': { fail: 0, pending: 1, calls: ['POST:/save'] } });
+});
+
 test('a baselineTests path that is missing, a result file that cannot be read, or an item that gives no test stops duru review with exit 1 and a line naming the path, with no page and no task list', async () => {
   await withRelease(async ({ copy, configFile, setConfig }) => {
     const report = path.join(copy, RELEASE, 'e2e.json');
