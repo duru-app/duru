@@ -42,6 +42,7 @@ export function bodyOptions(body: string): { key: string; value: boolean }[] {
 
 export function addRequestOptions(map: any, sent: SentTrace[]): { options: number; calls: number } {
   const callAt = callFinder(map);
+  const leftOut = new Set<string>((map.leftOutBodyTypeFields ?? []).map((r: { call: string; field: string }) => `${r.call}\n${r.field}`));
   const optionsOf = new Map<string, MapOption[]>((map.calls ?? []).map((c: any) => [c.id, (c.options ??= [])]));
   const sending = new Map<string, { call: string; key: string; test: string; file: string | null; line: number | null; project: string | null; values: Set<boolean> }>();
   for (const t of sent) {
@@ -53,6 +54,7 @@ export function addRequestOptions(map: any, sent: SentTrace[]): { options: numbe
       const options = call ? optionsOf.get(call) : undefined;
       if (!call || !options) continue;
       for (const { key, value } of bodyOptions(body)) {
+        if (leftOut.has(`${call}\n${key}`)) continue;
         let option = options.find((o) => o.key === key);
         if (!option) {
           option = { key, values: [true, false], sources: ['request'], sites: [] };

@@ -266,7 +266,8 @@ client with example results and a config to start from.
   `{ "POST:/api/v1/report/export": ["withHistory"] }`, for a body the source does not show.
 - `bodyTypeExclusions` — on/off fields read from the body type to leave out of a call's options, per call ID
   (optional), as `{ "POST:/api/v1/documents": ["enabledPkiSign", "signers[].required"] }` with the field paths as
-  the map names them, for a field no screen lets the user change.
+  the map names them, for a field no screen lets the user change. A field it leaves out is not taken from the bodies
+  of the requests the tests sent either.
 - `settingsRoots` — identifiers through which settings are read.
 - `settingsDefaults` — where the default values of a settings root are written (optional), as
   `{ "globalSettings": { "file": "store/settings.js", "const": "defaults" } }`: the object literal that a

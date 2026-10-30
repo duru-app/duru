@@ -133,3 +133,20 @@ test('two merges of the same traces give the same options in the same order', ()
     assert.deepEqual(optionsOf(first).map((o) => o.key), ['watermark', 'withHistory']);
   });
 });
+
+test('a field bodyTypeExclusions leaves out of a call is not taken from a request body either', () => {
+  withTrace([{ url: '/api/v1/report', body: '{"enabledInvite":true,"notify":false}' }], (trace) => {
+    const map = { ...mapOf(), leftOutBodyTypeFields: [{ call: 'POST:/api/v1/report', field: 'enabledInvite' }] };
+    assert.deepEqual(addRequestOptions(map, [sentOf(trace, 'invites a member', 'chromium')]), { options: 1, calls: 1 });
+    assert.deepEqual(optionsOf(map), [{ key: 'notify', values: [true, false], sources: ['request'], sites: [], requests: [{ test: 'invites a member', file: 'test/report.spec.ts', line: 1, project: 'chromium', values: [false] }] }]);
+  });
+});
+
+test('a field bodyTypeExclusions names but the source keeps as an option still takes the requests that sent it', () => {
+  withTrace([{ url: '/api/v1/report', body: '{"enabledInvite":true}' }], (trace) => {
+    const map = { ...mapOf(), keptBodyTypeExclusions: [{ call: 'POST:/api/v1/report', field: 'enabledInvite', keptBy: ['source'] }], leftOutBodyTypeFields: [] };
+    map.calls[0].options.push({ key: 'enabledInvite', values: [true, false], sources: ['source'], sites: [] });
+    assert.deepEqual(addRequestOptions(map, [sentOf(trace, 'invites a member', 'chromium')]), { options: 1, calls: 1 });
+    assert.deepEqual(optionsOf(map), [{ key: 'enabledInvite', values: [true, false], sources: ['source', 'request'], sites: [], requests: [{ test: 'invites a member', file: 'test/report.spec.ts', line: 1, project: 'chromium', values: [true] }] }]);
+  });
+});
