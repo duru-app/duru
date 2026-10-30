@@ -821,6 +821,32 @@ test('in a browser, the output depth row comes after the other depths and takes 
   );
 });
 
+test('in a browser, the depth table gives each test its own row with its buttons in the last column', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/home")');
+        const table = p.locator('#center table', { has: p.locator('td.depth') }).first();
+        assert.deepEqual(await table.locator('thead th').allTextContents(), ['깊이', '테스트', '상태', '']);
+        const depthCell = table.locator('tbody td.depth', { hasText: 'UI/E2E' });
+        const span = Number(await depthCell.getAttribute('rowspan'));
+        assert.ok(span > 1, 'UI/E2E holds more than one test');
+        const at = await table.locator('tbody tr').evaluateAll((trs) => trs.findIndex((tr) => tr.querySelector('td.depth')?.textContent === 'UI/E2E'));
+        const rows = table.locator(`tbody tr:nth-child(n+${at + 1}):nth-child(-n+${at + span})`);
+        assert.equal(await rows.locator('td.depth').count(), 1, 'the depth cell of the group spans its rows');
+        const mark = (await depthCell.locator('xpath=../td[contains(@class,"mark")]').boundingBox())!;
+        for (let i = 0; i < span; i++) {
+          const row = rows.nth(i);
+          assert.equal(await row.locator('.test-row').count(), 1, 'each row holds one test');
+          const button = (await row.locator('td:last-child .steps-toggle').boundingBox())!;
+          assert.ok(button.x + button.width > mark.x + mark.width, 'the test buttons end the row to the right of the status cell');
+        }
+      }),
+    ),
+  );
+});
+
 const LAYOUT_REQUESTS: [string, string, string][] = [
   ['client/src/components/Layout.js', "import SideMenu from './SideMenu';", "import { useEffect } from 'react';\nimport { ajaxDocumentList, ajaxMemberList } from '../_ajax/AjaxFunc';\nimport SideMenu from './SideMenu';"],
   ['client/src/components/Layout.js', '  return (', '  useEffect(() => {\n    ajaxDocumentList();\n    ajaxMemberList({ page: 1 });\n  }, []);\n  return ('],

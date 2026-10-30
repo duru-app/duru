@@ -246,8 +246,11 @@ function slotRow(item, target, words, name = tagLabel(target), control = null) {
     bubbleButton(target, words, name));
 }
 
-const partRow = (item, node, t) => slotRow(item, partTarget(node, t), SLOT_WORDS.test, bareTitle(t.title), [stepsButton(node, t), replayButton(node, t), traceButton(node, t)]);
+const testButtons = (node, t) => [stepsButton(node, t), replayButton(node, t), traceButton(node, t)];
+const partRow = (item, node, t) => slotRow(item, partTarget(node, t), SLOT_WORDS.test, bareTitle(t.title), testButtons(node, t));
 const testRow = (item, node, t) => h('div', { class: 'test-row' }, partRow(item, node, t), stepsFold(node, t));
+const testRowWithoutButtons = (item, node, t) => h('div', { class: 'test-row' }, slotRow(item, partTarget(node, t), SLOT_WORDS.test, bareTitle(t.title)), stepsFold(node, t));
+const testButtonsCell = (node, t) => h('td', { class: 'test-buttons' }, testButtons(node, t));
 
 const judgmentKey = (t, node) => JSON.stringify([t.ref, node]);
 const judgmentErrorOf = (key) => (state.judgmentError?.key === key ? h('p', { class: 'error judgment-error' }, state.judgmentError.message) : null);
