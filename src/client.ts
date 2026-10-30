@@ -7,7 +7,7 @@ import { routerTargets } from './access.ts';
 import { addressReader, MOST_ADDRESSES, UNREADABLE_PIECE } from './address-functions.ts';
 import type { AddressFunction, LinkComponent, Read } from './address-functions.ts';
 import type { Branch, Constants, GuardInit, GuardSetting, RouteNode, Side } from './access.ts';
-import { recordApiCalls, requestFunctionFile } from './api-calls.ts';
+import { apiModuleInputs, recordApiCalls, requestFunctionFile } from './api-calls.ts';
 import { componentFileFinder } from './component-file.ts';
 import { compare, ROUTES_FILE } from './config.ts';
 import { loadConstants } from './constants.ts';
@@ -17,6 +17,8 @@ import { parseSource } from './parse.ts';
 import { pathParts, routePattern } from './path-values.ts';
 import { importResolver } from './resolve.ts';
 import { sagaFiles, sagaReader, sourceFiles } from './saga-requests.ts';
+import { screenInputReader } from './screen-inputs.ts';
+import type { CallInputs } from './screen-inputs.ts';
 import type { ActionType, Handler, Watch } from './saga-requests.ts';
 import { addresses, FOLLOWED, LINK_ELEMENTS, madeFrom, screenLinkReader } from './screen-links.ts';
 import { importedAs, routerImport, screenRequestReader } from './screen-requests.ts';
@@ -73,7 +75,7 @@ interface Site {
 }
 
 type BodyOption = { key: string; line: number };
-type ApiCallSite = Site & { fn: string; options: BodyOption[]; request?: { method: string | null; url: string | null; unresolved?: UnresolvedReason }; navigation?: true; actions?: DispatchedActions };
+type ApiCallSite = Site & { fn: string; options: BodyOption[]; request?: { method: string | null; url: string | null; unresolved?: UnresolvedReason }; navigation?: true; actions?: DispatchedActions; inputs?: CallInputs };
 type DispatchedActions = { type: string; dispatchedAt: string[] }[];
 type DispatchSite = { line: number; types: () => ActionType[] };
 type WatcherSite = { watches: Watch[] };
@@ -1431,6 +1433,8 @@ export async function extractClient(config: any) {
     },
   });
 
+  const screenInputs = config.requestFunction?.body ? screenInputReader({ srcRoot: config.srcRoot, resolve: imports.resolve }) : null;
+
   const routeFileSet = new Set((config.routeFiles as string[]).map((f) => path.join(config.srcRoot, f)));
   const historyFile = config.history ? exportingFile('history', config.history) : null;
   const historyImports = new Map<string, boolean>();
@@ -1802,6 +1806,10 @@ export async function extractClient(config: any) {
       },
     });
 
+    if (screenInputs) {
+      const byStart = screenInputs.callInputs(file);
+      for (const site of facts.apiCalls) if (siteStart.has(site)) site.inputs = byStart.get(siteStart.get(site)!);
+    }
     facts.imports = [...new Set(facts.imports)];
     facts.dynamicOnly = new Set(facts.imports.filter((f) => !staticImports.has(f)));
     factCache.set(file, facts);
@@ -3020,10 +3028,15 @@ export async function extractClient(config: any) {
 
   const apiFunctions: Record<string, any> = {};
   const moduleExports = new Map<string, { file: string; exportName: string }[]>();
+  const apiExports: Record<string, string[]> = {};
   for (const f of apiModuleFiles) {
     const fns = extractApiModule(f);
     Object.assign(apiFunctions, fns);
+    apiExports[path.relative(config.srcRoot, f)] = Object.keys(fns);
     for (const name of Object.keys(fns)) moduleExports.set(name, [{ file: f, exportName: name }]);
+  }
+  for (const { file, exportName, found } of await apiModuleInputs(config, imports.resolve, apiExports)) {
+    if (apiFunctions[exportName]?.file === file) apiFunctions[exportName] = { ...apiFunctions[exportName], ...found };
   }
   if (calledFiles.size) called = await recordApiCalls(config, imports.resolve, new Set(Object.keys(apiFunctions)));
   Object.assign(apiFunctions, called?.functions);

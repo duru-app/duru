@@ -12,8 +12,10 @@ import type { CaseKind } from './config.ts';
 import { MOST_ADDRESSES } from './address-functions.ts';
 import { UNKNOWN } from './client.ts';
 import { buildMap, readsAnAddress, sendingParts, sentAtAppStart, unreadSites } from './map.ts';
+import type { ScreenMap } from './map.ts';
 import { applyJudgments, judgmentFile, loadJudgments } from './judgments.ts';
-import { addReply } from './marks.ts';
+import { addReply, classifyMarks, loadMarks, mergedStatus } from './marks.ts';
+import type { InputPartKey } from './marks.ts';
 import { checkNeeds } from './needs.ts';
 import { CANDIDATES } from './stories.ts';
 import { SOURCE_SYNTAX_ERROR } from './parse.ts';
@@ -69,6 +71,17 @@ async function sendToReview(server: string, route: string, body: unknown) {
     .catch((err) => Promise.reject(new Error(`could not reach the review page at ${server}: ${err.cause?.message ?? err.message}`)));
   if (!res.ok) throw new Error(await res.text());
   return res;
+}
+
+function inputFines(map: ScreenMap, config: ReturnType<typeof loadConfig>) {
+  const screens = map.screens.map((s) => ({ id: s.id, codeHash: s.codeHash }));
+  const { attached } = classifyMarks(loadMarks(config.marksDir).map(mergedStatus), { screens, inputsToCheck: map.inputsToCheck });
+  return attached
+    .filter(({ target, current, codeChanged }) => target.part?.kind === 'input' && current?.status === 'fine' && !codeChanged)
+    .map(({ target }) => {
+      const key = target.part!.key as InputPartKey;
+      return `${target.node}\n${key.fn}\n${key.key}`;
+    });
 }
 
 function readCandidate(from: string) {
@@ -325,6 +338,22 @@ if (command === 'tasks') {
     console.log(`  bodyTypeExclusions ${call} ${field} stays an option, given by ${keptBy.map((src: string) => KEPT_BY[src]).join(' and ')}`);
   }
   for (const [name, fn] of Object.entries<any>(map.apiFunctions)) if (fn.error && !fn.endpoints.length) console.log(`  api method ${name} ← ${fn.file ?? '?'}${fn.line ? `:${fn.line}` : ''}: ${fn.error}`);
+  if (map.inputsToCheck) {
+    // fine 표시는 그 화면 코드가 그대로일 때만 목록에서 뺀다.
+    const fines = new Set(inputFines(map, config));
+    const toCheck = map.inputsToCheck.filter((k) => !fines.has(`${k.screen}\n${k.fn}\n${k.key}`));
+    console.log(`input keys to check ${toCheck.length}${fines.size ? ` (${fines.size} marked fine)` : ''}`);
+    for (const { screen, fn, key, at } of toCheck) console.log(`  ${screen} ${fn} ${key} ${at}`);
+    const reasons = new Map<string, number>();
+    for (const { reason } of map.unknownInputs ?? []) reasons.set(reason, (reasons.get(reason) ?? 0) + 1);
+    console.log(`input keys unknown ${map.unknownInputs?.length ?? 0}${reasons.size ? `: ${[...reasons].map(([reason, n]) => `${n} ${reason}`).join('; ')}` : ''}`);
+    const unread = map.unreadInputCalls ?? [];
+    console.log(`input calls not read ${unread.reduce((n, u) => n + u.calls.length, 0)} on ${unread.length} screens`);
+  } else if (config.requestFunction) {
+    console.log(config.requestFunction.object
+      ? "input keys not checked: duru does not read the request body of a request object's calls"
+      : 'input keys not checked: give body in requestFunction, the place of the request body among the values the request function is given, such as "body": "0.data"');
+  }
   console.log(`dead calls reachable from screens: ${map.deadCalls.length}`);
   console.log(`calls ${map.calls.length} | dead screens ${map.screens.filter((s: any) => s.dead).length}`);
   if (map.appWide) {

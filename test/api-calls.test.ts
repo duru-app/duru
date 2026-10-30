@@ -234,6 +234,7 @@ test('a method checking that its address values are strings or numbers while it 
     file: 'contracts/api/contract.api.ts',
     line: 83,
     endpoints: [{ method: 'POST', url: '/internal/v2/workspace/{?}/contract/{?}/update', line: 83, server: { status: 'none' }, callId: 'POST:/internal/v2/workspace/{?}/contract/{?}/update' }],
+    inputs: { sent: [['0', 'workspaceId'], ['0', 'contractId']], body: [], spread: [] },
   });
 });
 
@@ -1020,4 +1021,313 @@ test('the usage guide names the line for calls that reach no screen with both of
   assert.match(decisions, /\*\*Calls that reach no screen are named in one line, split by whether any app source reaches their API functions\.\*\*[^]*?Compared:\n- The places the source calls an API function: [^]*?\n- References from app code one level deep[^]*?\n- Sorting the calls by what extract read of them/);
   assert.match(readme, /^- `N calls reach no screen: N unused by app code \(<call IDs>, …\), N other \(<call IDs>, …\)` — [^]*?\(`callsOnNoScreen`\)[^]*?`unused by app code`: [^]*?`other`: /m);
   assert.match(skill, /A `N calls reach no screen: …` line [^]*?The `other` ones are where a screen may be missing a request/);
+});
+
+// requestFunction 에 body 자리를 더한 설정. 인자가 요청에 어떻게 실렸는지 보려면 본문까지 봐야 한다.
+const WITH_BODY = { ...CALLED, requestFunction: { ...CALLED.requestFunction, body: '0.body' } };
+const inputsCopy = (module: string, keys: Record<string, unknown> = {}) =>
+  fixtureCopy({ ...WITH_BODY, calledApiModules: ['invoices/api/inputs.ts'], ...keys }, { 'invoices/api/inputs.ts': module });
+const inputsOf = async (module: string, keys?: Record<string, unknown>) =>
+  (await build(inputsCopy(module, keys))).apiFunctions['inputsApi.save'].inputs;
+
+test('the input keys a screen passes and the API function copies one by one into the body are the ones the request carries, and no other key of the same object is', async () => {
+  const module = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    'export const inputsApi = {',
+    '  save(params: { data: Record<string, unknown> }) {',
+    "    const { data } = params;",
+    "    const body: Record<string, unknown> = {};",
+    "    ['user.name', 'user.email'].forEach((k) => { if (k in data) body[k.split('.').pop()!] = data[k]; });",
+    "    return executeRequest({ endpoint: { method: 'POST', path: '/save' }, url: '/save', body });",
+    '  },',
+    '};',
+    '',
+  ].join('\n');
+  assert.deepEqual(await inputsOf(module), { sent: [['0', 'data', 'user.name'], ['0', 'data', 'user.email']], body: [['0', 'data', 'user.name'], ['0', 'data', 'user.email']], spread: [] });
+});
+
+test('the input key a screen passes whole as the body is the one the request carries', async () => {
+  const module = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    'export const inputsApi = {',
+    '  save(params: { data: Record<string, unknown> }) {',
+    "    return executeRequest({ endpoint: { method: 'POST', path: '/save' }, url: '/save', body: params.data });",
+    '  },',
+    '};',
+    '',
+  ].join('\n');
+  assert.deepEqual(await inputsOf(module), { sent: [['0', 'data']], body: [['0', 'data']], spread: [] });
+});
+
+test('the input key a screen passes into the address of the request is the one the request carries, and the rest of the address is not a key', async () => {
+  const module = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    'export const inputsApi = {',
+    '  save({ params }: { params: { page: unknown; size: unknown } }) {',
+    "    return executeRequest({ endpoint: { method: 'GET', path: '/list' }, url: '/list?page=' + String(params.page) });",
+    '  },',
+    '};',
+    '',
+  ].join('\n');
+  assert.deepEqual(await inputsOf(module), { sent: [['0', 'params', 'page']], body: [], spread: [] });
+});
+
+test('the input key a screen passes under another name in a smaller object of the body is the one the request carries', async () => {
+  const module = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    'export const inputsApi = {',
+    '  save({ data }: { data: Record<string, unknown> }) {',
+    "    return executeRequest({ endpoint: { method: 'POST', path: '/save' }, url: '/save', body: { profile: { nick: data['user.nickname'] } } });",
+    '  },',
+    '};',
+    '',
+  ].join('\n');
+  assert.deepEqual(await inputsOf(module), { sent: [['0', 'data', 'user.nickname']], body: [['0', 'data', 'user.nickname']], spread: [] });
+});
+
+test('the input object a screen spreads into the body is reported as spread rather than as each of its keys', async () => {
+  const module = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    'export const inputsApi = {',
+    '  save({ data }: { data: Record<string, unknown> }) {',
+    "    return executeRequest({ endpoint: { method: 'POST', path: '/save' }, url: '/save', body: { ...data } });",
+    '  },',
+    '};',
+    '',
+  ].join('\n');
+  assert.deepEqual(await inputsOf(module), { sent: [], body: [], spread: [['0', 'data']] });
+});
+
+test('an API function that fails only when a value it is given is itself a stand-in it cannot read says the input keys are unknown, and its addresses stay as they were', async () => {
+  const module = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    'export const inputsApi = {',
+    '  save({ data }: { data: { kind: unknown } }) {',
+    '    const given = data.kind as { value: unknown };',
+    "    if (given.value === given) throw new Error('kind must hold a value');",
+    "    return executeRequest({ endpoint: { method: 'POST', path: '/save' }, url: '/save', body: { kind: String(given) } });",
+    '  },',
+    '};',
+    '',
+  ].join('\n');
+  const map = await build(inputsCopy(module));
+  const without = await build(inputsCopy(module, { requestFunction: CALLED.requestFunction }));
+  const fn = map.apiFunctions['inputsApi.save'];
+  assert.equal(fn.inputsUnknown, 'threw with tagged values: kind must hold a value');
+  assert.equal(fn.inputs, undefined);
+  assert.deepEqual(endpointsOf(map, 'inputsApi.save'), endpointsOf(without, 'inputsApi.save'));
+});
+
+test('an API function that needs a number where it reads the input it is given says the input keys are unknown rather than guessing them', async () => {
+  const module = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    'export const inputsApi = {',
+    '  save({ data }: { data: { count: unknown } }) {',
+    "    if (typeof data.count !== 'number') throw new Error('count must be a number');",
+    "    return executeRequest({ endpoint: { method: 'GET', path: '/count' }, url: '/count?limit=' + data.count });",
+    '  },',
+    '};',
+    '',
+  ].join('\n');
+  const map = await build(inputsCopy(module));
+  const without = await build(inputsCopy(module, { requestFunction: CALLED.requestFunction }));
+  const fn = map.apiFunctions['inputsApi.save'];
+  assert.equal(fn.inputsUnknown, 'throws the same error whatever it is given: count must be a number');
+  assert.equal(fn.inputs, undefined);
+  assert.deepEqual(endpointsOf(map, 'inputsApi.save'), endpointsOf(without, 'inputsApi.save'));
+});
+
+test('an API function that throws the same error whatever it is given says the input keys are unknown with that error, since nothing about the values it was given is the reason', async () => {
+  // 로그인하지 않은 동안은 무엇을 받든 같은 오류로 끝난다.
+  const module = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    'const loggedIn: boolean = false;',
+    'export const inputsApi = {',
+    '  save({ data }: { data: Record<string, unknown> }) {',
+    "    if (!loggedIn) throw new Error('not logged in');",
+    "    return executeRequest({ endpoint: { method: 'POST', path: '/save' }, url: '/save', body: { name: data.name } });",
+    '  },',
+    '};',
+    '',
+  ].join('\n');
+  const map = await build(inputsCopy(module));
+  const fn = map.apiFunctions['inputsApi.save'];
+  assert.equal(fn.inputsUnknown, 'throws the same error whatever it is given: not logged in');
+  assert.equal(fn.inputs, undefined);
+});
+
+test('a function that throws the same error whatever it is given names that error the way it names a failure, so the stand-in marker the message carried does not stay in it', async () => {
+  // 세션을 읽는 패키지는 stub 이라, 그 값은 표지가 붙은 대체 값이다.
+  const module = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    "import session from 'auth-lib';",
+    'export const inputsApi = {',
+    '  save({ data }: { data: Record<string, unknown> }) {',
+    '    if (session) throw new Error(`no session for ${session}`);',
+    "    return executeRequest({ endpoint: { method: 'POST', path: '/save' }, url: '/save', body: { name: data.name } });",
+    '  },',
+    '};',
+    '',
+  ].join('\n');
+  const map = await build(inputsCopy(module));
+  const fn = map.apiFunctions['inputsApi.save'];
+  assert.equal(fn.inputsUnknown, 'throws the same error whatever it is given: no session for {?}');
+  assert.equal(fn.inputs, undefined);
+});
+
+// apiModules 파일을 돌려 인자 자리만 얻는 설정. 이 파일은 정적 읽기가 주소를 찾는 apiModules 파일이기도 하다.
+const API_FILES = ['_ajax/AjaxFunc.ts', 'invoices/api/signer.ts'];
+const MODULES = { apiModules: API_FILES, requestFunction: WITH_BODY.requestFunction };
+// 정적 읽기가 apiModules 파일에서 찾은 주소와, 그 함수를 부르는 화면의 호출.
+const NAMES = ['ajaxReportArchive', 'ajaxReportSchedule', 'signerSave'];
+const readOnly = (map: ScreenMap) => ({
+  apiFunctions: NAMES.map((k) => ({ endpoints: map.apiFunctions[k]?.endpoints, file: map.apiFunctions[k]?.file, line: map.apiFunctions[k]?.line })),
+  calls: map.calls.flatMap((c) => {
+    if (!NAMES.some((name) => c.apiFunctions.includes(name))) return [];
+    const { apiFunctions, ...rest } = c as any;
+    return [{ ...rest, apiFunctions: apiFunctions.filter((name: string) => !NAMES.includes(name)) }];
+  }),
+});
+// 내보낸 함수가 { URL, METHOD } 를 지어 정적 읽기가 주소를 찾고, 화면이 준 data 의 키를 골라 본문으로 옮긴다.
+const SIGNER = [
+  "import { executeRequest } from '../../contracts/api/request';",
+  'export const signerSave = async ({ data }: { data: Record<string, unknown> }) => {',
+  '  const body: Record<string, unknown> = {};',
+  "  ['user.name', 'user.email'].forEach((k) => { if (k in data) body[k] = data[k]; });",
+  '  const URL = "/internal/v2/workspace/signer";',
+  '  return executeRequest({ endpoint: { METHOD: "POST", URL }, url: URL, body });',
+  '};',
+  '',
+].join('\n');
+
+// requestFunction 이 없는 사본. 화면이 직접 부른 request 와 그 request 를 감싼 파일은 그때 API 함수로 읽히지 않으므로 뺀다.
+const modulesOnly = { calledApiModules: [], serverEndpoints: CALLED.serverEndpoints, apiModules: API_FILES, requestFunction: undefined };
+
+test('with requestFunction the files in apiModules are run too: only the input keys their functions pass reach are added, and the addresses and calls stay those of reading them', async () => {
+  const map = await build(fixtureCopy({ ...WITH_BODY, ...MODULES }, { 'invoices/api/signer.ts': SIGNER }));
+  const without = await build(fixtureCopy(modulesOnly, { 'invoices/api/signer.ts': SIGNER }));
+  assert.deepEqual(readOnly(map), readOnly(without));
+  assert.deepEqual(map.apiFunctions.signerSave.endpoints.map((e) => [e.method, e.url]), [['POST', '/internal/v2/workspace/signer']]);
+  assert.deepEqual(map.apiFunctions.signerSave.inputs, { sent: [['0', 'data', 'user.name'], ['0', 'data', 'user.email']], body: [['0', 'data', 'user.name'], ['0', 'data', 'user.email']], spread: [] });
+});
+
+test('without requestFunction the same files give no input keys', async () => {
+  const map = await build(fixtureCopy(modulesOnly, { 'invoices/api/signer.ts': SIGNER }));
+  assert.equal(map.apiFunctions.signerSave.inputs, undefined);
+  assert.equal(map.apiFunctions.signerSave.inputsUnknown, undefined);
+});
+
+test('a function exported under another name gets its input keys, found by the name it is exported as', async () => {
+  const module = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    'const b = ({ data }: { data: Record<string, unknown> }) =>',
+    "  executeRequest({ endpoint: { method: 'POST', path: '/save' }, url: '/save', body: { name: data.name } });",
+    'export const a = b;',
+    '',
+  ].join('\n');
+  const map = await build(fixtureCopy({ ...WITH_BODY, apiModules: ['invoices/api/inputs.ts'] }, { 'invoices/api/inputs.ts': module }));
+  assert.deepEqual(map.apiFunctions.a.inputs, { sent: [['0', 'data', 'name']], body: [['0', 'data', 'name']], spread: [] });
+});
+
+test('two exported names for the same function each get the input keys of their own, since one export never stands in for another', async () => {
+  const module = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    'export const b = ({ data }: { data: Record<string, unknown> }) =>',
+    "  executeRequest({ endpoint: { method: 'POST', path: '/save' }, url: '/save', body: { name: data.name } });",
+    'export const a = b;',
+    '',
+  ].join('\n');
+  const map = await build(fixtureCopy({ ...WITH_BODY, apiModules: ['invoices/api/inputs.ts'] }, { 'invoices/api/inputs.ts': module }));
+  assert.deepEqual(map.apiFunctions.b.inputs, { sent: [['0', 'data', 'name']], body: [['0', 'data', 'name']], spread: [] });
+  assert.deepEqual(map.apiFunctions.a.inputs, { sent: [['0', 'data', 'name']], body: [['0', 'data', 'name']], spread: [] });
+});
+
+test('the same error a function in apiModules always throws is named the same way there, with no stand-in marker in it', async () => {
+  const module = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    "import session from 'auth-lib';",
+    'export const moduleSave = ({ data }: { data: Record<string, unknown> }) => {',
+    '  if (session) throw new Error(`no session for ${session}`);',
+    "  return executeRequest({ endpoint: { method: 'POST', path: '/save' }, url: '/save', body: { name: data.name } });",
+    '};',
+    '',
+  ].join('\n');
+  const map = await build(fixtureCopy({ ...WITH_BODY, apiModules: ['invoices/api/inputs.ts'] }, { 'invoices/api/inputs.ts': module }));
+  assert.equal(map.apiFunctions.moduleSave.inputsUnknown, 'throws the same error whatever it is given: no session for {?}');
+  assert.equal(map.apiFunctions.moduleSave.inputs, undefined);
+});
+
+test('an API function that sends a request with fetch rather than requestFunction says its input keys are unknown', async () => {
+  const module = [
+    'export const a = ({ data }: { data: Record<string, unknown> }) =>',
+    "  fetch('/save', { method: 'POST', body: JSON.stringify({ name: data.name }) });",
+    '',
+  ].join('\n');
+  const map = await build(fixtureCopy({ ...WITH_BODY, apiModules: ['invoices/api/inputs.ts'] }, { 'invoices/api/inputs.ts': module }));
+  assert.equal(map.apiFunctions.a.inputsUnknown, 'sent a request outside requestFunction');
+  assert.equal(map.apiFunctions.a.inputs, undefined);
+});
+
+test('a file whose run stops outside any function leaves its functions with the input keys unknown rather than stopping the build', async () => {
+  // 파일을 불러온 뒤, 어느 함수도 도는 중이 아닌 자리에서 워커를 멈춘다.
+  const module = "export const a = new Proxy({}, { ownKeys: () => { process.exit(1); return []; } });\n";
+  const configFile = fixtureCopy({ ...WITH_BODY, apiModules: ['invoices/api/inputs.ts'] }, { 'invoices/api/inputs.ts': module });
+  const map = await build(configFile);
+  assert.equal(map.apiFunctions.a.inputsUnknown, 'the run stopped outside any function');
+  assert.equal(map.apiFunctions.a.inputs, undefined);
+  const result = spawnSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test('a file whose run stops outside any function leaves only its own functions with the input keys unknown, and the files listed after it in apiModules still give the input keys of theirs', async () => {
+  // 첫 파일은 어느 함수도 도는 중이 아닌 자리에서 워커를 멈추고, 둘째 파일은 요청에 실리는 인자를 읽는다.
+  const stopping = "export const a = new Proxy({}, { ownKeys: () => { process.exit(1); return []; } });\n";
+  const later = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    'export const laterSave = ({ data }: { data: Record<string, unknown> }) =>',
+    "  executeRequest({ endpoint: { method: 'POST', path: '/save' }, url: '/save', body: { name: data.name } });",
+    '',
+  ].join('\n');
+  const configFile = fixtureCopy({ ...WITH_BODY, apiModules: ['invoices/api/stops.ts', 'invoices/api/inputs.ts'] }, {
+    'invoices/api/stops.ts': stopping,
+    'invoices/api/inputs.ts': later,
+  });
+  const map = await build(configFile);
+  assert.equal(map.apiFunctions.a.inputsUnknown, 'the run stopped outside any function');
+  assert.equal(map.apiFunctions.a.inputs, undefined);
+  assert.deepEqual(map.apiFunctions.laterSave.inputs, { sent: [['0', 'data', 'name']], body: [['0', 'data', 'name']], spread: [] });
+  assert.equal(map.apiFunctions.laterSave.inputsUnknown, undefined);
+});
+
+// 함수가 몇 번 불렸는지 전역 카운터로 세고, 그것을 요청 주소에 실어 알리는 함수를 둔다.
+const COUNTER = [
+  'let calls = 0;',
+  'export const counted = () => fetch(`/count/${++calls}`);',
+  'export const seen = () => fetch(`/seen/${calls}`);',
+  '',
+].join('\n');
+const seenUrl = (map: ScreenMap) => map.apiFunctions.seen.endpoints.map((e) => e.url);
+
+test('without requestFunction a function that sends a request is called once, as it was before the input keys were read', async () => {
+  const map = await build(fixtureCopy({ calledApiModules: ['invoices/api/count.ts'], requestFunction: undefined }, { 'invoices/api/count.ts': COUNTER }));
+  assert.deepEqual(seenUrl(map), ['/seen/1']);
+});
+
+// fake 모양에서는 던지고 leaves 모양에서만 요청을 보낸다. 표지를 단 값으로는 다시 던지므로 withInputs 가 leaves 를 다시 시도한다.
+const LEAVES = [
+  'let calls = 0;',
+  'export const counted = ({ data }: { data: unknown }) => {',
+  '  calls += 1;',
+  "  if (calls === 1) throw new Error('no data value');",
+  "  if (calls > 2) throw new Error('called more than twice');",
+  '  return fetch(`/count/${calls}`);',
+  '};',
+  'export const seen = () => fetch(`/seen/${calls}`);',
+  '',
+].join('\n');
+
+test('a shape that was already tried is not tried again, so a function that sends with the leaves shape and fails with tagged values is called three times rather than four', async () => {
+  const map = await build(fixtureCopy({ ...CALLED, calledApiModules: ['invoices/api/leaves.ts', ...CALLED.calledApiModules] }, { 'invoices/api/leaves.ts': LEAVES }));
+  assert.equal(map.apiFunctions.counted.inputsUnknown, 'threw with tagged values: called more than twice');
+  assert.deepEqual(seenUrl(map), ['/seen/3']);
 });
