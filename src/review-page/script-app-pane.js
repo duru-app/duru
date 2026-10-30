@@ -174,8 +174,7 @@ window.addEventListener('message', (e) => {
   const app = state.data?.app;
   const frame = /** @type {HTMLIFrameElement | null} */ (document.querySelector('#center .app-stage iframe.app'));
   if (!app || !screenPanesShown() || !frame || e.source !== frame.contentWindow) return;
-  const origins = [app.url, ...(app.signedOutUrl ? [app.signedOutUrl] : []), ...app.roles.map((r) => r.url)].map((url) => new URL(url).origin);
-  if (!origins.includes(e.origin) || e.data?.duru !== 'walk' || typeof e.data.signedOut !== 'string') return;
+  if (!appOrigins().includes(e.origin) || e.data?.duru !== 'walk' || typeof e.data.signedOut !== 'string') return;
   state.appSignedOut = { src: frame.dataset.src, text: e.data.signedOut };
   document.querySelector('#center .login-cut')?.remove();
   document.querySelector('#center .app-stage')?.before(h('div', { class: 'error login-cut' }, e.data.signedOut));
@@ -286,6 +285,21 @@ function appStage(src) {
   appResized.disconnect();
   appResized.observe(stage);
   return stage;
+}
+
+const appOrigins = () => {
+  const app = state.data?.app;
+  if (!app) return [];
+  return [app.url, ...(app.signedOutUrl ? [app.signedOutUrl] : []), ...app.roles.map((r) => r.url)].map((url) => new URL(url).origin);
+};
+
+// 기록과 상자 찾기는 앱이 옮겨 간 화면의 주소를 그대로 읽으므로, 그 프레임에서는 앱이 로그인 화면으로 넘어가도 다시 로그인하지 않는다.
+/** @param {HTMLIFrameElement} frame */
+function noLoginAgain(frame) {
+  frame.addEventListener('load', () => {
+    if (!frame.src) return;
+    frame.contentWindow?.postMessage({ duru: 'login-again', off: true }, new URL(frame.src).origin);
+  });
 }
 
 function fitApp() {

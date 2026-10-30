@@ -59,7 +59,6 @@ interface Login {
   error?: string;
 }
 
-// 포트가 지금 쓰는 로그인. 다시 로그인하면 이 자리를 바꿔, 이후 페이지와 API 호출이 새 토큰을 쓴다.
 interface LoginHolder {
   login: Login | null;
 }
@@ -381,23 +380,19 @@ export function answerReviewPage(origins: string[]) {
 // 페이지마다 지우면 앱이 로그인하고 새로 고칠 때 다시 로그아웃되므로, 이 경로로 열 때만 토큰을 지운다.
 export const SIGN_OUT_PATH = '/__duru/sign-out';
 
-// 다른 곳의 로그인으로 이 칸의 로그인이 끊겼을 때, 앱 페이지가 그 계정을 다시 로그인해 달라고 부르는 경로다.
 export const LOGIN_AGAIN_PATH = '/__duru/login-again';
-// 다시 로그인할 때마다 앱이 다른 곳의 로그인을 끊을 수 있어, 한 번 다시 한 계정은 1분을 기다린다.
 const LOGIN_AGAIN_WAIT_MS = 60_000;
-// 다시 하지 않고 멈춘 까닭과 그럴 만한 짐작을 함께 알린다.
 const LOGIN_CUT = '다시 로그인한 뒤 1분 안에 또 로그인 화면으로 넘어가 더 시도하지 않습니다. 같은 계정으로 다른 곳에서 로그인했을 수 있습니다';
 
 // 앱 페이지 안에서 따로 돌기 때문에 바깥 스코프의 변수를 쓰지 않는다.
-// 다른 곳에서 같은 계정으로 로그인해 토큰이 끊기면 앱이 로그아웃 화면으로 가므로, 그때 리뷰 서버에 로그인을 다시 청한다.
-// 받은 값을 앱의 저장소에 넣고 로그아웃 화면에 오기 전 주소로 돌아가며, 다시 하지 못하면 그 까닭을 리뷰 페이지에 보낸다.
-// 주소는 answerReviewPage 와 같은 자리(history, popstate, hashchange)에서 살피고, 페이지를 새로 불러와도 남도록 sessionStorage 에도 둔다.
 export function logInAgainOnSignedOut(signedOutPaths: string[], againPath: string, storageKey: string, origins: string[]) {
   const w: any = globalThis;
   if (w.parent === w) return;
-  const lastKey = '__duru_last';
+  // 같은 출처의 앱 프레임은 sessionStorage 를 함께 쓰므로 열쇠를 프레임마다 나눈다. window.name 은 페이지를 새로 불러와도 남는다.
+  if (!w.name) w.name = `__duru_${Math.random().toString(36).slice(2)}`;
+  const lastKey = `__duru_last:${w.name}`;
   const here = () => w.location.pathname + w.location.search + w.location.hash;
-  // 이 앱 안에서 쓰는 주소만 되돌아간다.
+  // 이 앱 안의 주소만 되돌아간다. '//' 로 시작하는 주소는 다른 사이트다.
   const inside = (url: unknown) => typeof url === 'string' && url.startsWith('/') && !url.startsWith('//');
   const remembered = () => {
     try {
@@ -414,11 +409,14 @@ export function logInAgainOnSignedOut(signedOutPaths: string[], againPath: strin
   };
   let last = remembered();
   let asking = false;
+  // 기록과 상자 찾기는 앱이 옮겨 간 화면의 주소를 그대로 읽으므로, 리뷰 페이지가 그런 프레임에서는 꺼 달라고 알려 온다.
+  let off = false;
   const ask = async () => {
     if (asking) return;
     asking = true;
     const answer = await w.fetch(againPath, { method: 'POST' }).then((res: any) => res.json()).catch(() => null);
     asking = false;
+    if (off) return;
     if (typeof answer?.value === 'string') {
       w.localStorage.setItem(storageKey, answer.value);
       w.location.replace(last);
@@ -428,11 +426,15 @@ export function logInAgainOnSignedOut(signedOutPaths: string[], againPath: strin
     for (const origin of origins) w.parent.postMessage({ duru: 'walk', signedOut: answer.error }, origin);
   };
   const watch = () => {
+    // 답을 기다리는 동안 로그인 화면이 옮겨 가는 주소는 돌아갈 주소가 아니다. 꺼 둔 프레임은 로그인도 청하지 않는다.
+    if (asking || off) return;
     if (signedOutPaths.includes(w.location.pathname)) {
       ask();
       return;
     }
-    last = here();
+    const at = here();
+    if (!inside(at)) return;
+    last = at;
     remember(last);
   };
   for (const name of ['pushState', 'replaceState']) {
@@ -445,6 +447,10 @@ export function logInAgainOnSignedOut(signedOutPaths: string[], againPath: strin
   }
   w.addEventListener('popstate', watch);
   w.addEventListener('hashchange', watch);
+  w.addEventListener('message', (e: any) => {
+    if (e.source !== w.parent || !origins.includes(e.origin) || e.data?.duru !== 'login-again') return;
+    off = e.data.off === true;
+  });
   watch();
 }
 
@@ -458,7 +464,7 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
     return logins.get(account.id)!;
   };
   const [main, ...roleLogins] = await Promise.all([app.account, ...roles.map(([, account]) => account)].map(logInOnce));
-  // 앱 서버가 토큰을 끊어 다시 로그인하면 그 계정을 쓰는 포트가 모두 이 자리의 새 로그인으로 페이지를 내주고 API 를 부른다.
+  // 계정마다 하나를 두고 그 계정을 쓰는 포트가 함께 읽는다. 이 자리를 바꾸면 이후 페이지와 API 호출이 새 로그인을 쓴다.
   const holders = new Map<string, LoginHolder>();
   const holderOf = (account: AppAccount, login: Login | null) => {
     if (!holders.has(account.id)) holders.set(account.id, { login });
@@ -466,9 +472,7 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
   };
   const mainHolder = holderOf(app.account, main);
   const roleHolders = roles.map(([, account], i) => holderOf(account, roleLogins[i]));
-  // 이 계정을 마지막으로 다시 로그인한 때. 이 뒤 1분 안에는 앱이 다른 곳의 로그인을 끊을 수 있어 다시 하지 않는다.
   const againAt = new Map<string, number>();
-  // 지금 다시 로그인하는 중인 계정. 그 로그인이 끝나기 전에 온 청에는 같은 답을 준다.
   const againRunning = new Map<string, Promise<Login>>();
   const key = literal(app.login.storage.key);
   const { settingsFile } = app;
@@ -572,8 +576,6 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
     res.end(Buffer.from(await r.arrayBuffer()));
   }
 
-  // 다시 로그인하지 못하면 그 계정으로 다시 하지 못한 까닭을 그대로 알린다.
-  // 같은 계정의 청이 겹치면 두 번 로그인해 서로의 토큰을 끊으므로, 먼저 온 청의 로그인을 기다려 같은 답을 준다.
   async function logInAgain(res: http.ServerResponse, account: AppAccount, holder: LoginHolder) {
     const answer = (body: object) => send(res, 200, 'application/json', JSON.stringify(body));
     const said = (login: Login) => answer(login.error !== undefined ? { error: login.error } : { value: login.storage!.value });
@@ -583,19 +585,21 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
     if (before !== undefined && Date.now() - before < LOGIN_AGAIN_WAIT_MS) return answer({ error: LOGIN_CUT });
     const attempt = logIn(app, account);
     againRunning.set(account.id, attempt);
-    const login = await attempt;
-    againRunning.delete(account.id);
-    if (login.error === undefined) {
-      againAt.set(account.id, Date.now());
-      holder.login = login;
+    try {
+      const login = await attempt;
+      if (login.error === undefined) {
+        againAt.set(account.id, Date.now());
+        holder.login = login;
+      }
+      said(login);
+    } finally {
+      againRunning.delete(account.id);
     }
-    said(login);
   }
 
-  // login 이 null 인 포트는 로그아웃 상태로 띄운다. account 가 null 인 포트에는 로그인을 다시 하는 경로가 없다.
+  // login 이 null 인 포트는 로그아웃 상태로 띄운다.
   async function listen(port: number, holder: LoginHolder, account: AppAccount | null) {
     const ownHosts = (): (string | undefined)[] => [`127.0.0.1:${(server.address() as AddressInfo).port}`, `localhost:${(server.address() as AddressInfo).port}`];
-    // 이 포트가 낸 페이지에서 온 청만 받는다. 다른 사이트가 이 컴퓨터의 앱에 로그인을 다시 시키지 못하게 한다.
     const fromOwnPage = (req: http.IncomingMessage) => {
       const origin = req.headers.origin;
       if (origin !== undefined) return ownHosts().some((host) => origin === `http://${host}`);
@@ -652,7 +656,6 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
     body: body === undefined ? undefined : JSON.stringify(body),
     signal,
   });
-  // 부를 때마다 그 자리에 든 토큰을 써야, 다시 로그인한 뒤로는 새 토큰으로 부른다.
   const apiCaller = (holder: LoginHolder) => {
     const call = (apiPath: string, options?: ServerFetchOptions) => fetchServer(apiPath, { ...options, headers: fillIn(app.login.header ?? {}, { token: holder.login?.token ?? '' }) });
     return holder.login?.token ? call : null;

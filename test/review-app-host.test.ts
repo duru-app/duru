@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import { loadConfig } from '../src/config.ts';
-import { applyOverrides, readSettingsFile, startAppHost, LOGIN_AGAIN_PATH } from '../src/app-host.ts';
+import { applyOverrides, logInAgainOnSignedOut, readSettingsFile, startAppHost, LOGIN_AGAIN_PATH } from '../src/app-host.ts';
 import { startReviewServer } from '../src/review.ts';
 import { FIXTURE, withRebuiltFixture, signer, withServer, PASSWORD_ENV, ADMIN_PASSWORD_ENV, AUDITOR_PASSWORD_ENV, ACCOUNTS, withFakeApi, appSettings, SETTINGS_FILE, withSettingsFile, rewrite, rebuild, LIST_API, API_KEY_ENV, API_KEY, ISSUING_API, VIEW_TOKEN_API, VIEW_ROUTE, loginWithHeader, roleSettings, withPasswords, withPassword, ALL_PASSWORDS, pathValueSettings } from './review-helpers.ts';
 import type { Config, PageData } from './review-helpers.ts';
@@ -215,6 +215,161 @@ test('the signed-out port has no login-again path and none of the script that ca
           assert.deepEqual(logins, ['duru-admin']);
         }),
       ),
+    ),
+  );
+});
+
+// 로그인 다시 하기 코드를 돌리는 앱 프레임 하나. 같은 탭의 프레임들은 sessionStorage 를 함께 쓴다.
+function appFrame({ at = '/home', name = '', session = new Map<string, string>(), reply = async () => ({ value: '{"accessToken":"cut-2"}' }) }: {
+  at?: string;
+  name?: string;
+  session?: Map<string, string>;
+  reply?: () => Promise<unknown>;
+} = {}) {
+  let url = new URL(`http://app.test${at}`);
+  const replaced: string[] = [];
+  const stored: string[] = [];
+  const asked: number[] = [];
+  const listeners: ((e: unknown) => void)[] = [];
+  const w: any = {
+    name,
+    parent: { postMessage: () => {} },
+    sessionStorage: {
+      getItem: (k: string) => session.get(k) ?? null,
+      setItem: (k: string, v: string) => void session.set(k, v),
+    },
+    localStorage: { setItem: (k: string, v: string) => void stored.push(v) },
+    location: {
+      get pathname() {
+        return url.pathname;
+      },
+      get search() {
+        return url.search;
+      },
+      get hash() {
+        return url.hash;
+      },
+      replace: (to: string) => void replaced.push(to),
+    },
+    history: {
+      pushState: (_state: unknown, _title: string, to: string) => {
+        url = new URL(to, url);
+      },
+    },
+    addEventListener: (type: string, fn: (e: unknown) => void) => {
+      if (type === 'message') listeners.push(fn);
+    },
+    fetch: async () => {
+      asked.push(1);
+      return { json: reply };
+    },
+  };
+  const context = vm.createContext(w);
+  const go = (to: string) => w.history.pushState({}, '', to);
+  const install = () => vm.runInContext(`(${logInAgainOnSignedOut})(["/signin"], ${JSON.stringify(LOGIN_AGAIN_PATH)}, "FAKE_AUTH", ["http://parent.test"]);`, context);
+  // 리뷰 페이지가 프레임에 보내는 쪽지.
+  const say = (data: unknown, { source = w.parent, origin = 'http://parent.test' } = {}) => {
+    for (const fn of listeners) fn({ source, origin, data });
+  };
+  return { w, replaced, stored, asked, session, go, install, say };
+}
+
+const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+test('two app frames in one tab each come back to their own address, because each keeps its last address under its own window.name', async () => {
+  const session = new Map<string, string>();
+  const pane = appFrame({ session });
+  const box = appFrame({ at: '/settings', session });
+  pane.install();
+  box.install();
+  assert.match(pane.w.name, /^__duru_/);
+  assert.notEqual(pane.w.name, box.w.name);
+
+  pane.go('/signin');
+  await settled();
+  assert.deepEqual(pane.replaced, ['/home']);
+
+  // 페이지를 새로 불러와도 window.name 이 남아 같은 자리에서 지난 주소를 찾는다.
+  const loaded = appFrame({ at: '/signin', name: box.w.name, session });
+  loaded.install();
+  await settled();
+  assert.deepEqual(loaded.replaced, ['/settings']);
+});
+
+test('an app frame waiting for its login-again answer keeps the address it came from, not the one the sign-in screen moves to', async () => {
+  let release: (answer: unknown) => void = () => {};
+  const pending = new Promise((resolve) => { release = resolve; });
+  const frame = appFrame({ reply: () => pending });
+  frame.install();
+  frame.go('/signin');
+  frame.go('/signin/form');
+  release({ value: '{"accessToken":"cut-2"}' });
+  await settled();
+  assert.deepEqual(frame.replaced, ['/home']);
+  assert.deepEqual([...frame.session.values()], ['/home']);
+  assert.deepEqual(frame.stored, ['{"accessToken":"cut-2"}']);
+});
+
+test('an app frame never goes back to an address that is outside the app, such as one that starts with //', async () => {
+  const frame = appFrame();
+  frame.install();
+  frame.go('http://app.test//evil.example');
+  frame.go('/signin');
+  await settled();
+  assert.deepEqual(frame.replaced, ['/home']);
+  assert.deepEqual([...frame.session.values()], ['/home']);
+});
+
+test('an app frame the review page told to leave its address alone stays at the sign-in screen the app moved to, and takes that word from no other page or message', async () => {
+  const frame = appFrame();
+  frame.install();
+  frame.say({ duru: 'login-again', off: true }, { origin: 'http://elsewhere.test' });
+  frame.say({ duru: 'login-again', off: true }, { source: {} });
+  frame.say({ duru: 'find', off: true });
+  frame.go('/signin');
+  await settled();
+  assert.deepEqual(frame.replaced, ['/home']);
+
+  frame.say({ duru: 'login-again', off: true });
+  frame.go('/help');
+  frame.go('/signin');
+  await settled();
+  assert.deepEqual(frame.replaced, ['/home']);
+  // 꺼 둔 프레임은 로그인도 청하지 않는다.
+  assert.equal(frame.asked.length, 1);
+  assert.deepEqual(frame.stored, ['{"accessToken":"cut-2"}']);
+});
+
+test('a login-again request whose login throws is never kept, so the next request logs the account in again instead of awaiting the same failure', async () => {
+  await withCutLogin((api, logins) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture({ app: { ...appSettings(api).app, login: loginWithHeader } }, async (config) => {
+        const host = await startAppHost(config.app);
+        const realFetch = globalThis.fetch;
+        let broke = false;
+        // 첫 로그인은 응답을 읽다가 예외로 끝나고, 그다음 로그인은 제대로 끝난다.
+        globalThis.fetch = ((input: any, init?: any) => {
+          if (!broke && String(input) === `${api}/auth/login`) {
+            broke = true;
+            return Promise.resolve({ get ok(): boolean { throw new Error('broken login response'); } });
+          }
+          return realFetch(input, init);
+        }) as typeof globalThis.fetch;
+        try {
+          const post = () => fetch(`${host.url}${LOGIN_AGAIN_PATH}`, { method: 'POST', headers: { origin: host.url } });
+          const failed = await post();
+          assert.equal(failed.status, 502);
+          assert.equal(await failed.text(), 'broken login response');
+
+          const after = await post();
+          assert.equal(after.status, 200);
+          assert.deepEqual(await after.json(), { value: JSON.stringify({ accessToken: 'cut-2' }) });
+          assert.deepEqual(logins, ['duru-admin', 'duru-admin']);
+        } finally {
+          globalThis.fetch = realFetch;
+          host.close();
+        }
+      }),
     ),
   );
 });

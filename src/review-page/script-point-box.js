@@ -133,6 +133,7 @@ function newPointFrame(p) {
   const frame = /** @type {HTMLIFrameElement} */ (h('iframe', { class: 'point-frame', title: '앱 화면에서 상자 주변' }));
   Object.assign(frame.style, { width: `${width}px`, height: `${POINT_FRAME_HEIGHT}px` });
   const f = { src: p.src, key: p.key, origin: new URL(p.src).origin, frame, width, height: POINT_FRAME_HEIGHT, loaded: false, moved: false, timer: undefined };
+  noLoginAgain(frame);
   frame.addEventListener('load', () => {
     if (pointFrame !== f) return;
     f.loaded = true;
