@@ -63,7 +63,6 @@ export function resultFiles(p: string, extensions: string[]) {
     .sort();
 }
 
-// 읽지 못한 trace 는 빠지므로, 그 trace 에만 있던 호출도 기록되지 않은 호출이 된다.
 export function sentTraces(config: any): SentRequests[] {
   const sent: SentRequests[] = [];
   for (const source of config.tests) {

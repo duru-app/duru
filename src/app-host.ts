@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { pipeline } from 'node:stream';
 import vm from 'node:vm';
+import { isAppPath } from './address-match.ts';
 import { WRITES } from './unrecorded-calls.ts';
 
 export interface AppAccount {
@@ -54,7 +55,7 @@ export interface AppHostOptions {
   pageOrigins?: () => string[];
 }
 
-// shown 은 요청의 Referer 에서 읽은, 그때 앱이 보이던 주소다. body 는 JSON 으로 읽히는 본문만 둔다.
+// shown 은 요청의 Referer 에서 읽은, 그때 앱에 떠 있던 주소다. body 는 JSON 본문에서 켜고 끄는 값만 남긴 것이다.
 export interface ForwardedRequest {
   method: string;
   url: string;
@@ -82,14 +83,38 @@ interface ServerFetchOptions {
 const MAX_KEPT_BODY = 1024 * 1024;
 const MAX_KEPT_REQUESTS = 1000;
 const MAX_KEPT_BYTES = 32 * 1024 * 1024;
+const PENDING_WAIT_MS = 5000;
 
-function isJsonText(text: string) {
-  try {
-    JSON.parse(text);
-    return true;
-  } catch {
-    return false;
+function onOffOnly(value: unknown): unknown {
+  if (typeof value === 'boolean') return value;
+  if (Array.isArray(value)) {
+    const kept = value.map(onOffOnly).filter((v) => v !== undefined);
+    return kept.length ? kept : undefined;
   }
+  if (!value || typeof value !== 'object') return undefined;
+  const kept = Object.entries(value).flatMap(([k, v]) => {
+    const on = onOffOnly(v);
+    return on === undefined ? [] : [[k, on]];
+  });
+  return kept.length ? Object.fromEntries(kept) : undefined;
+}
+
+// 비밀번호 같은 값이 기록 파일에 남지 않도록, 옵션으로 읽는 켜고 끄는 값만 둔다.
+function onOffBody(text: string) {
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  const kept = onOffOnly(json);
+  return kept && typeof kept === 'object' ? JSON.stringify(kept) : undefined;
+}
+
+interface KeptRequests {
+  list: (ForwardedRequest & { n: number })[];
+  bytes: number;
+  pending: Set<Promise<void>>;
 }
 
 export const MIME: Record<string, string> = {
@@ -496,9 +521,12 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
   const { settingsFile } = app;
   const globalNames = settingsFile && globalNamesOf(settingsFile);
   let overrides: SettingsOverride[] = [];
-  const sent: (ForwardedRequest & { n: number; port: number })[] = [];
+  const sent = new Map<number, KeptRequests>();
+  const keptOn = (port: number) => {
+    if (!sent.has(port)) sent.set(port, { list: [], bytes: 0, pending: new Set() });
+    return sent.get(port)!;
+  };
   let sentCount = 0;
-  let keptBytes = 0;
 
   // 앱 스크립트보다 먼저 돌아야, 앱이 처음 읽을 때 localStorage 에 토큰이 들어 있고 앱이 처음 주소를 바꿀 때도 알린다.
   const withScripts = (html: string, login: Login | null) => {
@@ -553,34 +581,47 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
     }
   }
 
+  // 앱 서버가 답한 요청만 둔다. 돌려준 함수로 답이 왔는지 알린다.
   function keepWrite(req: http.IncomingMessage, port: number) {
     const n = sentCount++;
+    const kept = keptOn(port);
     const chunks: Buffer[] = [];
     let size = 0;
     req.on('data', (chunk: Buffer) => {
       size += chunk.length;
       if (size <= MAX_KEPT_BODY) chunks.push(chunk);
     });
-    req.on('end', () => {
-      const text = size <= MAX_KEPT_BODY ? Buffer.concat(chunks).toString('utf8') : '';
-      const referer = URL.canParse(req.headers.referer ?? '') ? new URL(req.headers.referer!) : null;
-      const shown = referer && referer.host === req.headers.host ? referer.pathname + referer.search : undefined;
-      const body = isJsonText(text) ? text : undefined;
-      sent.push({ n, port, method: req.method!, url: req.url!, ...(body !== undefined && { body }), ...(shown && { shown }) });
-      sent.sort((a, b) => a.n - b.n);
-      keptBytes += body?.length ?? 0;
-      while (sent.length > MAX_KEPT_REQUESTS || keptBytes > MAX_KEPT_BYTES) keptBytes -= sent.shift()!.body?.length ?? 0;
+    const read = new Promise<string | null>((resolve) => {
+      req.on('end', () => resolve(size <= MAX_KEPT_BODY ? Buffer.concat(chunks).toString('utf8') : ''));
+      req.on('close', () => resolve(null));
     });
+    let answer!: (answered: boolean) => void;
+    const answered = new Promise<boolean>((resolve) => (answer = resolve));
+    const done = Promise.all([read, answered]).then(([text, ok]) => {
+      if (text === null || !ok) return;
+      const referer = URL.canParse(req.headers.referer ?? '') ? new URL(req.headers.referer!) : null;
+      const shown = referer && referer.host === req.headers.host && isAppPath(referer.pathname) ? referer.pathname + referer.search : undefined;
+      const body = onOffBody(text);
+      kept.list.push({ n, method: req.method!, url: req.url!, ...(body !== undefined && { body }), ...(shown && { shown }) });
+      kept.list.sort((a, b) => a.n - b.n);
+      kept.bytes += Buffer.byteLength(body ?? '');
+      while (kept.list.length > MAX_KEPT_REQUESTS || kept.bytes > MAX_KEPT_BYTES) kept.bytes -= Buffer.byteLength(kept.list.shift()!.body ?? '');
+    });
+    kept.pending.add(done);
+    done.finally(() => kept.pending.delete(done));
+    return answer;
   }
 
   function forward(req: http.IncomingMessage, res: http.ServerResponse, port: number) {
-    if (WRITES.has(req.method!)) keepWrite(req, port);
+    const answer = WRITES.has(req.method!) && isAppPath(req.url) ? keepWrite(req, port) : null;
     const target = new URL(join(app.server, req.url!));
     const client = target.protocol === 'https:' ? https : http;
     const up = client.request(target, { method: req.method, headers: { ...req.headers, host: target.host } }, (r) => {
+      answer?.(true);
       res.writeHead(r.statusCode!, r.headers);
       pipeline(r, res, () => {});
     });
+    up.on('close', () => answer?.(false));
     up.on('error', (err) => {
       if (!res.headersSent) send(res, 502, 'text/plain', err.message);
       else if (!res.writableEnded) res.destroy();
@@ -728,10 +769,11 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
     get sentCount() {
       return sentCount;
     },
-    // from 은 기록을 시작할 때 받은 sentCount 다.
-    sentSince(url: string, from: number): ForwardedRequest[] {
-      const pane = Number(new URL(url).port);
-      return sent.filter((r) => r.port === pane && r.n >= from).map(({ n, port, ...r }) => r);
+    // from 은 기록을 시작할 때 받은 sentCount 다. 아직 답을 기다리는 요청은 잠시 기다린다.
+    async sentSince(url: string, from: number): Promise<ForwardedRequest[]> {
+      const kept = keptOn(Number(new URL(url).port));
+      await Promise.race([Promise.all(kept.pending), new Promise((resolve) => setTimeout(resolve, PENDING_WAIT_MS).unref())]);
+      return kept.list.filter((r) => r.n >= from).map(({ n, ...r }) => r);
     },
     close() {
       servers.forEach(close);

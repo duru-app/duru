@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { pathOf, screenFinder } from './address-match.ts';
+import { isAppPath, pathOf, screenFinder } from './address-match.ts';
 import type { ForwardedRequest } from './app-host.ts';
 import { compare, isPlainObject } from './config.ts';
 import { jsonFiles } from './json-files.ts';
@@ -33,15 +33,13 @@ function typedProblem(step: any, i: number) {
   return step.skipped === undefined || isCount(step.skipped) ? null : `${i + 1} 번째 단계의 skipped 는 넣지 못한 입력의 수로, 0 이상의 정수여야 합니다`;
 }
 
-const isInside = (url: unknown) => typeof url === 'string' && url.startsWith('/') && !url.startsWith('//');
-
 function requestProblem(r: any, i: number) {
   const at = `requests 의 ${i + 1} 번째 요청`;
   if (!isPlainObject(r)) return `${at}은 객체여야 합니다`;
   if (typeof r.method !== 'string' || !r.method) return `${at}의 method 가 문자열이 아니거나 비어 있습니다`;
-  if (!isInside(r.url)) return `${at}의 url 은 / 로 시작하는 주소여야 합니다`;
+  if (!isAppPath(r.url)) return `${at}의 url 은 / 로 시작하는 주소여야 합니다`;
   if (r.body !== undefined && typeof r.body !== 'string') return `${at}의 body 는 문자열이어야 합니다`;
-  if (r.shown !== undefined && !isInside(r.shown)) return `${at}의 shown 은 / 로 시작하는 앱 안 주소여야 합니다`;
+  if (r.shown !== undefined && !isAppPath(r.shown)) return `${at}의 shown 은 / 로 시작하는 앱 안 주소여야 합니다`;
   return null;
 }
 
@@ -395,7 +393,7 @@ const RECORD_KEYS = ['url', 'inputs', 'skipped'];
 
 // 쓴 파일은 고치지도 지우지도 않는다.
 export function saveVisitRecord(dir: string, steps: unknown, now = new Date(), requests: ForwardedRequest[] = []) {
-  if (!Array.isArray(steps) || !steps.length || !steps.every((s) => isPlainObject(s) && isInside(s.url))) {
+  if (!Array.isArray(steps) || !steps.length || !steps.every((s) => isPlainObject(s) && isAppPath(s.url))) {
     throw new Error('steps 는 / 로 시작하는 앱 안 주소를 url 에 담은 단계를 하나 이상 차례대로 담은 목록이어야 합니다');
   }
   for (const [i, step] of steps.entries()) {

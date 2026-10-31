@@ -104,12 +104,14 @@ export function reviewAuthor(config: any, { gitName = gitUserName, userName = co
 
 type AppHost = Awaited<ReturnType<typeof startAppHost>>;
 
-function sentDuring(app: AppHost, { pane, from }: Record<string, unknown>) {
+// 같은 앱이 다른 탭이나 미리보기에도 떠 있을 수 있어서, 이 기록이 지나간 주소에서 보낸 요청만 고른다.
+async function sentDuring(app: AppHost, { pane, from, steps }: Record<string, unknown>) {
   if (from === undefined) return [];
   const panes = [app.url, app.signedOutUrl, ...app.roles.map((r) => r.url)].filter(Boolean);
   if (!Number.isInteger(from) || (from as number) < 0) throw new Error('from 은 기록을 시작할 때 받은 0 이상의 정수여야 합니다');
   if (!panes.includes(pane as string)) throw new Error(`pane 은 앱 칸의 주소 가운데 하나여야 합니다: ${panes.join(', ')}`);
-  return app.sentSince(pane as string, from as number);
+  const walked = new Set(Array.isArray(steps) ? steps.map((s) => (typeof s?.url === 'string' ? s.url.split('#')[0] : null)) : []);
+  return (await app.sentSince(pane as string, from as number)).filter((r) => r.shown === undefined || walked.has(r.shown));
 }
 
 function readJson(file: string) {
@@ -675,13 +677,15 @@ export async function startReviewServer(config: any, { port = 0, author = review
         }
         if (req.url === '/api/records') {
           if (!app) return send(res, 404, 'text/plain', 'no app is served');
-          let file;
+          let file, requests;
           try {
-            file = saveVisitRecord(config.storiesDir, input.steps, new Date(), sentDuring(app, input));
+            requests = await sentDuring(app, input);
+            file = saveVisitRecord(config.storiesDir, input.steps, new Date(), requests);
           } catch (err: any) {
             return send(res, 400, 'text/plain', err.message);
           }
-          return send(res, 201, 'application/json', JSON.stringify({ record: path.relative(config.configDir, path.join(config.storiesDir, file)).split(path.sep).join('/') }));
+          const record = path.relative(config.configDir, path.join(config.storiesDir, file)).split(path.sep).join('/');
+          return send(res, 201, 'application/json', JSON.stringify({ record, requests: input.from === undefined ? null : requests.length }));
         }
         if (req.url === '/api/candidates/add') {
           try {

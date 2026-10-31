@@ -71,9 +71,10 @@ test('in a browser, a write request the app sends while recording goes into the 
             }));
             await p.click('#center .walk-bar button.end-walk');
             await p.waitForSelector('#center .walk-note:has-text("기록 파일")');
+            assert.match((await p.textContent('#center .walk-note'))!, /앱이 보낸 쓰기 요청 1개도 함께 남겼습니다/);
             assert.deepEqual(recordFiles(config.storiesDir), [{
               steps: [{ url: '/home' }, { url: '/help?from=home' }],
-              requests: [{ method: 'POST', url: '/api/v1/documents/search', body: '{"status":"done","notify":true}', shown: '/help?from=home' }],
+              requests: [{ method: 'POST', url: '/api/v1/documents/search', body: '{"notify":true}', shown: '/help?from=home' }],
             }]);
           }),
         ),

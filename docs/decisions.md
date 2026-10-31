@@ -5295,13 +5295,15 @@ Compared:
 count of requests the page took when recording started and 「기록 끝」, and reads the screen each was sent from out of
 its `Referer`.**
 Chosen for #498 (2026-10-31). The review server already passes the app's API requests on, so it sees every write the
-app sends without anything added to the app's page. The same port also serves the app in the screen previews, so the
-page asks for the count when it opens the app for recording and sends it back with the steps; a record whose page did
-not get the count keeps no requests rather than ones from before it. Measured in Chromium (2026-10-31): a fetch and
+app sends without anything added to the app's page. The same port also serves the app in the screen previews and in
+any other tab, so the page asks for the count when it opens the app for recording and sends it back with the steps,
+and only a request whose `Referer` is an address the record passed through is kept; a record whose page did not get
+the count keeps no requests rather than ones from before it, and the page says so. Measured in Chromium (2026-10-31): a fetch and
 an XHR sent after `history.pushState` carry the new path and query in `Referer`, without what follows `#`, and
 into-sign 1.6.0 sets no referrer policy and routes by path, so the Referer names the screen the way a trace's address
 does. A body is kept only when it reads as JSON: a fetch without a content type sends `text/plain`, so the type does
-not tell, and only JSON gives options. A record's requests are read into the same list as a trace's, title, file,
+not tell, and only JSON gives options. Of the body only the true and false values are kept, since the record is kept
+in git and a sign-in or a password change sends secrets as JSON; the options are read from those values alone. A record's requests are read into the same list as a trace's, title, file,
 line and project with the requests and the page requests, so reading options, tying calls to screens and marking
 calls unrecorded take one shape and each trace is read once.
 Compared:
