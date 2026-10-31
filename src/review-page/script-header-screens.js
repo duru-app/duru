@@ -144,7 +144,7 @@ function regressionsOfRow(node, via, t) {
     const rows = new Map();
     for (const r of c.regressions) {
       for (const row of r.rows) {
-        if (row.status === 'pass') continue;
+        if (row.status === 'pass' || row.status === 'limit') continue;
         const key = rowKey(row.node, row.via, row.ref);
         rows.set(key, [...(rows.get(key) ?? []), { ...row, baseline: r.baseline }]);
       }

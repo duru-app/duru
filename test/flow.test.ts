@@ -37,14 +37,14 @@ test('the flow starts at the entry screens and places each screen once, with the
 
 test('each screen box carries its test counts, its calls and whether it is dead or opens only under a condition', () => {
   const home = find(flow.roots, '/home#Home')!;
-  assert.deepEqual(home.counts, { pass: 5, fail: 2, pending: 1 });
+  assert.deepEqual(home.counts, { pass: 5, fail: 2, pending: 1, limit: 0 });
   assert.equal(home.dead, true);
   assert.deepEqual(home.calls.map((c) => [c.id, c.server.status]), [
     ['GET:/api/v1/document/list', 'match'],
     ['POST:/api/v1/archive/document', 'none'],
   ]);
   assert.deepEqual(find(flow.roots, '/lab/result#LabResult')!.kinds, ['setting']);
-  assert.deepEqual(find(flow.roots, '/document/:id#DocumentDetail')!.calls.find((c) => c.id.startsWith('PUT:'))!.counts, { pass: 0, fail: 1, pending: 0 });
+  assert.deepEqual(find(flow.roots, '/document/:id#DocumentDetail')!.calls.find((c) => c.id.startsWith('PUT:'))!.counts, { pass: 0, fail: 1, pending: 0, limit: 0 });
 });
 
 test('each screen box carries the roles and settings its screen needs, and an open screen carries none', () => {
@@ -108,8 +108,23 @@ test('the box of a call carries how many untagged browser tests sent it, apart f
   const map: FlowMap = { screens: [{ id: 'a', path: 'a', component: 'a', apiCalls: [{ endpoints }], access: { restricted: false, kinds: [], links: [] } }], calls: [{ id: 'GET:/x', server: { status: 'unchecked' } }, { id: 'POST:/y', server: { status: 'unchecked' } }], entries: [{ screen: 'a' }] };
   const sent = { title: 'browser', status: 'fail', level: 'call' };
   const built = buildFlow(map, { nodes: { 'POST:/y': [{ status: 'pass' }] }, passed: { 'GET:/x': [sent, sent] } });
-  assert.deepEqual(built.roots[0].calls.map((c) => [c.id, c.passed, c.counts]), [['GET:/x', 2, { pass: 0, fail: 0, pending: 0 }], ['POST:/y', 0, { pass: 1, fail: 0, pending: 0 }]]);
+  assert.deepEqual(built.roots[0].calls.map((c) => [c.id, c.passed, c.counts]), [['GET:/x', 2, { pass: 0, fail: 0, pending: 0, limit: 0 }], ['POST:/y', 0, { pass: 1, fail: 0, pending: 0, limit: 0 }]]);
   assert.deepEqual(built.summary, { screens: 1, tested: 0, failing: 0, importedOnly: 0 });
+});
+
+test('a within-limit test counts on its screen and on its call, and the screen is still tested but not failing', () => {
+  const endpoints = [{ callId: 'POST:/x' }];
+  const screen = (id: string, links: FlowAccess['links'] = [], apiCalls: { endpoints: { callId: string }[] }[] = []): FlowMapScreen => ({ id, path: id, component: id, apiCalls, access: { restricted: false, kinds: [], links } });
+  const map: FlowMap = {
+    screens: [screen('a', [], [{ endpoints }]), screen('b', [{ from: 'a', guards: [] }])],
+    calls: [{ id: 'POST:/x', server: { status: 'unchecked' } }],
+    entries: [{ screen: 'a' }],
+  };
+  const built = buildFlow(map, { nodes: { a: [{ status: 'limit' }], b: [{ status: 'fail' }], 'POST:/x': [{ status: 'limit' }] } });
+  const a = built.roots[0];
+  assert.deepEqual(a.counts, { pass: 0, fail: 0, pending: 0, limit: 1 });
+  assert.deepEqual(a.calls[0].counts, { pass: 0, fail: 0, pending: 0, limit: 1 });
+  assert.deepEqual([built.summary.tested, built.summary.failing], [2, 1]);
 });
 
 test('a move in the config places a screen no link reached yet under the screen it leaves, marked as a move with its reason', () => {

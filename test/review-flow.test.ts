@@ -12,6 +12,8 @@ declare const state: any;
 declare const GAP: number;
 declare let drawnGrid: { count: number; cellW: number; per: number } | null;
 declare function renderFlow(): void;
+declare function countText(c: { pass: number; fail: number; pending: number; limit: number }): string | (Node | null)[];
+declare function testItem(t: { title: string; file: string; line: number; project: string | null; status: string; detail: string }): HTMLElement;
 declare const GROUP_HEAD_TIP: string;
 declare const FOLDED_HEAD_TIP: string;
 declare function screensIn(roots: { id: string; children: object[] }[]): { id: string; children: object[] }[];
@@ -253,7 +255,7 @@ test('in a browser, a review started without tests.json draws every screen of th
         await p.waitForSelector('#flow .box.screen');
         assert.equal(await p.locator('#flow .box.screen').count(), 11);
         assert.equal(await p.textContent('.flowbar .flowsummary'), '테스트 있는 화면 0/11');
-        assert.deepEqual(await p.locator('.flowbar .flow-filters button').allTextContents(), ['전체 11', '테스트 없음 11', '태그 없는 테스트만 0', '실패 0', '보류 0', '통과 0']);
+        assert.deepEqual(await p.locator('.flowbar .flow-filters button').allTextContents(), ['전체 11', '테스트 없음 11', '태그 없는 테스트만 0', '실패 0', '한계 0', '보류 0', '통과 0']);
         await p.click('#view-list');
         await p.waitForSelector('#screen-list li');
         assert.equal(await p.locator('#screen-list li').count(), 11);
@@ -308,7 +310,7 @@ test('in a browser, the flow bar counts the drawn screens on one button per stat
       withPage(base, async (p) => {
         await p.waitForSelector('#flow .box.screen');
         assert.equal(await p.textContent('.flowbar .flowsummary'), '테스트 있는 화면 7/11');
-        assert.deepEqual(await p.locator('.flowbar .flow-filters button').allTextContents(), ['전체 11', '테스트 없음 4', '태그 없는 테스트만 0', '실패 5', '보류 1', '통과 1']);
+        assert.deepEqual(await p.locator('.flowbar .flow-filters button').allTextContents(), ['전체 11', '테스트 없음 4', '태그 없는 테스트만 0', '실패 5', '한계 0', '보류 1', '통과 1']);
         const summary = await p.evaluate(() => state.data.flow.summary);
         const count = async (key: string) => Number(await filterButton(p, key).locator('.count').textContent());
         assert.deepEqual([await count('fail'), await count('imported'), 11 - await count('none')], [summary.failing, summary.importedOnly, summary.tested], 'the buttons agree with the counts the server made');
@@ -1096,10 +1098,10 @@ test('in a browser, gathered entry screens the server put in one group stand as 
         assert.equal(await group.count(), 1);
         assert.equal(await group.locator('.group-line').first().textContent(), '▸/extra5');
         assert.deepEqual(await group.locator('.tally-item').evaluateAll((els) => els.map((e) => [e.querySelector('.sq')!.classList[1], e.textContent])),
-          [['s-pass', '2'], ['s-fail', '1'], ['s-pending', '1'], ['s-none', '1']]);
+          [['s-pass', '2'], ['s-pending', '1'], ['s-fail', '1'], ['s-none', '1']]);
         assert.equal(await group.getAttribute('aria-expanded'), 'false');
         assert.equal(await group.getAttribute('aria-label'), '/extra 묶음 펴기');
-        assert.deepEqual((await group.getAttribute('title'))!.split('\n'), ['/extra · 화면 5', '통과 2 · 실패 1 · 보류 1 · 테스트 없음 1', '누르면 이 묶음을 펴서 그 안의 화면을 그립니다']);
+        assert.deepEqual((await group.getAttribute('title'))!.split('\n'), ['/extra · 화면 5', '통과 2 · 보류 1 · 실패 1 · 테스트 없음 1', '누르면 이 묶음을 펴서 그 안의 화면을 그립니다']);
         assert.equal(await p.textContent('#flow .group-head'), '딸린 화면이 없는 진입 화면 8', 'the heading still counts the screens, folded or not');
         for (const id of GROUPED) assert.equal(await p.locator(`#flow .box.screen[data-key="${id}"]`).count(), 0, `${id} is folded away`);
         const grid = await gridBoxes(p);
@@ -1236,8 +1238,8 @@ test('in a browser, on a big map an entry screen with screens under it is drawn 
         assert.equal(await button.textContent(), '+10');
         assert.equal(await button.getAttribute('aria-expanded'), 'false');
         assert.equal(await button.getAttribute('aria-label'), '밑의 화면 10개 펴기');
-        assert.deepEqual(await tally(p, '/signin#SignIn'), ['s-fail 5', 's-pending 1', 's-none 4']);
-        assert.ok((await tipLines(p.locator('#flow .box.screen[data-key="/signin#SignIn"]'))).includes('접힌 밑의 화면 10: 실패 5 · 보류 1 · 테스트 없음 4'));
+        assert.deepEqual(await tally(p, '/signin#SignIn'), ['s-pending 1', 's-fail 5', 's-none 4']);
+        assert.ok((await tipLines(p.locator('#flow .box.screen[data-key="/signin#SignIn"]'))).includes('접힌 밑의 화면 10: 보류 1 · 실패 5 · 테스트 없음 4'));
         assert.equal(await p.locator('#flow .box.screen.grouped[data-key="/signin#SignIn"]').count(), 1, 'it stands in the grid');
         assert.equal(await p.textContent('#flow .group-head'), '진입 화면 1');
         assert.equal(await p.getAttribute('#flow .group-head', 'title'), await p.evaluate(() => FOLDED_HEAD_TIP));
@@ -1522,6 +1524,43 @@ test('in a browser, a folded screen fades by itself and the screens it hides, an
       }, { view: 'flow', setup: folding((data) => {
         walkFlow(data.flow.roots).find((n) => n.id === '/help#Help')!.jumps = [];
       }) }),
+    ),
+  );
+});
+
+test('in a browser, a screen whose tests are only within a limit is drawn as 한계, a limit count reads △, and a pending test on a screen outranks a limit', { skip: browserMissing }, async () => {
+  const counts = { '/admin/group#AdminGroup': { pass: 0, fail: 0, pending: 0, limit: 1 }, '/admin/audit#AdminAudit': { pass: 0, fail: 0, pending: 1, limit: 2 } };
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box.screen');
+        assert.deepEqual(await boxesWith(p, 's-limit'), ['/admin/group#AdminGroup']);
+        assert.equal((await boxesWith(p, 's-pending')).includes('/admin/audit#AdminAudit'), true);
+        assert.equal(await filterButton(p, 'limit').textContent(), '한계 1');
+        assert.equal(await p.evaluate(() => { const el = document.createElement('div'); el.append(...[countText({ pass: 1, fail: 0, pending: 0, limit: 2 })].flat().filter((n): n is Node | string => n !== null)); return el.textContent; }), '✓1 △2 ');
+      }, { view: 'flow', setup: changeData((data) => {
+        for (const n of walkFlow(data.flow.roots)) if (Object.hasOwn(counts, n.id)) n.counts = counts[n.id as keyof typeof counts];
+      }) }),
+    ),
+  );
+});
+
+test('in a browser, the address a limit names as its source reads 「출처 ↗」 and opens it, while an address in a failure and a number as a source stay as written', { skip: browserMissing }, async () => {
+  const url = 'https://github.com/duru-app/duru/issues/489';
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        const shown = (status: string, detail: string) => p.evaluate(([status, detail]) => {
+          const row = testItem({ title: 'lock first attempts', file: 'document-checks.log', line: 17, project: null, status, detail });
+          const a = row.querySelector('.detail a');
+          return { text: row.querySelector('.detail')!.textContent, link: a && [a.textContent, a.getAttribute('href'), a.getAttribute('title'), a.getAttribute('aria-label'), a.getAttribute('target')] };
+        }, [status, detail]);
+        assert.deepEqual(await shown('limit', `first wrong attempts count less ${url}`), { text: 'first wrong attempts count less 출처 ↗', link: ['출처 ↗', url, url, `출처 ${url}`, '_blank'] });
+        assert.deepEqual(await shown('limit', `first wrong attempts count less (${url}).`), { text: 'first wrong attempts count less (출처 ↗).', link: ['출처 ↗', url, url, `출처 ${url}`, '_blank'] });
+        assert.deepEqual(await shown('limit', `PR ${url}에서 정함, 「${url}」 참고`), { text: 'PR 출처 ↗에서 정함, 「출처 ↗」 참고', link: ['출처 ↗', url, url, `출처 ${url}`, '_blank'] });
+        assert.deepEqual(await shown('limit', 'first wrong attempts count less, decided in #489'), { text: 'first wrong attempts count less, decided in #489', link: null });
+        assert.deepEqual(await shown('fail', `the lock opens early ${url}`), { text: `the lock opens early ${url}`, link: null });
+      }, { view: 'flow' }),
     ),
   );
 });

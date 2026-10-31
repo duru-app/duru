@@ -780,8 +780,8 @@ test is tagged with, and shows under that case wherever a reviewer has picked th
 kind with values, with a value the kind does not list, or with a value on a kind without values counts for no case
 and is listed with the tags that point at nothing on the map.
 
-`tests.json` lists the tests per node and per story with depth, status (pass, fail, pending; skipped and todo
-count as pending) and `tags`, every tag read for the test, without the `@`. It also lists the tags that point at
+`tests.json` lists the tests per node and per story with depth, status (pass, limit, pending, fail; skipped and
+todo count as pending) and `tags`, every tag read for the test, without the `@`. It also lists the tags that point at
 nothing on the map, and the tests with no tag as `untagged`. An untagged Playwright test carries the projects it ran
 in as `projects`, each with the worst status of the test's runs in it. `traced`
 lists each Playwright test that passed, with the trace of its passing run, as its report, its title, its file and
@@ -810,8 +810,15 @@ VERDICT empty form save: FIXED — saving an empty form shows a message @screen:
 ```
 
 The name runs up to the first `: `. The word after it decides the status: `UPHOLDS`, `FIXED`, `HEALTHY` pass;
+`WITHIN_LIMIT` is `limit`, a result inside a limit the app decided to accept, shown apart from passing and failing
+and never counted as a failure;
 `REPRODUCES`, `VIOLATE`, `VIOLATES`, `REGRESSED`, `BROKEN` fail; any other word is pending. The text after `— `
 (an em dash) is kept as the detail. Tags go at the end of the line.
+
+The text after `— ` on a `WITHIN_LIMIT` line must name where the limit was decided — a `http(s)` link, `#<number>`
+or a `.md` decision document. A `WITHIN_LIMIT` line that names none reads as pending, and its detail starts with
+`출처 없음 — ` (`출처 없음` when the line has no detail). On the review page, a `http(s)` link in the detail of a
+test within a limit shows as 「출처 ↗」, which opens it; hovering shows the whole address.
 
 ## Stories
 
@@ -906,7 +913,8 @@ address of. A story with a screen the map does not have is detached. 「사전 �
 the end: what the first screen needs and the conditions on the way.
 
 A story also gets a status from its tests: fail when a test tagged `@story:<its ID>` fails, pending when none
-fails and one is pending, pass when all pass. When all pass but the traces of its Playwright story tests show that
+fails and one is pending, `limit` when none fails or is pending and one is within a limit (`WITHIN_LIMIT`),
+pass when all pass. When all pass but the traces of its Playwright story tests show that
 none of them opened its screens one after another, it is `part-pass`, and each link says how many story tests went
 across it. Whether they went through is not known, and the story stays `pass`, when a story test has no trace (a
 test that is not a Playwright test never has one), its trace holds no screen on the map (also when the test opened
@@ -1037,10 +1045,10 @@ drawn under them are gathered below the rest under
 「딸린 화면이 없는 진입 화면 N」, whose hover says why they are there. On a map of more than 100 screens, the gathered
 screens that share the start of their address are folded into one box per group (a group of more than 20 is split
 again by the next part of the address): the box shows the shared start, the number of screens and, with the squares
-of the status buttons, how many pass, fail, are pending or have no tagged test. Pressing the box opens the group in
+of the status buttons, how many pass, are within a limit, are pending, fail or have no tagged test. Pressing the box opens the group in
 its place across a whole row; pressing the group's name above the row folds it again. On such a map, every entry
 screen with screens under it is drawn folded among the gathered screens, with 「+N」 at its right end for the N
-screens under it and, with the same squares, how many of them pass, fail, are pending or have no tagged test; the
+screens under it and, with the same squares, how many of them pass, are within a limit, are pending, fail or have no tagged test; the
 heading then reads 「진입 화면 N」, counting the screens in folded groups and the opened ones too. 「+N」 draws that entry screen above the gathered
 screens with its tree, where a screen with more than six screens under it is folded the same way; 「−」 folds it
 again, and pressing the box still picks the screen. A tree that no entry screen reaches is folded at its first
@@ -1554,7 +1562,8 @@ in the task list; for a condition or a link,
 link starts on, and for a condition the `guard` as written, `via` when it sits in a function the link calls,
 `roleGuardsKey` when `roleGuards` gave its roles, or `inherited` for a link that passes on the condition of the screen
 it starts on; or `null` when the part is no longer found. A failure message is not copied in; it is read from the
-result file named in `source`. A comment or reply on a `candidate` carries `"where": {"name","source","screens"}`:
+result file named in `source`. A test's own `status` may be `limit`, and its `detail` starts with `출처 없음 — ` when
+a `WITHIN_LIMIT` line names no source for the limit. A comment or reply on a `candidate` carries `"where": {"name","source","screens"}`:
 `screens` is the screen order, and `source` is `{"record","steps"}`, the visit record and its first and last step,
 with `stepRanges` giving the steps behind each screen, or `{"report","tests"}`, the result file and the titles of the
 tests that passed through that order. It is `null` once the candidate is no longer listed. A comment or reply on a

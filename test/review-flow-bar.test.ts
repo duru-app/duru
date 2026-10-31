@@ -228,7 +228,7 @@ test('in a browser, scrolling the drawing sideways leaves the bar, its legend an
         const after = await edges();
         assert.deepEqual(after.icon, before.icon);
         assert.deepEqual(after.key, before.key);
-        assert.equal(after.key.length, 6);
+        assert.equal(after.key.length, 7);
         for (const r of [after.icon, after.legend, ...after.key]) assert.ok(r.left >= 0 && r.right <= after.width, `${r.left}..${r.right} within ${after.width}`);
       }, { view: 'flow' }),
     ),
@@ -287,9 +287,9 @@ test('in a browser, the pointer can travel from the info icon into the explanati
   );
 });
 
-const KEY_LABELS = ['통과', '실패', '보류', '테스트 없음', '조건 걸린 링크', '설정에 적은 이동'];
+const KEY_LABELS = ['통과', '한계', '보류', '실패', '테스트 없음', '조건 걸린 링크', '설정에 적은 이동'];
 
-test('in a browser, the flow bar always shows a legend of six samples next to the info icon', { skip: browserMissing }, async () => {
+test('in a browser, the flow bar always shows a legend of seven samples next to the info icon', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -299,7 +299,7 @@ test('in a browser, the flow bar always shows a legend of six samples next to th
         assert.equal(await key.isVisible(), true);
         assert.equal(await key.getAttribute('aria-label'), '흐름도 범례');
         assert.deepEqual(await key.locator('li .key-label').allTextContents(), KEY_LABELS);
-        assert.equal(await key.locator('li [aria-hidden="true"]').count(), 6, 'every drawn sample is hidden from a screen reader');
+        assert.equal(await key.locator('li [aria-hidden="true"]').count(), 7, 'every drawn sample is hidden from a screen reader');
         assert.deepEqual(await key.locator('li').evaluateAll((items) => items.map((li) => li.textContent.trim())), KEY_LABELS);
         const m = await p.evaluate(() => {
           const rect = (e: Element) => e.getBoundingClientRect();
@@ -309,7 +309,7 @@ test('in a browser, the flow bar always shows a legend of six samples next to th
         });
         assert.ok(m.right <= m.iconLeft, `the legend ends at ${m.right}, left of the icon at ${m.iconLeft}`);
         assert.ok(m.iconLeft - m.right <= 16, 'the legend sits next to the icon');
-        assert.equal(m.tops, 1, 'the six samples are on one line at 1440px');
+        assert.equal(m.tops, 1, 'the seven samples are on one line at 1440px');
         assert.equal(m.legendShown, 'none', 'the samples show without opening the explanation');
         const before = await p.evaluate(() => document.querySelector('.canvas')!.getBoundingClientRect().top);
         await p.locator('.flowbar button.flowinfo-button').click();

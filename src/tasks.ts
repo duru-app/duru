@@ -36,6 +36,7 @@ const STORY_STATUS: Record<string, string> = {
   'part-pass': 'part-pass — every story test passes, but none went through every screen of the story in order',
   fail: 'fail — a story test fails',
   pending: 'pending — no story test fails and one is pending',
+  limit: 'limit — no story test fails and one is within a limit the app accepted',
   partial: 'partial — no story test, and a screen on the path has tests',
   untested: 'untested — no story test, and no screen on the path has a test',
 };

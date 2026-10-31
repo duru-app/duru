@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { screenCases, settingConditionName } from './access.ts';
 import { MIME, SIGN_OUT_PATH, startAppHost } from './app-host.ts';
 import { baselineLabel, compareMaps, readBaseline } from './baseline.ts';
-import { compareTests, nodeIds, passedInFolder, readBaselineTests, wholeFines } from './baseline-tests.ts';
+import { compareTests, isRegressedStatus, nodeIds, passedInFolder, readBaselineTests, wholeFines } from './baseline-tests.ts';
 import type { BaselineTests, TestComparison } from './baseline-tests.ts';
 import { screenRoutes } from './address-match.ts';
 import { acceptCandidate, addCommentCandidate, candidatePlace, discardCandidate, pickCandidateLine, saveVisitRecord, storyCandidates, unacceptStory, undiscardCandidate } from './candidates.ts';
@@ -266,9 +266,9 @@ export function callRegressions(c: TestComparison, calls: { id: string; screens:
   for (const { rows } of c.regressions) {
     const tagged = rows.filter((r) => r.via === 'tag');
     if (!tagged.length || tagged.some((r) => r.kind !== 'call')) continue;
-    const counted = new Set(rows.filter((r) => r.kind === 'screen' && r.listed && r.status !== 'pass').map((r) => r.node));
+    const counted = new Set(rows.filter((r) => r.kind === 'screen' && r.listed && isRegressedStatus(r.status)).map((r) => r.node));
     const sent = new Map<string, typeof tagged>();
-    for (const r of tagged.filter((t) => t.status !== 'pass')) {
+    for (const r of tagged.filter((t) => isRegressedStatus(t.status))) {
       for (const screen of senders.get(r.node) ?? []) if (!counted.has(screen)) sent.set(screen, [...(sent.get(screen) ?? []), r]);
     }
     for (const [screen, failing] of sent) {
