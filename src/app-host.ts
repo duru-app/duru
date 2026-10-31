@@ -6,6 +6,7 @@ import path from 'node:path';
 import { pipeline } from 'node:stream';
 import vm from 'node:vm';
 import { isAppPath } from './address-match.ts';
+import { optionBody } from './request-options.ts';
 import { WRITES } from './unrecorded-calls.ts';
 
 export interface AppAccount {
@@ -55,7 +56,7 @@ export interface AppHostOptions {
   pageOrigins?: () => string[];
 }
 
-// shown 은 요청의 Referer 에서 읽은, 그때 앱에 떠 있던 주소다. body 는 JSON 본문에서 켜고 끄는 값만 남긴 것이다.
+// shown 은 요청의 Referer 에서 읽은, 그때 앱에 떠 있던 주소다.
 export interface ForwardedRequest {
   method: string;
   url: string;
@@ -85,36 +86,10 @@ const MAX_KEPT_REQUESTS = 1000;
 const MAX_KEPT_BYTES = 32 * 1024 * 1024;
 const PENDING_WAIT_MS = 5000;
 
-function onOffOnly(value: unknown): unknown {
-  if (typeof value === 'boolean') return value;
-  if (Array.isArray(value)) {
-    const kept = value.map(onOffOnly).filter((v) => v !== undefined);
-    return kept.length ? kept : undefined;
-  }
-  if (!value || typeof value !== 'object') return undefined;
-  const kept = Object.entries(value).flatMap(([k, v]) => {
-    const on = onOffOnly(v);
-    return on === undefined ? [] : [[k, on]];
-  });
-  return kept.length ? Object.fromEntries(kept) : undefined;
-}
-
-// 비밀번호 같은 값이 기록 파일에 남지 않도록, 옵션으로 읽는 켜고 끄는 값만 둔다.
-function onOffBody(text: string) {
-  let json: unknown;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    return undefined;
-  }
-  const kept = onOffOnly(json);
-  return kept && typeof kept === 'object' ? JSON.stringify(kept) : undefined;
-}
-
 interface KeptRequests {
   list: (ForwardedRequest & { n: number })[];
   bytes: number;
-  pending: Set<Promise<void>>;
+  pending: Map<Promise<void>, number>;
 }
 
 export const MIME: Record<string, string> = {
@@ -523,7 +498,7 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
   let overrides: SettingsOverride[] = [];
   const sent = new Map<number, KeptRequests>();
   const keptOn = (port: number) => {
-    if (!sent.has(port)) sent.set(port, { list: [], bytes: 0, pending: new Set() });
+    if (!sent.has(port)) sent.set(port, { list: [], bytes: 0, pending: new Map() });
     return sent.get(port)!;
   };
   let sentCount = 0;
@@ -581,7 +556,6 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
     }
   }
 
-  // 돌려준 함수로 앱 서버의 답이 왔는지 알린다.
   function keepWrite(req: http.IncomingMessage, port: number) {
     const n = sentCount++;
     const kept = keptOn(port);
@@ -601,13 +575,13 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
       if (text === null || !ok) return;
       const referer = URL.canParse(req.headers.referer ?? '') ? new URL(req.headers.referer!) : null;
       const shown = referer && referer.host === req.headers.host && isAppPath(referer.pathname) ? referer.pathname + referer.search : undefined;
-      const body = onOffBody(text);
+      const body = optionBody(text);
       kept.list.push({ n, method: req.method!, url: req.url!, ...(body !== undefined && { body }), ...(shown && { shown }) });
       kept.list.sort((a, b) => a.n - b.n);
       kept.bytes += Buffer.byteLength(body ?? '');
       while (kept.list.length > MAX_KEPT_REQUESTS || kept.bytes > MAX_KEPT_BYTES) kept.bytes -= Buffer.byteLength(kept.list.shift()!.body ?? '');
-    });
-    kept.pending.add(done);
+    }).catch(() => {});
+    kept.pending.set(done, n);
     done.finally(() => kept.pending.delete(done));
     return answer;
   }
@@ -621,8 +595,11 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
       res.writeHead(r.statusCode!, r.headers);
       pipeline(r, res, () => {});
     });
-    up.on('close', () => answer?.(false));
+    let delivered = false;
+    up.on('finish', () => (delivered = true));
+    up.on('close', () => answer?.(delivered));
     up.on('error', (err) => {
+      answer?.(false);
       if (!res.headersSent) send(res, 502, 'text/plain', err.message);
       else if (!res.writableEnded) res.destroy();
     });
@@ -772,7 +749,8 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
     // from 은 기록을 시작할 때 받은 sentCount 다.
     async sentSince(url: string, from: number): Promise<ForwardedRequest[]> {
       const kept = keptOn(Number(new URL(url).port));
-      await Promise.race([Promise.all(kept.pending), new Promise((resolve) => setTimeout(resolve, PENDING_WAIT_MS).unref())]);
+      const waiting = [...kept.pending].filter(([, n]) => n >= from).map(([p]) => p);
+      await Promise.race([Promise.all(waiting), new Promise((resolve) => setTimeout(resolve, PENDING_WAIT_MS).unref())]);
       return kept.list.filter((r) => r.n >= from).map(({ n, ...r }) => r);
     },
     close() {

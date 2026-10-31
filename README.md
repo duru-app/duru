@@ -1147,13 +1147,15 @@ the app chooses the account it is open as: the default account, each role in `ap
 `{ "steps": [{ "url": "/home" }, { "url": "/signin", "inputs": [...], "skipped": 1 }] }`, with the path, the query and
 what follows `#` and no host or port, in a file named by the date and a random ID (`2026-10-15-1a2b3c4d.json`) that is
 never changed or deleted; keep the folder in git with the stories. The POST, PUT, PATCH and DELETE requests the app
-sent to the paths in `app.apiPaths` while the record was made, and that the API server answered, go into its
-`requests`. A body that reads as JSON and is at most 1 MB is kept with only its true and false values, so a password
-or a token sent in it is not written to the file. `shown` comes from the request's `Referer`, so an app that sends no
-`Referer` leaves it out, and a request whose `Referer` is not an address the record passed through, as from the same
-app open in another tab, is left out. 「기록 끝」 waits up to five seconds for requests still under way. The review
-server holds, per account, the last 1000 such requests and at most 32 MB of their bodies, so a recording longer than
-that loses its first ones. The record is listed as a candidate even if the
+sent to the paths in `app.apiPaths` while the record was made, and that reached the API server, go into its
+`requests`. A body that reads as JSON and is at most 1 MB is kept with only its true and false values and the names
+leading to them, so a password or a token sent as a value is not written to the file; one used as the name of a field
+is. `shown` comes from the request's `Referer` when it names an address of the app, so an app that sends no `Referer`
+leaves it out. A request whose `Referer` names another address of the app than those the record passed through, as
+from the same app open in another tab, is left out; one whose `Referer` is only `/`, when the record did not pass
+`/`, keeps the request without `shown`, since a `Referer` cut to the origin reads the same. 「기록 끝」 waits up to five seconds for requests sent
+after recording started that the API server has not yet answered. The review server holds, for each account, the
+last 1000 such requests and at most 32 MB of their bodies, so a recording longer than that loses its first ones. The record is listed as a candidate even if the
 page is closed before saving. 「기록 끝」 also draws the steps on one line as a story's
 steps are drawn; 「전체 그림에서 보기」 shows them on the whole flow, where pressing a box adds a step, and 「한 줄로
 보기」 goes back. If no address came, as when the app's Content Security Policy blocks inline scripts, the page says so

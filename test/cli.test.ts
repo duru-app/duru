@@ -243,8 +243,8 @@ test('the README, the agent skill and the decision record say what a visit recor
   const read = (rel: string) => fs.readFileSync(path.join(import.meta.dirname, rel), 'utf8');
   const readme = read('../README.md');
   assert.match(readme, /An object may also carry `requests`, the write requests sent while the record was made[\s\S]*A record without\s+`requests` sends nothing/);
-  assert.match(readme, /and that the API server answered, go into its\s+`requests`\. A body that reads as JSON and is at most 1 MB is kept with only its true and false values/);
-  assert.match(readme, /a request whose `Referer` is not an address the record passed through[\s\S]*is left out/);
+  assert.match(readme, /and that reached the API server, go into its\s+`requests`\. A body that reads as JSON and is at most 1 MB is kept with only its true and false values/);
+  assert.match(readme, /A request whose `Referer` names another address of the app than those the record passed through[\s\S]*is left out/);
   assert.match(read('../skills/duru/SKILL.md'), /A visit record recorded on the review page keeps the write requests the app sent in\s+`requests`/);
   assert.match(read('../docs/decisions.md'), /\*\*A visit recorded on the review page keeps the write requests the review server passed to the app[\s\S]*Chosen for #498 \(2026-10-31\)[\s\S]*Compared:/);
 });

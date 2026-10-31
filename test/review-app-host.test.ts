@@ -490,6 +490,7 @@ test('a visit recorded on the page keeps the write requests the app pane passed 
           assert.ok(Number.isInteger(from));
           await send(pane, 'POST', '/api/v1/documents/search', '{"status":"done","password":"s3cret","notify":true,"signers":[{"name":"x","required":false}]}', `${pane}/document/list?page=2#top`);
           await send(pane, 'POST', '/api/v1/documents/search', '{"status":"other tab"}', `${pane}/help`);
+          await send(pane, 'PUT', '/api/v1/documents/8', '{"origin":true}', `${pane}/`);
           await send(pane, 'GET', '/api/v1/documents');
           await send(pane, 'POST', '/api/v1/press', 'pressed');
           await send(pane, 'DELETE', '/api/v1/documents/7', undefined, 'http://evil.example/home');
@@ -505,11 +506,12 @@ test('a visit recorded on the page keeps the write requests the app pane passed 
           const res = await save({ pane, from });
           assert.equal(res.status, 201);
           const { record, requests } = await res.json();
-          assert.equal(requests, 3);
+          assert.equal(requests, 4);
           assert.deepEqual(JSON.parse(fs.readFileSync(path.join(config.configDir, record), 'utf8')), {
             steps,
             requests: [
               { method: 'POST', url: '/api/v1/documents/search', body: '{"notify":true,"signers":[{"required":false}]}', shown: '/document/list?page=2' },
+              { method: 'PUT', url: '/api/v1/documents/8', body: '{"origin":true}' },
               { method: 'POST', url: '/api/v1/press' },
               { method: 'DELETE', url: '/api/v1/documents/7' },
             ],
