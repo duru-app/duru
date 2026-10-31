@@ -504,7 +504,10 @@ going to an error screen when loading fails.
 it, and the on/off `options` of its request body. A call's `options` come from its source, its body type, the
 config and the bodies of the write requests the tests sent: `sources` names where each comes from, `source`, `type`,
 `config` or `request`, and an option a request body sent carries `requests`, one entry per test and project that sent
-it, with the test's title, file, line, project and the values it sent. The server match is one of:
+it, with the test's title, file, line, project and the values it sent. A call a trace shows a page sending from a
+screen its source does not tie it to carries `tracedScreens`, one entry per such screen with the `tests` (title,
+file, line, project) whose run sent it there; `screens` stays what the source reads, and a call sent at app start
+gets none. The review page lists such a call under that screen with a `기록` chip. The server match is one of:
 
 - `match` — on the server, with the endpoint list labels
 - `method-mismatch` — the server has the path with another method
@@ -741,6 +744,8 @@ listing the places whose value the source does not show in full.
 - `options sent in requests N | calls with them M` — printed by `rebuild` after the line of the calls with tests,
   also when both are 0: how many of the map's options came at least partly from the body of a request a test sent,
   and how many calls carry at least one of them.
+- `calls tied to screens only by traces N | screens they were sent from M` — printed by `rebuild` right after it,
+  also when both are 0: how many calls got `tracedScreens` (see **Calls**) and how many screens they hang under.
 - `rebuild` also prints the story and candidate counts, how many of the candidates came from traces, how many it
   newly stored in `candidates/`, and the files skipped, the need files in `needs/`, how many conditions pick a need
   file that is not there and each need file it could not read with why, the links from untagged tests to screens and the trace or test files it could not read, the judged test
@@ -794,7 +799,9 @@ written before it, skipping requests, which never carry one, and has no picture 
 read from, under the same key and project, from the config's folder when it is inside it. The JSON bodies of the
 POST, PUT, PATCH and DELETE requests in the traces of the result folders `tests` names are read, of failing tests as
 well as passing ones, and give the calls they reached the `options` they sent (see **Calls**); a body that is not
-JSON, and a request with no body, is skipped.
+JSON, and a request with no body, is skipped. Each request a page sent is also tied to the screen whose address the
+page showed when it went out, and gives that call its `tracedScreens` when the source ties it to that screen
+neither directly nor at app start; a request the test sent itself, without a page, ties to none.
 
 Two kinds of untagged tests are shown next to a screen without counting as its tests. A unit test (Vitest or
 Jest JSON) is listed under `importers` when its test file imports one of the screen's source files; a file that

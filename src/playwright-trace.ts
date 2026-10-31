@@ -43,7 +43,14 @@ export interface WalkRequest {
 
 export type WalkLine = WalkStep | WalkRequest;
 
-export type TraceResult = { reason: string } | { steps: TraceStep[]; requests: TraceRequest[]; walk: WalkLine[] };
+// shown 은 페이지가 그 요청을 보낼 때 보이던 앱 주소다. 테스트가 페이지 없이 보낸 요청은 들지 않는다.
+export interface PageRequest {
+  method: string;
+  url: string;
+  shown: string;
+}
+
+export type TraceResult = { reason: string } | { steps: TraceStep[]; requests: TraceRequest[]; walk: WalkLine[]; pageRequests: PageRequest[] };
 
 interface TimelineEntry {
   at: number;
@@ -320,9 +327,9 @@ export function readTrace(file: string): TraceResult {
   });
   for (const e of resources.filter((r) => sentRequest(r, shown))) {
     const status = e.snapshot.response?.status;
-    walked.push({ at: e.snapshot._monotonicTime, request: { kind: 'request', method: e.snapshot.request.method, url: e.snapshot.request.url, status: typeof status === 'number' && status > 0 ? status : null } });
+    walked.push({ at: e.snapshot._monotonicTime, ...(!e.snapshot._apiRequest && e.snapshot.pageref && { page: e.snapshot.pageref }), request: { kind: 'request', method: e.snapshot.request.method, url: e.snapshot.request.url, status: typeof status === 'number' && status > 0 ? status : null } });
   }
-  return { steps, requests, walk: walkOf(walked) };
+  return { steps, requests, ...walkOf(walked) };
 }
 
 export function copyShots(file: string, names: Iterable<string>, dir: string) {
@@ -350,6 +357,7 @@ function walkOf(walked: WalkEntry[]) {
   walked.sort((a, b) => a.at - b.at || Number(Boolean(a.step || a.request)) - Number(Boolean(b.step || b.request)));
   const current = new Map<string, string>();
   const walk: WalkLine[] = [];
+  const pageRequests: PageRequest[] = [];
   let lastShot: string | undefined;
   const shown = (shot: string | undefined) => {
     if (shot === lastShot) return {};
@@ -357,13 +365,16 @@ function walkOf(walked: WalkEntry[]) {
     return { shot: shot ?? null };
   };
   for (const { page, url, shot, step, request } of walked) {
-    if (request) walk.push(request);
-    else if (step) walk.push({ ...step, ...(current.has(page!) && { url: current.get(page!) }), ...shown(shot) });
+    if (request) {
+      walk.push(request);
+      const address = page && current.get(page);
+      if (address) pageRequests.push({ method: request.method, url: request.url, shown: address });
+    } else if (step) walk.push({ ...step, ...(current.has(page!) && { url: current.get(page!) }), ...shown(shot) });
     else if (NOT_THE_APP.test(url!)) current.delete(page!);
     else if (current.get(page!) !== url) {
       current.set(page!, url!);
       walk.push({ kind: 'open', url: url!, ...shown(shot) });
     }
   }
-  return walk;
+  return { walk, pageRequests };
 }

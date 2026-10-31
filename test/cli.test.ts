@@ -66,6 +66,29 @@ test('rebuild prints how many options came from the bodies of the requests the t
   }
 });
 
+test('rebuild prints how many calls only a trace ties to a screen, right after the line for the options sent in requests', () => {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    const lines = execFileSync(process.execPath, [CLI, 'rebuild', path.join(copy, 'config.json')], { encoding: 'utf8' }).split('\n');
+    const at = lines.findIndex((l) => l.startsWith('calls tied to screens only by traces '));
+    assert.equal(lines[at], 'calls tied to screens only by traces 0 | screens they were sent from 0');
+    assert.match(lines[at - 1], /^options sent in requests \d+ \| calls with them \d+$/);
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+});
+
+test('the README, the agent skill and the decision record say what a call only a trace ties to a screen carries and counts', () => {
+  const read = (rel: string) => fs.readFileSync(path.join(import.meta.dirname, rel), 'utf8');
+  const readme = read('../README.md');
+  assert.match(readme, /A call a trace shows a page sending from a\s+screen its source does not tie it to carries `tracedScreens`[\s\S]*`screens` stays what the source reads/);
+  assert.match(readme, /`calls tied to screens only by traces N \| screens they were sent from M` — printed by `rebuild` right after it/);
+  assert.match(readme, /a request the test sent itself, without a page, ties to none/);
+  assert.match(read('../skills/duru/SKILL.md'), /`calls tied to screens only by traces N \| screens they were\s+sent from M` line counts them/);
+  assert.match(read('../docs/decisions.md'), /\*\*A request a page sent in a test's trace ties its call to the screen[\s\S]*Chosen for #496 \(2026-10-31\)[\s\S]*Compared:/);
+});
+
 test('the README, the agent skill and the decision record say what the line for the options the tests sent in a request means', () => {
   const read = (rel: string) => fs.readFileSync(path.join(import.meta.dirname, rel), 'utf8');
   const readme = read('../README.md');
