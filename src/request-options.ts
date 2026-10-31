@@ -2,10 +2,9 @@ import { callFinder } from './address-match.ts';
 import { readTrace } from './playwright-trace.ts';
 import type { PageRequest, TraceRequest } from './playwright-trace.ts';
 
-// 시험의 trace 나 방문 기록 하나가 보낸 요청이다. 방문 기록이면 title 은 그 기록 파일이고 file · line · project 는 null 이다.
+// 테스트의 trace 나 방문 기록 하나가 보낸 요청이다. 방문 기록이면 title 은 그 기록 파일이고 file · line · project 는 null 이다.
 export type SentRequests = { title: string; file: string | null; line: number | null; project: string | null; requests: TraceRequest[]; pageRequests: PageRequest[] };
 
-// 읽지 못한 trace 는 null 이다.
 export function traceSent({ trace, ...test }: { trace: string; title: string; file: string | null; line: number | null; project: string | null }): SentRequests | null {
   const read = readTrace(trace);
   return 'reason' in read ? null : { ...test, requests: read.requests, pageRequests: read.pageRequests };

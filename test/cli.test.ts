@@ -118,7 +118,7 @@ test('the README, the agent skill and the decision record say what a call only a
   assert.match(read('../docs/decisions.md'), /\*\*A request a page sent in a test's trace ties its call to the screen[\s\S]*Chosen for #496 \(2026-10-31\)[\s\S]*Compared:/);
 });
 
-test('rebuild reads the requests a visit record kept: an option from the body with the record as its source, the call tied to the screen it was sent from, and the call no longer unrecorded, while a record without requests reads as before', () => {
+test('rebuild reads the requests a visit record kept: an option from the body with the record as its source, the call tied to the screen it was sent from, and the call no longer unrecorded, while a record without requests sends nothing', () => {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
@@ -242,8 +242,9 @@ test('the README, the agent skill and the decision record say what an unrecorded
 test('the README, the agent skill and the decision record say what a visit record keeps in requests and how it counts', () => {
   const read = (rel: string) => fs.readFileSync(path.join(import.meta.dirname, rel), 'utf8');
   const readme = read('../README.md');
-  assert.match(readme, /An object may also carry `requests`, the write requests sent while the record was made[\s\S]*A record without\s+`requests` reads as before/);
-  assert.match(readme, /go into its `requests`; a body is kept only when it\s+reads as JSON and is at most 1 MB, and `shown` comes from the request's `Referer`/);
+  assert.match(readme, /An object may also carry `requests`, the write requests sent while the record was made[\s\S]*A record without\s+`requests` sends nothing/);
+  assert.match(readme, /and that the API server answered, go into its\s+`requests`\. A body that reads as JSON and is at most 1 MB is kept with only its true and false values/);
+  assert.match(readme, /a request whose `Referer` is not an address the record passed through[\s\S]*is left out/);
   assert.match(read('../skills/duru/SKILL.md'), /A visit record recorded on the review page keeps the write requests the app sent in\s+`requests`/);
   assert.match(read('../docs/decisions.md'), /\*\*A visit recorded on the review page keeps the write requests the review server passed to the app[\s\S]*Chosen for #498 \(2026-10-31\)[\s\S]*Compared:/);
 });
