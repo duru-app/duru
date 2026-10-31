@@ -261,17 +261,24 @@ test('the walk leaves out the page, scripts, styles, pictures and fonts the brow
   assert.deepEqual(walkLines(traceOf('opens home and then help')!), ['open /home', 'open /help']);
 });
 
-type Sent = { method?: string; url: string; at?: number; status?: number; type: string; api?: true; dest?: string };
+type Sent = { method?: string; url: string; at?: number; status?: number; type: string; api?: true; dest?: string; body?: { text?: string; sha?: string } };
 
 function traceZip(dir: string, events: object[], resources: Sent[], files: Record<string, string> = {}) {
   const file = path.join(dir, 'trace.zip');
   const line = (e: object) => `${JSON.stringify(e)}\n`;
+  const bodies = resources.flatMap(({ body }) => (body?.sha ? [[`resources/${body.sha}`, body.text ?? '']] : []));
   fs.writeFileSync(file, storedZip({
     '0-trace.trace': [{ type: 'context-options', version: 8 }, ...events].map(line).join(''),
-    '0-trace.network': resources.map(({ method = 'GET', url, at, status = 200, type, api, dest }, i) => line({
+    '0-trace.network': resources.map(({ method = 'GET', url, at, status = 200, type, api, dest, body }, i) => line({
       type: 'resource-snapshot',
-      snapshot: { _monotonicTime: at ?? i + 1, ...(api && { _apiRequest: true }), request: { method, url: url.startsWith('http') ? url : `http://x${url}`, headers: dest ? [{ name: 'Sec-Fetch-Dest', value: dest }] : [] }, response: { status, content: { mimeType: type } } },
+      snapshot: {
+        _monotonicTime: at ?? i + 1,
+        ...(api && { _apiRequest: true }),
+        request: { method, url: url.startsWith('http') ? url : `http://x${url}`, headers: dest ? [{ name: 'Sec-Fetch-Dest', value: dest }] : [], ...(body && { postData: body.sha ? { _sha1: body.sha, mimeType: 'application/json' } : { text: body.text, mimeType: 'application/json' } }) },
+        response: { status, content: { mimeType: type } },
+      },
     })).join(''),
+    ...Object.fromEntries(bodies),
     ...files,
   }));
   return file;
@@ -280,6 +287,7 @@ function traceZip(dir: string, events: object[], resources: Sent[], files: Recor
 const frameSnapshot = (name: string, url: string, at: number) => ({ type: 'frame-snapshot', snapshot: { snapshotName: name, isMainFrame: true, frameUrl: url, timestamp: at } });
 
 const sentLines = (resources: Sent[]) => inTempDir((dir) => walkLines(traceZip(dir, [], resources)));
+const sentBodies = (resources: Sent[]) => inTempDir((dir) => (readTrace(traceZip(dir, [], resources)) as Traced).requests.map((r) => [r.method, address(r.url), r.body ?? null]));
 
 test('a request that is not a GET, or whose status is 400 or more, stays in the walk whatever type its response has', () => {
   assert.deepEqual(sentLines([
@@ -324,6 +332,33 @@ test('a GET of a static file that got no failing status, a dev server file and t
 
 test('a request sent without a page is in the walk with its status', () => {
   assert.deepEqual(walkLines(traceOf('calls the server without opening a page')!), ['POST /api/v1/press 200']);
+});
+
+test('a POST body kept in a resource file is read into the request', () => {
+  const text = '{"signers":[{"notify":true}],"note":"x","count":3}';
+  assert.deepEqual(sentBodies([{ method: 'POST', url: '/api/v1/report', type: 'application/json', body: { sha: 'a1b2c3', text } }]), [
+    ['POST', '/api/v1/report', text],
+  ]);
+});
+
+test('a GET request or a body that is not JSON adds no body', () => {
+  assert.deepEqual(sentBodies([
+    { url: '/api/v1/list', type: 'application/json', body: { text: '{"notify":true}' } },
+    { method: 'PUT', url: '/api/v1/note', type: 'text/plain', body: { text: 'not json' } },
+    { method: 'PATCH', url: '/api/v1/doc/7', type: 'application/json', body: { sha: 'd4e5f6', text: '<html></html>' } },
+    { method: 'DELETE', url: '/api/v1/doc/8', type: 'application/json' },
+  ]), [
+    ['GET', '/api/v1/list', null],
+    ['PUT', '/api/v1/note', null],
+    ['PATCH', '/api/v1/doc/7', null],
+    ['DELETE', '/api/v1/doc/8', null],
+  ]);
+});
+
+test('a body written inline in the network line is read', () => {
+  assert.deepEqual(sentBodies([{ method: 'PATCH', url: '/api/v1/doc/7', type: 'application/json', body: { text: '{"done":false}' } }]), [
+    ['PATCH', '/api/v1/doc/7', '{"done":false}'],
+  ]);
 });
 
 test('the walk keeps an action that ended in an error as failed, while the steps leave it out', () => {

@@ -8,7 +8,7 @@ import type { ScreenAccess } from '../src/access.ts';
 import { loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
 import { readPlaywright } from '../src/playwright.ts';
-import { linkTests, writeShots } from '../src/test-links.ts';
+import { linkTests, sentTraces, writeShots } from '../src/test-links.ts';
 
 type Config = ReturnType<typeof loadConfig>;
 type Links = ReturnType<typeof linkTests>;
@@ -917,4 +917,40 @@ test('a trace that cannot be read is noticed for its own run, named by its resul
   const runs = stepsOf('opens home without snapshots @screen:/home#Home');
   assert.deepEqual(runs.map((t) => t.project), ['chromium', 'firefox']);
   assert.deepEqual(stepLinks.traceNotices.map((n) => n.test), [{ title: 'opens home without snapshots @screen:/home#Home', file: 'steps.spec.ts', line: 19, source: runs[0].source, project: 'chromium' }]);
+});
+
+test('a request-only option can be tagged with @option like any other', () => {
+  const map = {
+    screens: [],
+    calls: [{ id: 'POST:/api/v1/report/schedule', options: [{ key: 'weeklyNow', values: [true, false], sources: ['request'], sites: [], requests: [{ test: 'sends the report now', file: 'a.spec.ts', line: 1, project: 'chromium', values: [true] }] }] }],
+  };
+  const report = reportOf([{ title: 'a.spec.ts', specs: [spec('sends the report now @call:POST:/api/v1/report/schedule @option:weeklyNow=true', 1)] }]);
+  withResults({ 'e2e.json': report }, (own) => {
+    const result = linkTests(own, map);
+    assert.deepEqual(result.nodes['POST:/api/v1/report/schedule'].map((t) => [t.options, t.status]), [[[{ key: 'weeklyNow', value: true }], 'pass']]);
+    assert.deepEqual(result.unknownTags, []);
+  });
+});
+
+test('sentTraces lists the trace of a failing Playwright test too', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-sent-'));
+  try {
+    const trace = path.join(dir, 'trace.zip');
+    fs.writeFileSync(trace, 'zip');
+    const report = reportOf([
+      {
+        title: 'a.spec.ts',
+        specs: [{ title: 'publishes a document', file: 'a.spec.ts', line: 7, tests: [{ status: 'unexpected', results: [{ status: 'failed', attachments: [{ name: 'trace', path: trace, contentType: 'application/zip' }] }] }] }],
+      },
+    ]);
+    fs.writeFileSync(path.join(dir, 'report.json'), report);
+    const config = { tests: [{ format: 'playwright', path: dir, depth: 'ui' }] };
+    const sent = sentTraces(config);
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].status, 'fail');
+    assert.equal(sent[0].trace, trace);
+    assert.equal(sent[0].title, 'publishes a document');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -16,6 +16,7 @@ export interface TraceStep {
 export interface TraceRequest {
   method: string;
   url: string;
+  body?: string;
 }
 
 export type WalkKind = 'open' | 'press' | 'write' | 'assert';
@@ -69,6 +70,7 @@ const BOX_LOCATORS: { word: (typeof BOX_WORDS)[number]; selector: RegExp; locato
 ];
 const VALUE_WRITES = new Set(['type', 'selectOption', 'check', 'uncheck', 'setInputFiles']);
 const NAVIGATIONS = new Set(['goto', 'reload', 'goBack', 'goForward']);
+const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const NOT_SENT_BY_THE_TEST = /^(text\/html|application\/xhtml\+xml|text\/css|image\/|font\/|application\/(x-)?font|application\/vnd\.ms-fontobject|(text|application)\/(x-)?(javascript|ecmascript)|application\/wasm)/i;
 const STATIC_FILE = /\.([mc]?js|jsx|tsx?|vue|svelte|css|scss|sass|less|png|jpe?g|gif|svg|webp|avif|bmp|ico|woff2?|ttf|otf|eot|wasm|mp4|webm|map)$/i;
 const DEV_SERVER_FILE = /\/@(vite|id|fs|react-refresh)(\/|$)|\.hot-update\.json$|^\/(sockjs-node|__webpack_hmr|_next\/webpack-hmr)(\/|$)/;
@@ -184,6 +186,25 @@ function zipEntries(buffer: Buffer): Map<string, () => Buffer> {
   return entries;
 }
 
+function bodyOf(request: any, entries: Map<string, () => Buffer>): string | undefined {
+  if (!BODY_METHODS.has(request.method)) return undefined;
+  const postData = request.postData;
+  const sha = postData?._sha1 ?? postData?._file;
+  let text: unknown;
+  try {
+    text = sha ? entries.get(`resources/${sha}`)?.().toString('utf8') : postData?.text;
+  } catch {
+    return undefined;
+  }
+  if (typeof text !== 'string' || !text.trim()) return undefined;
+  try {
+    JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  return text;
+}
+
 const jsonLines = (read: () => Buffer) => read().toString('utf8').split('\n').filter(Boolean).map((line: string) => JSON.parse(line));
 
 export function readTrace(file: string): TraceResult {
@@ -292,7 +313,11 @@ export function readTrace(file: string): TraceResult {
       steps.push({ url: url!, kind: 'visit' });
     }
   }
-  const requests = resources.map((e) => ({ method: e.snapshot.request.method, url: e.snapshot.request.url }));
+  const requests = resources.map((e) => {
+    const { method, url } = e.snapshot.request;
+    const body = bodyOf(e.snapshot.request, entries);
+    return { method, url, ...(body !== undefined && { body }) };
+  });
   for (const e of resources.filter((r) => sentRequest(r, shown))) {
     const status = e.snapshot.response?.status;
     walked.push({ at: e.snapshot._monotonicTime, request: { kind: 'request', method: e.snapshot.request.method, url: e.snapshot.request.url, status: typeof status === 'number' && status > 0 ? status : null } });

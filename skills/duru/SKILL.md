@@ -136,6 +136,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   `bodyTypeExclusions <call ID> <field> stays an option, given by …` line names an entry the screen code or
   `bodyOptions` overrides, so tell the user it can be removed. A `bodyTypeExclusions` line ending in
   `matches no call` or `matches no on/off option …` names an entry that took nothing out.
+  A body of a request a test sent, read from its trace, adds options the same way, named by the same paths, and an
+  `options sent in requests N | calls with them M` line says how many options came at least partly from such a body
+  and how many calls carry one of them; a test of one is tagged `@option:<key>=true|false` like any other option.
 - An `input keys to check N` line lists the state keys a screen writes and hands to an API function that the
   function's request does not carry, each on its own line as `<screen> <API function> <key> <file>:<line>`; tell
   the user these are worth a test of what the screen sends and what reaches the server. A key a reviewer marked

@@ -208,6 +208,14 @@ test('a guarded link into a screen that opens without a condition on both maps i
   assert.equal(changed(mixed, { ...mixed, access: { ...mixed.access, restricted: true } }), 1);
 });
 
+test('an option only the requests the tests sent give is not a change since the baseline', () => {
+  const screen = { id: '/a#A', path: '/a', component: 'A', access: { restricted: false, kinds: [], route: [], links: [] } };
+  const call = (options: object[]) => ({ id: 'POST:/api/a', method: 'POST', path: '/api/a', server: { status: 'match' }, apiFunctions: [], screens: ['/a#A'], options });
+  const sent = [{ key: 'notify', values: [true, false], sources: ['request'], sites: [], requests: [{ test: 'publishes a document', file: 'test/publish.spec.ts', line: 12, project: 'chromium', values: [true] }] }];
+  const before = { screens: [screen], calls: [call([])] };
+  assert.deepEqual(compareMaps(before, { screens: [screen], calls: [call(sent)] }), { screens: { added: [], removed: [], conditions: [], calls: [] }, calls: { added: [], removed: [], server: [] } });
+});
+
 test('a baselineMap that is missing, unreadable or not a map with screens and calls stops rebuild and the review server, naming the file, before anything is written', async () => {
   await withCopy(async ({ copy, configFile, setConfig, rebuild }) => {
     const baselineFile = path.join(copy, 'old-map.json');
