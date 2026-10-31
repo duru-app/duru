@@ -5210,8 +5210,14 @@ would no longer see where the limit came from.
 A test that passed in the baseline and is within a limit now is compared but is not a regression: the limit was decided
 before the run, so nothing got worse, and the regression buckets, their chips and the summary line keep their two
 words. Compared: a third `pass→limit` word, which puts "got worse" and "already decided" under one 「회귀」 chip.
-Playwright, JUnit and Vitest reports keep their own statuses until #501: the word comes from a check script writing the
-line, and a runner's own report has no marker for a limit the app accepts.
+A Playwright, JUnit or Vitest test declares a limit with the tag `@limit:<source>` in its title (driver's decision
+in #501, 2026-10-31): passing, it reads as `limit` with the source as its detail; failing, it stays `fail`; a tag
+whose source follows none of the three forms reads as pending with `출처 없음`. duru already reads the `@` tags of a
+title in all three reports, and every other marker is missing from one of them: JUnit's `@Tag` from the Surefire and
+Gradle XML, Vitest's `annotate` from its JSON, and an annotation is Playwright's alone. A tag holds no space, so it
+carries the source and no explanation. The tag is read once where tags get their meaning, not in each reader, and the
+source rule is the verdict line's own. Compared: also taking Playwright annotations, which would show an explanation in
+Playwright alone and give each runner its own way of writing a limit; and leaving runner reports without limits.
 
 **A component that picks a tab by the address is named in `routeTabs`, and its tabs are read from the list the
 screen that draws it hands it.**

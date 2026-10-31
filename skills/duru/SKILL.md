@@ -465,7 +465,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    pending); the test name runs up to the first `: `, so keep `: ` out of it. A limit the app has already accepted
    is printed as `WITHIN_LIMIT`, and the text after `— ` must name where it was decided — the pull request, the
    issue or a decision document in `docs/`, written as an `http(s)` link, `#<number>` or a path ending in `.md` — or
-   the line reads as pending.
+   the line reads as pending. In a Playwright, JUnit or Vitest test, the same limit is the tag `@limit:<source>` with
+   the source written the same way (`@limit:#546`); the test then reads as within the limit when it passes.
    The items under `# Stories` are stories. For each, write one test that goes through its `screens` in that
    order and meets its `preconditions` (the settings, roles and link conditions it lists, with where each is
    checked), and give it `@story:<story ID>` together with the `@screen:` tags of every screen on its path that is

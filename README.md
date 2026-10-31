@@ -762,6 +762,13 @@ A test of a call that sets on/off options of its request body declares each with
 is declared with the same tag, and only through that tag does such a test pass or fail. A test that walks a whole
 story declares it with `@story:<story ID>`; it may carry node tags too and then counts for each.
 
+A Playwright, JUnit or Vitest test that holds only inside a limit the app decided to accept carries
+`@limit:<source>`, the source naming where the limit was decided as on a `WITHIN_LIMIT` verdict line: a `http(s)`
+link, `#<number>` or a `.md` decision document (`@limit:#546`). The test reads as `limit` when it passes, with the
+source as its detail, and as `fail` when it fails. A `@limit` tag with no such source reads as pending, with the
+detail `출처 없음`. A tag holds no space, so it carries the source alone. For JUnit the display name must reach the
+report: Gradle writes it as it is, and Maven Surefire writes it with `usePhrasedTestCaseMethodName=true`.
+
 A test of a screen that opens only under a role or a setting declares the case it checks next to its `@screen:`
 tag. Each role that opens the screen is a case, `@role:<role>` with the role as the map writes it (`@role:ADMIN`,
 `@role:member:ADMINISTRATOR`). `@role:other` is the case where a role that does not open the screen is kept out;
