@@ -757,6 +757,7 @@ test('in a browser, a call a trace alone ties to a screen shows under it with th
       const call = map.calls.find((c: { id: string }) => c.id === 'POST:/api/v1/auth/sign-in');
       call.screens = [];
       call.tracedScreens = [{ screen: '/admin/report#AdminReport', tests: [{ test: 'renames from the report', file: 'report.spec.ts', line: 7, project: 'chromium' }] }];
+      delete call.unrecorded;
     });
     return withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {

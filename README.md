@@ -808,9 +808,9 @@ JSON, and a request with no body, is skipped. Each request a page sent is also t
 page showed when it went out, and gives that call its `tracedScreens` when the source ties it to that screen
 neither directly nor at app start; a request the test sent itself, without a page, ties to none, and so does one
 sent while a step moved the address without loading a page, since the trace cannot tell which side of the move
-sent it. Any request in those traces, with a body or without, from a page or
-sent by the test itself, counts as sent for `unrecorded`; the visit records do not keep requests yet, so a call sent
-only while recording a visit stays `unrecorded`.
+sent it. Any request in those traces, with a body or without, from a page or sent by the test itself, and whether
+or not it ties to a screen, counts as sent for `unrecorded`; the visit records do not keep requests yet, so a call
+sent only while recording a visit stays `unrecorded`.
 
 Two kinds of untagged tests are shown next to a screen without counting as its tests. A unit test (Vitest or
 Jest JSON) is listed under `importers` when its test file imports one of the screen's source files; a file that
