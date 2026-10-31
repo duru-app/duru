@@ -342,7 +342,7 @@ function optionSource(option: any) {
     sites.set(at, [...(sites.get(at) ?? []), s.screen]);
   }
   const found = [...sites].map(([at, screens]) => `${at} (${screens.join(', ')})`).join('; ');
-  const also = [option.sources.includes('type') && 'read from the request body type', option.sources.includes('config') && 'set in the config'].filter(Boolean);
+  const also = [option.sources.includes('type') && 'read from the request body type', option.sources.includes('config') && 'set in the config', option.sources.includes('request') && 'read from a request a test sent'].filter(Boolean);
   if (!found) return `${also.join('; ')}, not found in the source`;
   return `found at ${found}${also.map((a) => `; also ${a}`).join('')}`;
 }

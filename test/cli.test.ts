@@ -52,6 +52,31 @@ test('rebuild writes map.json and tests.json to the configured output folder and
   }
 });
 
+test('rebuild prints how many options came from the bodies of the requests the tests sent, after the line for the calls with tests', () => {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    const stdout = execFileSync(process.execPath, [CLI, 'rebuild', path.join(copy, 'config.json')], { encoding: 'utf8' });
+    const lines = stdout.split('\n');
+    const at = lines.findIndex((l) => /^options sent in requests \d+ \| calls with them \d+$/.test(l));
+    assert.equal(lines[at], 'options sent in requests 0 | calls with them 0');
+    assert.match(lines[at - 1], /^calls with tests \d+\/\d+$/);
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+});
+
+test('the README, the agent skill and the decision record say what the line for the options the tests sent in a request means', () => {
+  const read = (rel: string) => fs.readFileSync(path.join(import.meta.dirname, rel), 'utf8');
+  const readme = read('../README.md');
+  assert.match(readme, /`options sent in requests N \| calls with them M` — printed by `rebuild` after the line of the calls with tests[\s\S]*how many of the map's options came at least partly from the body of a request a test sent/);
+  assert.match(readme, /an option a request body sent carries `requests`[\s\S]*the values it sent/);
+  assert.match(readme, /The JSON bodies of the\s+POST, PUT, PATCH and DELETE requests in the traces of the result folders `tests` names are read, of failing tests as\s+well as passing ones[\s\S]*a body that is not\s+JSON[\s\S]*is skipped/);
+  assert.match(read('../skills/duru/SKILL.md'), /`options sent in requests N \| calls with them M` line says how many options came at least partly from such a body\s+and how many calls carry one of them/);
+  const decisions = read('../docs/decisions.md');
+  assert.match(decisions, /\*\*The bodies of the write requests in the traces a test left are a fourth source[\s\S]*Chosen for #495 \(2026-10-31\)[\s\S]*never a call's options[\s\S]*Compared:/);
+});
+
 test('rebuild prints for each case kind with rules how many screens and calls they pick and names each rule that picks nothing', () => {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {

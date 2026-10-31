@@ -127,7 +127,7 @@ function screenCallOptions(apiCalls: MapScreen['apiCalls'], callsById: Map<strin
   };
   keysOf(apiCalls, true);
   keysOf(appStart, false);
-  return Object.fromEntries([...sent].map(([id, keys]) => [id, callsById.get(id)!.options.filter((o) => keys.has(o.key) || o.sources.includes('type') || o.sources.includes('config'))]));
+  return Object.fromEntries([...sent].map(([id, keys]) => [id, callsById.get(id)!.options.filter((o) => keys.has(o.key) || o.sources.includes('type') || o.sources.includes('config') || o.sources.includes('request'))]));
 }
 
 const isStaleMap = (map: any) => Array.isArray(map?.screens) && map.screens.some((s: any) => !s.routeFile);

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { screenAccess, screenCases } from '../src/access.ts';
 import { loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
+import { addRequestOptions } from '../src/request-options.ts';
 import type { MapScreen, ScreenMap } from '../src/map.ts';
 import { checkStories } from '../src/story-paths.ts';
 
@@ -1707,6 +1708,67 @@ test('a call ID in bodyOptions that is not on the map is listed and adds no opti
   );
   assert.deepEqual(map.unknownBodyOptionCalls, ['GET:/api/v1/download', 'POST:/api/v1/report/weekly']);
   assert.deepEqual(optionsOf(map, 'POST:/api/v1/report/schedule').map((o) => o.key), ['weekly']);
+});
+
+function storedZip(files: Record<string, string>) {
+  const bodies: Buffer[] = [];
+  const directory: Buffer[] = [];
+  let offset = 0;
+  for (const [name, content] of Object.entries(files)) {
+    const nameBytes = Buffer.from(name);
+    const data = Buffer.from(content);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(nameBytes.length, 26);
+    const entry = Buffer.alloc(46);
+    entry.writeUInt32LE(0x02014b50, 0);
+    entry.writeUInt32LE(data.length, 20);
+    entry.writeUInt32LE(data.length, 24);
+    entry.writeUInt16LE(nameBytes.length, 28);
+    entry.writeUInt32LE(offset, 42);
+    bodies.push(local, nameBytes, data);
+    directory.push(entry, nameBytes);
+    offset += 30 + nameBytes.length + data.length;
+  }
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(Object.keys(files).length, 10);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...bodies, ...directory, end]);
+}
+
+function withRequestBody<T>(body: string, fn: (trace: string) => T) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-map-'));
+  try {
+    const file = path.join(dir, 'trace.zip');
+    const line = (e: object) => `${JSON.stringify(e)}\n`;
+    fs.writeFileSync(file, storedZip({
+      '0-trace.trace': line({ type: 'context-options', version: 8 }),
+      '0-trace.network': line({
+        type: 'resource-snapshot',
+        snapshot: { _monotonicTime: 1, request: { method: 'POST', url: 'http://x/api/v1/report/export', headers: [], postData: { text: body, mimeType: 'application/json' } }, response: { status: 200, content: { mimeType: 'application/json' } } },
+      }),
+    }));
+    return fn(file);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test('an option the tests sent in a request joins the one the source found, with both sources', async () => {
+  const map = await buildFixture();
+  withRequestBody('{"withHistory":false,"watermark":true}', (trace) => {
+    const counts = addRequestOptions(map, [{ trace, title: 'exports the report', file: 'e2e/export.spec.ts', line: 9, project: 'chromium', status: 'pass' }]);
+    assert.deepEqual(counts, { options: 2, calls: 1 });
+    const sent = [{ test: 'exports the report', file: 'e2e/export.spec.ts', line: 9, project: 'chromium' }];
+    assert.deepEqual(optionsOf(map, 'POST:/api/v1/report/export'), [
+      { key: 'watermark', values: [true, false], sources: ['request'], sites: [], requests: [{ ...sent[0], values: [true] }] },
+      { key: 'withAttachments', values: [true, false], sources: ['source'], sites: exportSites(5) },
+      { key: 'withHistory', values: [true, false], sources: ['source', 'request'], sites: exportSites(18), requests: [{ ...sent[0], values: [false] }] },
+    ]);
+  });
 });
 
 test('a key followed by a computed key or a key or getter of the same name is not an option, and a method of another name does not matter', async () => {

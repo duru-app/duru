@@ -266,7 +266,8 @@ client with example results and a config to start from.
   `{ "POST:/api/v1/report/export": ["withHistory"] }`, for a body the source does not show.
 - `bodyTypeExclusions` — on/off fields read from the body type to leave out of a call's options, per call ID
   (optional), as `{ "POST:/api/v1/documents": ["enabledPkiSign", "signers[].required"] }` with the field paths as
-  the map names them, for a field no screen lets the user change.
+  the map names them, for a field no screen lets the user change. A field it leaves out is not taken from the bodies
+  of the requests the tests sent either.
 - `settingsRoots` — identifiers through which settings are read.
 - `settingsDefaults` — where the default values of a settings root are written (optional), as
   `{ "globalSettings": { "file": "store/settings.js", "const": "defaults" } }`: the object literal that a
@@ -474,7 +475,10 @@ going to an error screen when loading fails.
 
 **Calls.** Each API call is a node under `calls` with an ID `<METHOD>:<path>`
 (`GET:/api/v1/document/{documentId}`), its server match, the API functions that make it, the screens that reach
-it, and the on/off `options` of its request body. The server match is one of:
+it, and the on/off `options` of its request body. A call's `options` come from its source, its body type, the
+config and the bodies of the write requests the tests sent: `sources` names where each comes from, `source`, `type`,
+`config` or `request`, and an option a request body sent carries `requests`, one entry per test and project that sent
+it, with the test's title, file, line, project and the values it sent. The server match is one of:
 
 - `match` — on the server, with the endpoint list labels
 - `method-mismatch` — the server has the path with another method
@@ -695,6 +699,9 @@ listing the places whose value the source does not show in full.
   follows with how many. With `baselineMap`, the undecided count is followed by `, M of them new since <file>`: how
   many of those undecided candidates are screens or calls the baseline map does not have. When the marks cannot be read, `  case kinds not counted: <why>` takes the place of these
   lines.
+- `options sent in requests N | calls with them M` — printed by `rebuild` after the line of the calls with tests,
+  also when both are 0: how many of the map's options came at least partly from the body of a request a test sent,
+  and how many calls carry at least one of them.
 - `rebuild` also prints the story and candidate counts, how many of the candidates came from traces, how many it
   newly stored in `candidates/`, and the files skipped, the need files in `needs/`, how many conditions pick a need
   file that is not there and each need file it could not read with why, the links from untagged tests to screens and the trace or test files it could not read, the judged test
@@ -712,8 +719,9 @@ carries `@depth:<ui|api|render|code|data|output>`. `output` is for a test that c
 produces, such as an exported file.
 
 A test of a call that sets on/off options of its request body declares each with `@option:<key>=true|false`
-(`@call:POST:/api/v1/report/export @option:withHistory=true`). A test that walks a whole story declares it with
-`@story:<story ID>`; it may carry node tags too and then counts for each.
+(`@call:POST:/api/v1/report/export @option:withHistory=true`). An option read from the body of a request a test sent
+is declared with the same tag, and only through that tag does such a test pass or fail. A test that walks a whole
+story declares it with `@story:<story ID>`; it may carry node tags too and then counts for each.
 
 A test of a screen that opens only under a role or a setting declares the case it checks next to its `@screen:`
 tag. Each role that opens the screen is a case, `@role:<role>` with the role as the map writes it (`@role:ADMIN`,
@@ -744,7 +752,10 @@ and each entry of such a test names its walk as `steps`. A step or opened page c
 picture in `test-shots/`, when the trace was recorded with screenshots. A line without `shot` keeps the last `shot`
 written before it, skipping requests, which never carry one, and has no picture when none was written before it;
 `null` means that its page has no picture yet after a line that had one, as on the first step in a popup. `traceFiles` names the trace file each walk was
-read from, under the same key and project, from the config's folder when it is inside it.
+read from, under the same key and project, from the config's folder when it is inside it. The JSON bodies of the
+POST, PUT, PATCH and DELETE requests in the traces of the result folders `tests` names are read, of failing tests as
+well as passing ones, and give the calls they reached the `options` they sent (see **Calls**); a body that is not
+JSON, and a request with no body, is skipped.
 
 Two kinds of untagged tests are shown next to a screen without counting as its tests. A unit test (Vitest or
 Jest JSON) is listed under `importers` when its test file imports one of the screen's source files; a file that

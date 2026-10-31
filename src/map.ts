@@ -100,7 +100,7 @@ export interface MapCall {
   server: Endpoint['server'];
   apiFunctions: string[];
   screens: string[];
-  options: { key: string; values: boolean[]; sources: string[]; sites: OptionSite[] }[];
+  options: { key: string; values: boolean[]; sources: string[]; sites: OptionSite[]; requests?: { test: string; file: string | null; line: number | null; project: string | null; values: boolean[] }[] }[];
   codeHash?: string;
 }
 
@@ -216,7 +216,7 @@ function configuredCallLinks(calls: { id: string }[], callLinks: CallLink[]) {
 }
 
 const bySite = (a: OptionSite, b: OptionSite) => compare(a.screen, b.screen) || compare(a.file, b.file) || a.line - b.line;
-const OPTION_SOURCES = ['source', 'type', 'config'];
+const OPTION_SOURCES = ['source', 'type', 'config', 'request'];
 
 function buildCalls(apiFunctions: ApiFunctions, screens: any[], appWide: { apiCalls: MapApiCall[] } | null | undefined, apiPathPrefix: string, bodyOptions: Record<string, string[]>, bodyTypeExclusions: Record<string, string[]>) {
   const calls = new Map<string, any>();
