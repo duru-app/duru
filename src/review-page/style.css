@@ -147,6 +147,7 @@
   .chip.dead, .chip.v-none { color: var(--fail); } .chip.v-method-mismatch { color: var(--more); } .chip.v-match { color: var(--pass); } .chip.v-unresolved, .chip.v-unchecked { color: var(--muted); }
   .test { margin-bottom: 6px; }
   .test .detail { color: var(--muted); font-size: 12px; margin-left: 4px; }
+  .test .detail a { white-space: nowrap; }
   .test .test-tag { display: inline-block; margin-left: 4px; padding: 0 4px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
   .importers p, .detached p, .passed p { font-size: 12px; margin: 0 0 8px; }
   .chip.level-assert { color: var(--pass); } .chip.level-interact, .chip.level-call { color: var(--accent); } .chip.level-visit { color: var(--muted); }
