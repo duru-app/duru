@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { SentTrace } from '../src/request-options.ts';
+import { traceSent } from '../src/request-options.ts';
+import type { SentRequests } from '../src/request-options.ts';
 import { markUnrecorded } from '../src/unrecorded-calls.ts';
 
 function storedZip(files: Record<string, string>) {
@@ -35,7 +36,7 @@ function storedZip(files: Record<string, string>) {
   return Buffer.concat([...bodies, ...directory, end]);
 }
 
-function withTraces<T>(traces: { method: string; url: string }[][], fn: (sent: SentTrace[]) => T) {
+function withTraces<T>(traces: { method: string; url: string }[][], fn: (sent: SentRequests[]) => T) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-unrecorded-'));
   try {
     const line = (e: object) => `${JSON.stringify(e)}\n`;
@@ -48,7 +49,7 @@ function withTraces<T>(traces: { method: string; url: string }[][], fn: (sent: S
           snapshot: { _monotonicTime: at + 1, request: { method, url: `http://x${url}`, headers: [] }, response: { status: 200, content: { mimeType: 'application/json' } } },
         })).join(''),
       }));
-      return { trace: file, title: `test ${i}`, file: 'test/a.spec.ts', line: i + 1, project: null, status: 'pass' } as SentTrace;
+      return traceSent({ trace: file, title: `test ${i}`, file: 'test/a.spec.ts', line: i + 1, project: null })!;
     });
     return fn(sent);
   } finally {
@@ -86,13 +87,6 @@ test('a GET, and a write call on no screen, are never unrecorded', () =>
     const map = mapOf();
     assert.deepEqual(markUnrecorded(map, sent), { calls: 3, screens: 2 });
     assert.deepEqual(unrecordedOf(map), ['POST:/api/report', 'PUT:/api/report/{0}', 'DELETE:/api/report/{0}']);
-  }));
-
-test('a trace that cannot be read records nothing, and the calls it might have sent stay unrecorded', () =>
-  withTraces([[{ method: 'POST', url: '/api/report' }]], (sent) => {
-    const map = mapOf();
-    markUnrecorded(map, [...sent.map((s) => ({ ...s, trace: `${s.trace}.gone` }))]);
-    assert.ok(unrecordedOf(map).includes('POST:/api/report'));
   }));
 
 test('a write call a trace sent with its method in lower case is not unrecorded', () =>

@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { addRequestOptions, bodyOptions } from '../src/request-options.ts';
-import type { RequestSent, SentTrace } from '../src/request-options.ts';
+import { addRequestOptions, bodyOptions, traceSent } from '../src/request-options.ts';
+import type { RequestSent } from '../src/request-options.ts';
 
 type Sent = { method?: string; url: string; body: string };
 
@@ -62,7 +62,7 @@ const mapOf = () => ({
   apiFunctions: { send: { endpoints: [{ callId: 'POST:/api/v1/report', method: 'POST', url: '/api/v1/report' }] } },
   calls: [{ id: 'POST:/api/v1/report', method: 'POST', path: '/api/v1/report', server: {}, apiFunctions: [], screens: [], options: [] as Option[] }],
 });
-const sentOf = (trace: string, title: string, project: string | null, line = 1): SentTrace => ({ trace, title, file: 'test/report.spec.ts', line, project, status: 'pass' });
+const sentOf = (trace: string, title: string, project: string | null, line = 1) => traceSent({ trace, title, file: 'test/report.spec.ts', line, project })!;
 const optionsOf = (map: ReturnType<typeof mapOf>) => map.calls.find((c) => c.id === 'POST:/api/v1/report')!.options;
 
 test('a boolean field of a request body is an option named by where it sits, and a field of another type is not', () => {

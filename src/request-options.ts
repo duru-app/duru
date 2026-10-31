@@ -1,8 +1,15 @@
 import { callFinder } from './address-match.ts';
 import { readTrace } from './playwright-trace.ts';
-import type { TestStatus } from './verdict.ts';
+import type { PageRequest, TraceRequest } from './playwright-trace.ts';
 
-export type SentTrace = { trace: string; title: string; file: string | null; line: number | null; project: string | null; status: TestStatus };
+// 시험의 trace 나 방문 기록 하나가 보낸 요청이다. 방문 기록이면 title 은 그 기록 파일이고 file · line · project 는 null 이다.
+export type SentRequests = { title: string; file: string | null; line: number | null; project: string | null; requests: TraceRequest[]; pageRequests: PageRequest[] };
+
+// 읽지 못한 trace 는 null 이다.
+export function traceSent({ trace, ...test }: { trace: string; title: string; file: string | null; line: number | null; project: string | null }): SentRequests | null {
+  const read = readTrace(trace);
+  return 'reason' in read ? null : { ...test, requests: read.requests, pageRequests: read.pageRequests };
+}
 
 export type RequestSent = { test: string; file: string | null; line: number | null; project: string | null; values: boolean[] };
 
@@ -40,15 +47,13 @@ export function bodyOptions(body: string): { key: string; value: boolean }[] {
     .flatMap(([key, values]) => values.map((value) => ({ key, value })));
 }
 
-export function addRequestOptions(map: any, sent: SentTrace[]): { options: number; calls: number } {
+export function addRequestOptions(map: any, sent: SentRequests[]): { options: number; calls: number } {
   const callAt = callFinder(map);
   const leftOut = new Set<string>((map.leftOutBodyTypeFields ?? []).map((r: { call: string; field: string }) => `${r.call}\n${r.field}`));
   const optionsOf = new Map<string, MapOption[]>((map.calls ?? []).map((c: any) => [c.id, (c.options ??= [])]));
   const sending = new Map<string, { call: string; key: string; test: string; file: string | null; line: number | null; project: string | null; values: Set<boolean> }>();
   for (const t of sent) {
-    const trace = readTrace(t.trace);
-    if ('reason' in trace) continue;
-    for (const { method, url, body } of trace.requests) {
+    for (const { method, url, body } of t.requests) {
       if (!body) continue;
       const call = callAt(method, url);
       const options = call ? optionsOf.get(call) : undefined;

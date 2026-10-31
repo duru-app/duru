@@ -475,6 +475,55 @@ test('a visit recorded on the page is written into records/ in the stories folde
   );
 });
 
+test('a visit recorded on the page keeps the write requests the app pane passed on after recording started, with a JSON body and the address its Referer names, and leaves out the ones before, the reads, the bodies that are not JSON and those of another pane', async () => {
+  await withFakeApi((api) =>
+    withPasswords(ALL_PASSWORDS, () =>
+      withRebuiltFixture(roleSettings(api), (config) =>
+        withServer(config, 'reviewer', async (base) => {
+          const { app } = await (await fetch(`${base}/api/data`)).json();
+          const pane = app.url;
+          const other = app.roles[0].url;
+          const send = (at: string, method: string, url: string, body?: string, referer?: string) =>
+            fetch(`${at}${url}`, { method, body, headers: { ...(referer && { referer }), 'content-type': 'text/plain' } }).then((res) => res.text());
+          await send(pane, 'POST', '/api/v1/documents/search', '{"status":"before"}', `${pane}/home`);
+          const { from } = await (await fetch(`${base}/api/records/start`)).json();
+          assert.ok(Number.isInteger(from));
+          await send(pane, 'POST', '/api/v1/documents/search', '{"status":"done","notify":true}', `${pane}/document/list?page=2#top`);
+          await send(pane, 'GET', '/api/v1/documents');
+          await send(pane, 'POST', '/api/v1/press', 'pressed');
+          await send(pane, 'DELETE', '/api/v1/documents/7', undefined, 'http://evil.example/home');
+          await send(other, 'POST', '/api/v1/documents/search', '{"status":"other"}', `${other}/home`);
+          const save = (input: object) => fetch(`${base}/api/records`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ steps: [{ url: '/home' }], ...input }) });
+          const res = await save({ pane, from });
+          assert.equal(res.status, 201);
+          const { record } = await res.json();
+          assert.deepEqual(JSON.parse(fs.readFileSync(path.join(config.configDir, record), 'utf8')), {
+            steps: [{ url: '/home' }],
+            requests: [
+              { method: 'POST', url: '/api/v1/documents/search', body: '{"status":"done","notify":true}', shown: '/document/list?page=2' },
+              { method: 'POST', url: '/api/v1/press' },
+              { method: 'DELETE', url: '/api/v1/documents/7' },
+            ],
+          });
+          const without = await save({});
+          assert.equal(without.status, 201);
+          assert.deepEqual(JSON.parse(fs.readFileSync(path.join(config.configDir, (await without.json()).record), 'utf8')), { steps: [{ url: '/home' }] });
+          for (const input of [{ pane, from: -1 }, { pane, from: '0' }, { pane: 'http://127.0.0.1:1', from }, { from }]) {
+            assert.equal((await save(input)).status, 400, JSON.stringify(input));
+          }
+          assert.equal(fs.readdirSync(path.join(config.storiesDir, 'records')).length, 2);
+        }),
+      ),
+    ),
+  );
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const res = await fetch(`${base}/api/records/start`);
+      assert.deepEqual([res.status, await res.text()], [404, 'no app is served']);
+    }),
+  );
+});
+
 test('without signedOutPaths there is no signed-out address', async () => {
   await withFakeApi((api) =>
     withPassword('s3cret', () =>

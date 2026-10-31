@@ -50,7 +50,11 @@ function firstPane(c) {
 function openPane(c, key) {
   const pane = paneOf(key);
   c.pane = pane.key;
-  c.walk = { key: ++walkTurn, pane: pane.key, origin: new URL(pane.url).origin, src: paneSrc(pane, lastAddress(c)), record: [] };
+  const walk = { key: ++walkTurn, pane: pane.key, url: pane.url, origin: new URL(pane.url).origin, src: paneSrc(pane, lastAddress(c)), record: [], from: undefined };
+  c.walk = walk;
+  fetch('/api/records/start').then((res) => (res.ok ? res.json() : null)).then((answer) => {
+    if (Number.isInteger(answer?.from)) walk.from = answer.from;
+  }).catch(() => {});
 }
 
 function startWalk() {
@@ -63,28 +67,28 @@ function startWalk() {
 // 로그아웃 칸과 역할별 칸은 계정이 따로라, 칸을 바꾸면 그때까지 받은 주소를 기록 하나로 남기고 새 기록을 시작한다.
 function switchPane(key) {
   const c = state.compose;
-  const { record } = c.walk;
-  if (record.length) saveWalkRecord(c, record);
+  const walk = c.walk;
+  if (walk.record.length) saveWalkRecord(c, walk);
   openPane(c, key);
   render();
 }
 
 function endWalk() {
   const c = state.compose;
-  const { record } = c.walk;
+  const walk = c.walk;
   c.walk = null;
-  if (record.length) {
+  if (walk.record.length) {
     Object.assign(c, { walked: true, diagram: 'line' });
-    saveWalkRecord(c, record);
+    saveWalkRecord(c, walk);
   } else c.walkNote = { error: true, text: NO_ADDRESS };
   render();
 }
 
-async function saveWalkRecord(c, record) {
+async function saveWalkRecord(c, { record, url: pane, from }) {
   const steps = record.map(({ url, inputs, skipped }) => ({ url, inputs, ...(skipped && { skipped }) }));
   let note;
   try {
-    const res = await fetch('/api/records', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ steps }) });
+    const res = await fetch('/api/records', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ steps, pane, from }) });
     if (!res.ok) throw new Error(await res.text());
     note = { text: `지나간 주소 ${steps.length}개를 기록 파일 ${(await res.json()).record} 에 남겼습니다. 스토리로 저장하기 전에 페이지를 닫아도 후보 목록에서 다시 꺼낼 수 있습니다.` };
   } catch (err) {
