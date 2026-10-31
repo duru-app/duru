@@ -46,6 +46,29 @@ export function bodyOptions(body: string): { key: string; value: boolean }[] {
     .flatMap(([key, values]) => values.map((value) => ({ key, value })));
 }
 
+function onOffOnly(value: unknown): unknown {
+  if (typeof value === 'boolean') return value;
+  if (Array.isArray(value)) {
+    const kept = value.map(onOffOnly).filter((v) => v !== undefined);
+    return kept.length ? kept : undefined;
+  }
+  if (!value || typeof value !== 'object') return undefined;
+  const kept = Object.entries(value).flatMap(([k, v]) => {
+    const on = onOffOnly(v);
+    return on === undefined ? [] : [[k, on]];
+  });
+  return kept.length ? Object.fromEntries(kept) : undefined;
+}
+
+export function optionBody(text: string): string | undefined {
+  try {
+    const kept = onOffOnly(JSON.parse(text));
+    return kept && typeof kept === 'object' ? JSON.stringify(kept) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function addRequestOptions(map: any, sent: SentRequests[]): { options: number; calls: number } {
   const callAt = callFinder(map);
   const leftOut = new Set<string>((map.leftOutBodyTypeFields ?? []).map((r: { call: string; field: string }) => `${r.call}\n${r.field}`));

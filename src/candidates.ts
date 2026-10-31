@@ -391,8 +391,7 @@ export function undiscardCandidate(dir: string, screens: unknown, { author }: { 
 
 const RECORD_KEYS = ['url', 'inputs', 'skipped'];
 
-// 쓴 파일은 고치지도 지우지도 않는다.
-export function saveVisitRecord(dir: string, steps: unknown, now = new Date(), requests: ForwardedRequest[] = []) {
+export function checkVisitSteps(steps: unknown): asserts steps is { url: string; inputs?: StepInput[]; skipped?: number }[] {
   if (!Array.isArray(steps) || !steps.length || !steps.every((s) => isPlainObject(s) && isAppPath(s.url))) {
     throw new Error('steps 는 / 로 시작하는 앱 안 주소를 url 에 담은 단계를 하나 이상 차례대로 담은 목록이어야 합니다');
   }
@@ -402,6 +401,10 @@ export function saveVisitRecord(dir: string, steps: unknown, now = new Date(), r
     const problem = typedProblem(step, i);
     if (problem) throw new Error(problem);
   }
+}
+
+export function saveVisitRecord(dir: string, steps: unknown, now = new Date(), requests: ForwardedRequest[] = []) {
+  checkVisitSteps(steps);
   writableStoriesFolder(dir);
   const folder = path.join(dir, RECORDS);
   if (fs.existsSync(folder) && !isFolder(folder)) throw new Error(`스토리 폴더 안 ${RECORDS} 가 파일이라 기록을 쓸 수 없습니다`);

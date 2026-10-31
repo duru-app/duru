@@ -13,7 +13,7 @@ import { baselineLabel, compareMaps, readBaseline } from './baseline.ts';
 import { compareTests, isRegressedStatus, nodeIds, passedInFolder, readBaselineTests, wholeFines } from './baseline-tests.ts';
 import type { BaselineTests, TestComparison } from './baseline-tests.ts';
 import { screenRoutes } from './address-match.ts';
-import { acceptCandidate, addCommentCandidate, candidatePlace, discardCandidate, pickCandidateLine, saveVisitRecord, storyCandidates, unacceptStory, undiscardCandidate } from './candidates.ts';
+import { acceptCandidate, addCommentCandidate, candidatePlace, discardCandidate, checkVisitSteps, pickCandidateLine, saveVisitRecord, storyCandidates, unacceptStory, undiscardCandidate } from './candidates.ts';
 import { answerProposal, casesWithoutTests, caseTargets, commandCaseRule, exclusionOf, pickedKinds, ProposalChanged } from './case-targets.ts';
 import { compare, isPlainObject } from './config.ts';
 import type { CaseKind } from './config.ts';
@@ -104,14 +104,17 @@ export function reviewAuthor(config: any, { gitName = gitUserName, userName = co
 
 type AppHost = Awaited<ReturnType<typeof startAppHost>>;
 
-// 같은 앱이 다른 탭이나 미리보기에도 떠 있을 수 있어서, 이 기록이 지나간 주소에서 보낸 요청만 고른다.
+// shown 이 / 뿐인 요청은 Referer 에 origin 만 담긴 것일 수 있어서, 지나간 주소가 아니면 shown 만 뺀다.
 async function sentDuring(app: AppHost, { pane, from, steps }: Record<string, unknown>) {
   if (from === undefined) return [];
   const panes = [app.url, app.signedOutUrl, ...app.roles.map((r) => r.url)].filter(Boolean);
   if (!Number.isInteger(from) || (from as number) < 0) throw new Error('from 은 기록을 시작할 때 받은 0 이상의 정수여야 합니다');
   if (!panes.includes(pane as string)) throw new Error(`pane 은 앱 칸의 주소 가운데 하나여야 합니다: ${panes.join(', ')}`);
   const walked = new Set(Array.isArray(steps) ? steps.map((s) => (typeof s?.url === 'string' ? s.url.split('#')[0] : null)) : []);
-  return (await app.sentSince(pane as string, from as number)).filter((r) => r.shown === undefined || walked.has(r.shown));
+  return (await app.sentSince(pane as string, from as number)).flatMap(({ shown, ...r }) => {
+    if (shown === undefined || walked.has(shown)) return [{ ...r, ...(shown !== undefined && { shown }) }];
+    return shown === '/' ? [r] : [];
+  });
 }
 
 function readJson(file: string) {
@@ -679,6 +682,7 @@ export async function startReviewServer(config: any, { port = 0, author = review
           if (!app) return send(res, 404, 'text/plain', 'no app is served');
           let file, requests;
           try {
+            checkVisitSteps(input.steps);
             requests = await sentDuring(app, input);
             file = saveVisitRecord(config.storiesDir, input.steps, new Date(), requests);
           } catch (err: any) {
