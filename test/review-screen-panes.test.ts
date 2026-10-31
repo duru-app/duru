@@ -751,6 +751,31 @@ test('in a browser, a write call of the layout around a screen no trace sent mak
   });
 });
 
+test('in a browser, a call a trace alone ties to a screen shows under it with the 기록 chip, and names the tests that sent it there', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    editJson(path.join(config.outDir, 'map.json'), (map) => {
+      const call = map.calls.find((c: { id: string }) => c.id === 'POST:/api/v1/auth/sign-in');
+      call.screens = [];
+      call.tracedScreens = [{ screen: '/admin/report#AdminReport', tests: [{ test: 'renames from the report', file: 'report.spec.ts', line: 7, project: 'chromium' }] }];
+      delete call.unrecorded;
+    });
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/admin/report")');
+        const row = p.locator('#center-body > table.calls tr').filter({ has: p.locator('button.call-name', { hasText: 'POST:/api/v1/auth/sign-in' }) });
+        const chip = row.locator('.chip.traced');
+        assert.equal(await chip.textContent(), '기록');
+        assert.match((await chip.getAttribute('title'))!, /테스트 기록에서 이 화면이 보낸 요청: renames from the report$/);
+        await row.locator('button.call-name').click();
+        const info = await p.locator('#center .call-info').innerText();
+        assert.match(info, /이 화면에서 보낸 테스트\s+renames from the report report\.spec\.ts:7 · chromium/);
+        assert.match(info, /이 호출을 쓰는 화면 1\s+\/admin\/report#AdminReport\s+기록/);
+      }),
+    );
+  });
+});
+
 const RESULT_CALL = 'GET:/api/v1/document/{documentId}';
 const RESULT_LINKS = [
   { from: 'POST:/api/v1/report/export', to: RESULT_CALL, note: '내보낸 파일을 연다' },

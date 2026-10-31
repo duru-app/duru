@@ -12,6 +12,7 @@ import type { AccessConfig } from './access.ts';
 import type { RemovedField, UnknownExclusion } from './body-type-exclusions.ts';
 import type { AliasRule } from './resolve.ts';
 import type { EndpointMatch, UnresolvedReason } from './server.ts';
+import type { TracedScreen } from './traced-screens.ts';
 
 type Client = Awaited<ReturnType<typeof extractClient>>;
 type ClientScreen = Client['screens'][number];
@@ -101,6 +102,7 @@ export interface MapCall {
   apiFunctions: string[];
   screens: string[];
   options: { key: string; values: boolean[]; sources: string[]; sites: OptionSite[]; requests?: { test: string; file: string | null; line: number | null; project: string | null; values: boolean[] }[] }[];
+  tracedScreens?: TracedScreen[];
   unrecorded?: true;
   codeHash?: string;
 }

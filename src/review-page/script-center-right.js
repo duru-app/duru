@@ -216,7 +216,10 @@ function removedCallRows(s, depths) {
 
 function screenCallRows(s) {
   const seen = new Set();
-  const own = callRows(s.apiCalls.filter((c) => !c.layout), seen);
+  const sourced = callRows(s.apiCalls.filter((c) => !c.layout), seen);
+  const traced = tracedCallsOf(s).filter((c) => !seen.has(c.id)).map((call) => ({ call, traced: tracedOn(call, s.id).tests }));
+  for (const { call } of traced) seen.add(call.id);
+  const own = [...sourced, ...traced];
   const common = callRows([...s.apiCalls.filter((c) => c.layout), ...(state.data.map.appWide?.apiCalls ?? [])], seen);
   return { own, common };
 }
@@ -240,6 +243,7 @@ function callTableBody(s, rows, depths, extra = []) {
         h('td', { class: 'call pick', onclick: () => pickCall(r.call.id) },
           h('div', { class: 'mono' }, h('button', { type: 'button', class: 'call-name', title: '이 호출을 고르고 호출 정보를 엽니다' }, r.call.id)), verdictChip(r.call.server),
           sent ? h('span', { class: 'sent-count', title: '이 호출의 태그 없이, 도는 동안 이 호출을 보낸 브라우저 테스트' }, `호출함 ${sent}`) : null,
+          r.traced ? tracedChip(r.traced) : null,
           r.call.unrecorded ? unrecordedChip() : null),
         cell({ node: r.call.id }, tests),
         depths.map((d) => cell({ node: r.call.id, depth: d }, tests.filter((t) => t.depth === d))),
@@ -247,6 +251,11 @@ function callTableBody(s, rows, depths, extra = []) {
         ...optionRows(s, r.call, depths),
         ...resultOptionRows(r.call, depths)];
     }), extra));
+}
+
+function tracedChip(tests) {
+  const title = `소스로는 이 화면에 잇지 못했고, 테스트 기록에서 이 화면이 보낸 요청: ${[...new Set(tests.map((t) => t.test))].join(', ')}`;
+  return h('span', { class: 'chip traced', title, 'aria-label': title }, '기록');
 }
 
 const UNRECORDED_TITLE = '어느 테스트 기록에도 이 쓰기 요청이 없습니다. 테스트가 이 요청을 보내면 옵션이 더 나올 수 있습니다';

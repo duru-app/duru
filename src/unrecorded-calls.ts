@@ -4,7 +4,7 @@ import type { SentTrace } from './request-options.ts';
 
 const WRITES = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-// 읽지 못한 trace 는 건너뛰므로, 그 trace 에만 있던 호출도 기록 없음이 된다.
+// 읽지 못한 trace 는 건너뛰므로, 그 trace 에만 있던 호출도 기록되지 않은 호출이 된다.
 export function markUnrecorded(map: any, sent: SentTrace[]): { calls: number; screens: number } {
   const callAt = callFinder(map);
   const recorded = new Set<string>();

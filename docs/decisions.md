@@ -5256,6 +5256,27 @@ drawing and counts as empty drawing, so a click on it lets the picked screen go,
 Compared: 「진입 화면 N」, short but just as true of the screens above it; and no separation, which leaves a blank row
 with nothing saying why the screens below it were moved there.
 
+**A request a page sent in a test's trace ties its call to the screen the page showed then, in a field of the call
+of its own, `tracedScreens`, and never in `screens` or in the screen's `apiCalls`.**
+Chosen for #496 (2026-10-31). A call whose sender the source cannot follow, such as a publish request a screen
+hands to a shared helper as a value, reached no screen even though every test that publishes sends it from the
+publish screen. The trace keeps the steps and the requests in time order, so the address the page showed just
+before a request names its screen through the same address match the trace links use. Only a request with a page
+counts: one the test sent itself through its API context has no screen behind it. A call the source already ties
+to that screen, or sends at app start, gets no traced screen, so a trace never repeats what the code says.
+A step that moves the address without loading a document, as a client-side route change does, leaves the trace
+only the addresses before and after the step, so a request sent during that step ties to no screen: tying it to the
+new address would be wrong for a screen that saves and then moves, and to the old one for a screen whose first
+fetch runs in the same click.
+Compared:
+- Adding the screen to `screens` and an entry to the screen's `apiCalls` with a flag: every reader of those two
+  (the baseline comparison, the task list, the marks, the flow counts) would take the tie for code and would each
+  need to skip the flag; the driver asked that a tie that only a trace gives is no change against the baseline
+  (2026-10-30), which a separate field gives without any reader saying so.
+- Leaving the tie in the walks of `tests.json` and joining it on the review page: the walks already hold the
+  requests in order, but the page, the task list and an agent reading `map.json` would each have to match the
+  addresses to screens again.
+
 **A write call a screen reaches that no trace sent is marked `unrecorded`, also when the config names no trace at
 all.**
 Chosen for #497 (2026-10-31). Since the bodies of sent requests give a call its options (#495), a call with no

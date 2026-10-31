@@ -504,7 +504,10 @@ going to an error screen when loading fails.
 it, and the on/off `options` of its request body. A call's `options` come from its source, its body type, the
 config and the bodies of the write requests the tests sent: `sources` names where each comes from, `source`, `type`,
 `config` or `request`, and an option a request body sent carries `requests`, one entry per test and project that sent
-it, with the test's title, file, line, project and the values it sent. A POST, PUT, PATCH or DELETE call that a
+it, with the test's title, file, line, project and the values it sent. A call a trace shows a page sending from a
+screen its source does not tie it to carries `tracedScreens`, one entry per such screen with the `tests` (title,
+file, line, project) whose run sent it there; `screens` stays what the source reads, and a call sent at app start
+gets none. The review page lists such a call under that screen with a `기록` chip. A POST, PUT, PATCH or DELETE call that a
 screen reaches and that no trace sent carries `unrecorded: true`, so an empty `options` can be told apart from a
 request no test has sent yet; the review page marks it `기록 없음` and the screen's `API 호출` heading counts the screen's
 own such calls while the 「공통」 line counts the shared ones. The server match is one of:
@@ -744,6 +747,8 @@ listing the places whose value the source does not show in full.
 - `options sent in requests N | calls with them M` — printed by `rebuild` after the line of the calls with tests,
   also when both are 0: how many of the map's options came at least partly from the body of a request a test sent,
   and how many calls carry at least one of them.
+- `calls tied to screens only by traces N | screens they were sent from M` — printed by `rebuild` right after it,
+  also when both are 0: how many calls got `tracedScreens` (see **Calls**) and how many screens they hang under.
 - `write calls on screens no trace sent N | screens with them M` — printed by `rebuild` right after it, also when
   both are 0: how many calls carry `unrecorded` (see **Calls**) and how many screens reach at least one of them.
 - `rebuild` also prints the story and candidate counts, how many of the candidates came from traces, how many it
@@ -799,9 +804,13 @@ written before it, skipping requests, which never carry one, and has no picture 
 read from, under the same key and project, from the config's folder when it is inside it. The JSON bodies of the
 POST, PUT, PATCH and DELETE requests in the traces of the result folders `tests` names are read, of failing tests as
 well as passing ones, and give the calls they reached the `options` they sent (see **Calls**); a body that is not
-JSON, and a request with no body, is skipped. Any request in those traces, with a body or without, from a page or
-sent by the test itself, counts as sent for `unrecorded`; the visit records do not keep requests yet, so a call sent
-only while recording a visit stays `unrecorded`.
+JSON, and a request with no body, is skipped. Each request a page sent is also tied to the screen whose address the
+page showed when it went out, and gives that call its `tracedScreens` when the source ties it to that screen
+neither directly nor at app start; a request the test sent itself, without a page, ties to none, and so does one
+sent while a step moved the address without loading a page, since the trace cannot tell which side of the move
+sent it. Any request in those traces, with a body or without, from a page or sent by the test itself, and whether
+or not it ties to a screen, counts as sent for `unrecorded`; the visit records do not keep requests yet, so a call
+sent only while recording a visit stays `unrecorded`.
 
 Two kinds of untagged tests are shown next to a screen without counting as its tests. A unit test (Vitest or
 Jest JSON) is listed under `importers` when its test file imports one of the screen's source files; a file that
