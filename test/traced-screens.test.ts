@@ -5,8 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { compareMaps } from '../src/baseline.ts';
 import { readTrace } from '../src/playwright-trace.ts';
-import type { SentTrace } from '../src/request-options.ts';
 import { addTracedScreens } from '../src/traced-screens.ts';
+import { traceSent } from '../src/request-options.ts';
 
 function storedZip(files: Record<string, string>) {
   const bodies: Buffer[] = [];
@@ -89,7 +89,7 @@ function mapOf(screensOfX: string[] = [], appStart: string[] = []) {
   };
 }
 
-const sentOf = (trace: string, title: string, line = 1): SentTrace => ({ trace, title, file: 'test/flow.spec.ts', line, project: 'chromium', status: 'pass' });
+const sentOf = (trace: string, title: string, line = 1) => traceSent({ trace, title, file: 'test/flow.spec.ts', line, project: 'chromium' })!;
 const tracedOf = (map: ReturnType<typeof mapOf>) => Object.fromEntries(map.calls.filter((c) => c.tracedScreens).map((c) => [c.id, c.tracedScreens.map((t: any) => `${t.screen} ← ${t.tests.map((x: any) => x.test).join(', ')}`)]));
 
 test('a request is tied to the screen the page showed when it was sent, and a request after moving to another screen to that one', () =>

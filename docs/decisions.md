@@ -5283,13 +5283,35 @@ Chosen for #497 (2026-10-31). Since the bodies of sent requests give a call its 
 options is either one that has none or one no test has sent; the mark tells them apart. Only POST, PUT, PATCH and
 DELETE calls that a screen reaches are marked (driver, 2026-10-30: only those tied to a screen): a GET carries no
 body to read options from, and a call no screen reaches has nowhere to show the mark. Every request in a trace
-counts as sent, one the test sends itself too, since its body gives options all the same. The visit records keep no
-requests yet, so they send nothing until they do.
+counts as sent, one the test sends itself too, since its body gives options all the same. The requests a visit
+record keeps count too (#498).
 Compared:
 - Marking nothing when no trace is read: an app with no browser tests would show no mark, but its write calls are
   exactly the ones no test has sent, and the count line already says how many there are.
 - Keeping the mark off the map and working it out on the review page from `tests.json`: the task list and an agent
   reading `map.json` would have to match the requests to calls again.
+
+**A visit recorded on the review page keeps the write requests the review server passed to the app, between the
+count of requests the page took when recording started and 「기록 끝」, and reads the screen each was sent from out of
+its `Referer`.**
+Chosen for #498 (2026-10-31). The review server already passes the app's API requests on, so it sees every write the
+app sends without anything added to the app's page. The same port also serves the app in the screen previews and in
+any other tab, so the page asks for the count when it opens the app for recording and sends it back with the steps,
+and only a request whose `Referer` is an address the record passed through is kept; a record whose page did not get
+the count keeps no requests rather than ones from before it, and the page says so. Measured in Chromium (2026-10-31): a fetch and
+an XHR sent after `history.pushState` carry the new path and query in `Referer`, without what follows `#`, and
+into-sign 1.6.0 sets no referrer policy and routes by path, so the Referer names the screen the way a trace's address
+does. A body is kept only when it reads as JSON: a fetch without a content type sends `text/plain`, so the type does
+not tell, and only JSON gives options. Of the body only the true and false values are kept, since the record is kept
+in git and a sign-in or a password change sends secrets as JSON; the options are read from those values alone. A record's requests are read into the same list as a trace's, title, file,
+line and project with the requests and the page requests, so reading options, tying calls to screens and marking
+calls unrecorded take one shape and each trace is read once.
+Compared:
+- A script in the app's page that wraps `fetch` and `XMLHttpRequest` and posts each request to the review page: it
+  would know the address at the moment of sending even in an app that sends no `Referer`, but it runs inside the
+  app, misses requests sent before it loads or through another channel, and adds a message the page has to trust.
+- Taking the requests by the time the recording started on the page's clock: the page and the server read the same
+  clock only when both run on one machine, and the count needs no clock at all.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 

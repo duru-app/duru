@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { acceptCandidate, addCommentCandidate, discardCandidate, pickCandidateLine, saveVisitRecord, storeCandidates, storyCandidates, unacceptStory, undiscardCandidate } from '../src/candidates.ts';
+import { acceptCandidate, addCommentCandidate, discardCandidate, pickCandidateLine, recordedRequests, saveVisitRecord, storeCandidates, storyCandidates, unacceptStory, undiscardCandidate } from '../src/candidates.ts';
 import { compare, loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
 import { addMark, addReply } from '../src/marks.ts';
@@ -791,6 +791,61 @@ test('a recorded visit needs one or more steps, each with an address inside the 
     assert.throws(() => saveVisitRecord(path.join(dir, 'stories.json'), [{ url: '/home' }]), /가 파일이라 새 파일을 쓸 수 없습니다/);
     assert.throws(() => saveVisitRecord(path.join(dir, 'folder'), [{ url: '/home' }]), /스토리 폴더 안 records 가 파일이라 기록을 쓸 수 없습니다/);
   });
+});
+
+test('a recorded visit keeps the requests sent while it was made in requests, and a visit with none writes no requests', () => {
+  withFolder({}, (dir: string) => {
+    const stories = path.join(dir, 'stories');
+    const requests = [{ method: 'POST', url: '/api/v1/report/export', body: '{"watermark":true}', shown: '/help' }, { method: 'DELETE', url: '/api/v1/report/7' }];
+    const file = saveVisitRecord(stories, [{ url: '/help' }], new Date('2026-10-31T09:00:00Z'), requests);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(stories, file), 'utf8')), { steps: [{ url: '/help' }], requests });
+    const none = saveVisitRecord(stories, [{ url: '/home' }], new Date('2026-10-31T09:00:00Z'), []);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(stories, none), 'utf8')), { steps: [{ url: '/home' }] });
+  });
+});
+
+test('the requests of the visit records in visitRecords and in records/ are read as sent, with the record file as the title, the requests with a shown address as page requests, and a record without requests as sending nothing', () => {
+  withFolder({
+    'visits/kept.json': { steps: [{ url: '/help' }], requests: [{ method: 'POST', url: '/api/v1/report/export', body: '{"watermark":true}', shown: '/help?x=1' }, { method: 'PUT', url: '/api/v1/document/7/name' }] },
+    'visits/old.json': { steps: [{ url: '/home' }] },
+    'visits/list.json': [{ url: '/home' }],
+    'stories/records/2026-10-31-0a1b2c3d.json': { steps: [{ url: '/home' }], requests: [{ method: 'DELETE', url: '/api/v1/report/7', shown: '/home' }] },
+  }, (dir: string) => {
+    const sent = recordedRequests({ configDir: dir, visitRecords: [path.join(dir, 'visits')], storiesDir: path.join(dir, 'stories') });
+    assert.deepEqual(sent, [
+      {
+        title: 'visits/kept.json', file: null, line: null, project: null,
+        requests: [{ method: 'POST', url: '/api/v1/report/export', body: '{"watermark":true}' }, { method: 'PUT', url: '/api/v1/document/7/name' }],
+        pageRequests: [{ method: 'POST', url: '/api/v1/report/export', shown: '/help?x=1' }],
+      },
+      {
+        title: 'stories/records/2026-10-31-0a1b2c3d.json', file: null, line: null, project: null,
+        requests: [{ method: 'DELETE', url: '/api/v1/report/7' }],
+        pageRequests: [{ method: 'DELETE', url: '/api/v1/report/7', shown: '/home' }],
+      },
+    ].sort((a, b) => compare(a.title, b.title)));
+  });
+});
+
+test('a visit record whose requests do not fit is left out with a notice, and a record without requests stays a candidate as before', () => {
+  const bad: [unknown, RegExp][] = [
+    [{}, /requests 는 요청 목록이어야 합니다/],
+    [['POST /api'], /requests 의 1 번째 요청은 객체여야 합니다/],
+    [[{ url: '/api/x' }], /requests 의 1 번째 요청의 method 가 문자열이 아니거나 비어 있습니다/],
+    [[{ method: 'POST', url: 'http://x/api/x' }], /requests 의 1 번째 요청의 url 은 \/ 로 시작하는 주소여야 합니다/],
+    [[{ method: 'POST', url: '/api/x', body: { a: true } }], /requests 의 1 번째 요청의 body 는 문자열이어야 합니다/],
+    [[{ method: 'POST', url: '/api/x', shown: 'http://x/home' }], /requests 의 1 번째 요청의 shown 은 \/ 로 시작하는 앱 안 주소여야 합니다/],
+  ];
+  for (const [requests, why] of bad) {
+    withFolder({ 'visits/bad.json': { steps: [{ url: '/home' }, { url: '/help' }], requests }, 'visits/old.json': { steps: [{ url: '/home' }, { url: '/help' }] } }, (dir: string) => {
+      const own = { ...config, configDir: dir, visitRecords: [path.join(dir, 'visits')], storiesDir: path.join(dir, 'stories') };
+      const { list, notices } = storyCandidates(own, map, path.join(config.outDir, 'map.json'));
+      assert.deepEqual(notices.map((n) => n.file), ['visits/bad.json'], JSON.stringify(requests));
+      assert.match(notices[0].reason, why);
+      assert.deepEqual(list.map((c) => c.name), ['old']);
+      assert.deepEqual(recordedRequests(own), []);
+    });
+  }
 });
 
 test('a visit record step may carry the values typed there and the number of inputs left out, which go onto its screen\'s step of the candidate, a later value for the same box replacing the earlier one, and a step whose values do not fit is noted', () => {

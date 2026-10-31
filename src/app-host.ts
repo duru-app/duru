@@ -5,6 +5,9 @@ import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { pipeline } from 'node:stream';
 import vm from 'node:vm';
+import { isAppPath } from './address-match.ts';
+import { optionBody } from './request-options.ts';
+import { WRITES } from './unrecorded-calls.ts';
 
 export interface AppAccount {
   id: string;
@@ -53,6 +56,14 @@ export interface AppHostOptions {
   pageOrigins?: () => string[];
 }
 
+// shown 은 요청의 Referer 에서 읽은, 그때 앱에 떠 있던 주소다.
+export interface ForwardedRequest {
+  method: string;
+  url: string;
+  body?: string;
+  shown?: string;
+}
+
 interface Login {
   token?: string;
   storage?: { key: string; value: string };
@@ -68,6 +79,17 @@ interface ServerFetchOptions {
   headers?: Record<string, string>;
   body?: unknown;
   signal?: AbortSignal;
+}
+
+const MAX_KEPT_BODY = 1024 * 1024;
+const MAX_KEPT_REQUESTS = 1000;
+const MAX_KEPT_BYTES = 32 * 1024 * 1024;
+const PENDING_WAIT_MS = 5000;
+
+interface KeptRequests {
+  list: (ForwardedRequest & { n: number })[];
+  bytes: number;
+  pending: Map<Promise<void>, number>;
 }
 
 export const MIME: Record<string, string> = {
@@ -474,6 +496,12 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
   const { settingsFile } = app;
   const globalNames = settingsFile && globalNamesOf(settingsFile);
   let overrides: SettingsOverride[] = [];
+  const sent = new Map<number, KeptRequests>();
+  const keptOn = (port: number) => {
+    if (!sent.has(port)) sent.set(port, { list: [], bytes: 0, pending: new Map() });
+    return sent.get(port)!;
+  };
+  let sentCount = 0;
 
   // 앱 스크립트보다 먼저 돌아야, 앱이 처음 읽을 때 localStorage 에 토큰이 들어 있고 앱이 처음 주소를 바꿀 때도 알린다.
   const withScripts = (html: string, login: Login | null) => {
@@ -528,14 +556,50 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
     }
   }
 
-  function forward(req: http.IncomingMessage, res: http.ServerResponse) {
+  function keepWrite(req: http.IncomingMessage, port: number) {
+    const n = sentCount++;
+    const kept = keptOn(port);
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size <= MAX_KEPT_BODY) chunks.push(chunk);
+    });
+    const read = new Promise<string | null>((resolve) => {
+      req.on('end', () => resolve(size <= MAX_KEPT_BODY ? Buffer.concat(chunks).toString('utf8') : ''));
+      req.on('close', () => resolve(null));
+    });
+    let answer!: (answered: boolean) => void;
+    const answered = new Promise<boolean>((resolve) => (answer = resolve));
+    const done = Promise.all([read, answered]).then(([text, ok]) => {
+      if (text === null || !ok) return;
+      const referer = URL.canParse(req.headers.referer ?? '') ? new URL(req.headers.referer!) : null;
+      const shown = referer && referer.host === req.headers.host && isAppPath(referer.pathname) ? referer.pathname + referer.search : undefined;
+      const body = optionBody(text);
+      kept.list.push({ n, method: req.method!, url: req.url!, ...(body !== undefined && { body }), ...(shown && { shown }) });
+      kept.list.sort((a, b) => a.n - b.n);
+      kept.bytes += Buffer.byteLength(body ?? '');
+      while (kept.list.length > MAX_KEPT_REQUESTS || kept.bytes > MAX_KEPT_BYTES) kept.bytes -= Buffer.byteLength(kept.list.shift()!.body ?? '');
+    }).catch(() => {});
+    kept.pending.set(done, n);
+    done.finally(() => kept.pending.delete(done));
+    return answer;
+  }
+
+  function forward(req: http.IncomingMessage, res: http.ServerResponse, port: number) {
+    const answer = WRITES.has(req.method!) && isAppPath(req.url) ? keepWrite(req, port) : null;
     const target = new URL(join(app.server, req.url!));
     const client = target.protocol === 'https:' ? https : http;
     const up = client.request(target, { method: req.method, headers: { ...req.headers, host: target.host } }, (r) => {
+      answer?.(true);
       res.writeHead(r.statusCode!, r.headers);
       pipeline(r, res, () => {});
     });
+    let delivered = false;
+    up.on('finish', () => (delivered = true));
+    up.on('close', () => answer?.(delivered));
     up.on('error', (err) => {
+      answer?.(false);
       if (!res.headersSent) send(res, 502, 'text/plain', err.message);
       else if (!res.writableEnded) res.destroy();
     });
@@ -611,7 +675,7 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
           return await logInAgain(res, account, holder);
         }
         if (settingsFile && pathname === settingsFile.path) return await serveSettings(res);
-        if (app.apiPaths.some((p) => pathname.startsWith(p))) return forward(req, res);
+        if (app.apiPaths.some((p) => pathname.startsWith(p))) return forward(req, res, (server.address() as AddressInfo).port);
         if (fromFolder(app)) return serveFolder(res, pathname, holder.login);
         await serveDeployed(req, res, holder.login);
       } catch (err: any) {
@@ -679,6 +743,16 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
       return overrides;
     },
     fileSettings,
+    get sentCount() {
+      return sentCount;
+    },
+    // from 은 기록을 시작할 때 받은 sentCount 다.
+    async sentSince(url: string, from: number): Promise<ForwardedRequest[]> {
+      const kept = keptOn(Number(new URL(url).port));
+      const waiting = [...kept.pending].filter(([, n]) => n >= from).map(([p]) => p);
+      await Promise.race([Promise.all(waiting), new Promise((resolve) => setTimeout(resolve, PENDING_WAIT_MS).unref())]);
+      return kept.list.filter((r) => r.n >= from).map(({ n, ...r }) => r);
+    },
     close() {
       servers.forEach(close);
     },

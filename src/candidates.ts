@@ -2,10 +2,12 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { pathOf, screenFinder } from './address-match.ts';
+import { isAppPath, pathOf, screenFinder } from './address-match.ts';
+import type { ForwardedRequest } from './app-host.ts';
 import { compare, isPlainObject } from './config.ts';
 import { jsonFiles } from './json-files.ts';
 import { loadMarks, orderKey, recordKind, recordName, targetsOf, writeNewRecord } from './marks.ts';
+import type { SentRequests } from './request-options.ts';
 import { addStory, CANDIDATES, DISCARDED, inputsProblem, RECORDS, isDate, isScreenList, isSource, isText, loadStories, SOURCE_SHAPES, STEP_FIELDS, stepProblem, writableStoriesFolder } from './stories.ts';
 import type { CommentSource, StepFields, StepInput } from './stories.ts';
 import { checkStories, linksFromOldDuru, staleMapMessage } from './story-paths.ts';
@@ -31,7 +33,17 @@ function typedProblem(step: any, i: number) {
   return step.skipped === undefined || isCount(step.skipped) ? null : `${i + 1} 번째 단계의 skipped 는 넣지 못한 입력의 수로, 0 이상의 정수여야 합니다`;
 }
 
-function readRecord(file: string): { reason: string } | Pick<VisitRecord, 'addresses' | 'stepCount'> {
+function requestProblem(r: any, i: number) {
+  const at = `requests 의 ${i + 1} 번째 요청`;
+  if (!isPlainObject(r)) return `${at}은 객체여야 합니다`;
+  if (typeof r.method !== 'string' || !r.method) return `${at}의 method 가 문자열이 아니거나 비어 있습니다`;
+  if (!isAppPath(r.url)) return `${at}의 url 은 / 로 시작하는 주소여야 합니다`;
+  if (r.body !== undefined && typeof r.body !== 'string') return `${at}의 body 는 문자열이어야 합니다`;
+  if (r.shown !== undefined && !isAppPath(r.shown)) return `${at}의 shown 은 / 로 시작하는 앱 안 주소여야 합니다`;
+  return null;
+}
+
+function readRecord(file: string): { reason: string } | Pick<VisitRecord, 'addresses' | 'stepCount' | 'requests'> {
   let record;
   try {
     record = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -53,7 +65,13 @@ function readRecord(file: string): { reason: string } | Pick<VisitRecord, 'addre
     addresses.push({ address, step: i + 1, ...(step.inputs?.length && { inputs: step.inputs }), ...(step.skipped && { skipped: step.skipped }) });
   }
   if (!addresses.length) return { reason: 'url 이 있는 단계가 없습니다' };
-  return { addresses, stepCount: steps.length };
+  const requests = Array.isArray(record) ? undefined : record.requests;
+  if (requests !== undefined && !Array.isArray(requests)) return { reason: 'requests 는 요청 목록이어야 합니다' };
+  for (const [i, r] of (requests ?? []).entries()) {
+    const problem = requestProblem(r, i);
+    if (problem) return { reason: problem };
+  }
+  return { addresses, stepCount: steps.length, ...(requests?.length && { requests }) };
 }
 
 interface VisitRecord {
@@ -61,6 +79,7 @@ interface VisitRecord {
   name: string;
   addresses: { address: string; step: number; inputs?: StepInput[]; skipped?: number }[];
   stepCount: number;
+  requests?: ForwardedRequest[];
 }
 
 export interface TracedTest {
@@ -371,11 +390,9 @@ export function undiscardCandidate(dir: string, screens: unknown, { author }: { 
 }
 
 const RECORD_KEYS = ['url', 'inputs', 'skipped'];
-const isAddress = (url: unknown) => typeof url === 'string' && url.startsWith('/') && !url.startsWith('//');
 
-// 쓴 파일은 고치지도 지우지도 않는다.
-export function saveVisitRecord(dir: string, steps: unknown, now = new Date()) {
-  if (!Array.isArray(steps) || !steps.length || !steps.every((s) => isPlainObject(s) && isAddress(s.url))) {
+export function checkVisitSteps(steps: unknown): asserts steps is { url: string; inputs?: StepInput[]; skipped?: number }[] {
+  if (!Array.isArray(steps) || !steps.length || !steps.every((s) => isPlainObject(s) && isAppPath(s.url))) {
     throw new Error('steps 는 / 로 시작하는 앱 안 주소를 url 에 담은 단계를 하나 이상 차례대로 담은 목록이어야 합니다');
   }
   for (const [i, step] of steps.entries()) {
@@ -384,12 +401,31 @@ export function saveVisitRecord(dir: string, steps: unknown, now = new Date()) {
     const problem = typedProblem(step, i);
     if (problem) throw new Error(problem);
   }
+}
+
+export function saveVisitRecord(dir: string, steps: unknown, now = new Date(), requests: ForwardedRequest[] = []) {
+  checkVisitSteps(steps);
   writableStoriesFolder(dir);
   const folder = path.join(dir, RECORDS);
   if (fs.existsSync(folder) && !isFolder(folder)) throw new Error(`스토리 폴더 안 ${RECORDS} 가 파일이라 기록을 쓸 수 없습니다`);
   const file = path.join(RECORDS, `${now.toISOString().slice(0, 10)}-${crypto.randomUUID().slice(0, 8)}.json`);
-  writeNewRecord(path.join(dir, file), { steps: steps.map(({ url, inputs, skipped }) => ({ url, ...(inputs?.length && { inputs }), ...(skipped && { skipped }) })) });
+  writeNewRecord(path.join(dir, file), {
+    steps: steps.map(({ url, inputs, skipped }) => ({ url, ...(inputs?.length && { inputs }), ...(skipped && { skipped }) })),
+    ...(requests.length && { requests }),
+  });
   return file;
+}
+
+export function recordedRequests(config: any): SentRequests[] {
+  const { records } = loadVisitRecords(recordSources(config).sources, config.configDir);
+  return records.filter((r) => r.requests).map(({ record, requests }) => ({
+    title: record,
+    file: null,
+    line: null,
+    project: null,
+    requests: requests!.map(({ method, url, body }) => ({ method, url, ...(body !== undefined && { body }) })),
+    pageRequests: requests!.flatMap(({ method, url, shown }) => (shown ? [{ method, url, shown }] : [])),
+  }));
 }
 
 function recordSources(config: any) {

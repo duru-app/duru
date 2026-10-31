@@ -26,6 +26,8 @@ interface CallRoute {
 
 const SCHEME = /^[a-z][a-z\d+.-]*:/i;
 
+export const isAppPath = (url: unknown): url is string => typeof url === 'string' && url.startsWith('/') && !url.startsWith('//');
+
 // 읽지 못하는 주소면 null 이다.
 export function pathOf(url: string) {
   if (!SCHEME.test(url)) return url.split(/[?#]/)[0];

@@ -932,24 +932,18 @@ test('a request-only option can be tagged with @option like any other', () => {
   });
 });
 
-test('sentTraces lists the trace of a failing Playwright test too', () => {
+test('sentTraces reads the trace of a failing Playwright test too, and leaves out a trace it cannot read', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-sent-'));
   try {
-    const trace = path.join(dir, 'trace.zip');
-    fs.writeFileSync(trace, 'zip');
-    const report = reportOf([
-      {
-        title: 'a.spec.ts',
-        specs: [{ title: 'publishes a document', file: 'a.spec.ts', line: 7, tests: [{ status: 'unexpected', results: [{ status: 'failed', attachments: [{ name: 'trace', path: trace, contentType: 'application/zip' }] }] }] }],
-      },
-    ]);
-    fs.writeFileSync(path.join(dir, 'report.json'), report);
+    const trace = path.join(import.meta.dirname, 'fixtures/app/results/playwright-steps/test-results/steps-fills-the-boxes-on-home-chromium/trace.zip');
+    const broken = path.join(dir, 'trace.zip');
+    fs.writeFileSync(broken, 'zip');
+    const failed = (title: string, line: number, at: string) => ({ title, file: 'a.spec.ts', line, tests: [{ status: 'unexpected', results: [{ status: 'failed', attachments: [{ name: 'trace', path: at, contentType: 'application/zip' }] }] }] });
+    fs.writeFileSync(path.join(dir, 'report.json'), reportOf([{ title: 'a.spec.ts', specs: [failed('publishes a document', 7, trace), failed('opens the list', 9, broken)] }]));
     const config = { tests: [{ format: 'playwright', path: dir, depth: 'ui' }] };
     const sent = sentTraces(config);
-    assert.equal(sent.length, 1);
-    assert.equal(sent[0].status, 'fail');
-    assert.equal(sent[0].trace, trace);
-    assert.equal(sent[0].title, 'publishes a document');
+    assert.deepEqual(sent.map((t) => [t.title, t.file, t.line]), [['publishes a document', 'a.spec.ts', 7]]);
+    assert.ok(Array.isArray(sent[0].requests) && Array.isArray(sent[0].pageRequests));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

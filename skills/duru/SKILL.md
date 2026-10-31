@@ -140,11 +140,12 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   `options sent in requests N | calls with them M` line says how many options came at least partly from such a body
   and how many calls carry one of them; a test of one is tagged `@option:<key>=true|false` like any other option.
   A request a page sent in such a trace also ties its call to the screen the page showed then, when the source
-  does not: the call carries `tracedScreens`, and a `calls tied to screens only by traces N | screens they were
-  sent from M` line counts them. Such a tie comes from what a test did, not from the code, so it is no change
-  against the baseline map.
-  A write call a screen reaches that no trace sent carries `unrecorded: true`, and a `write calls on screens no
-  trace sent N | screens with them M` line counts them: an `unrecorded` call with no options may still have some,
+  does not: the call carries `tracedScreens`, and a `calls tied to screens only by traces and visit records N | screens
+  they were sent from M` line counts them. Such a tie comes from what a test did, not from the code, so it is no change
+  against the baseline map. A visit record recorded on the review page keeps the write requests the app sent in
+  `requests`, and they count the same way, with the record file in place of a test's title.
+  A write call a screen reaches that no trace or visit record sent carries `unrecorded: true`, and a `write calls on
+  screens no trace or visit record sent N | screens with them M` line counts them: an `unrecorded` call with no options may still have some,
   so tell the user a browser test that sends it is what fills them in. When `rebuild` also reports
   `browser tests that ran without a trace N` above 0, turning tracing on for those tests (Playwright
   `trace: 'on'`) is the first step.
