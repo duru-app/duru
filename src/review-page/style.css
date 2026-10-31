@@ -1,6 +1,6 @@
   :root {
     --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e2e1dc; --accent: #2f5fd0;
-    --selected: #e8eefc; --pass: #1f7a3d; --fail: #c0392b; --pending: #a86a00;
+    --selected: #e8eefc; --pass: #1f7a3d; --fail: #c0392b; --pending: #a86a00; --limit: #2f7d8c;
     --more: #b3541e; --missing: #c0392b; --fine: #1f7a3d; --changed: #7c3aed; --changed-bg: #f3ecff;
     --written: #0f766e; --written-bg: #e6f4f1;
     --agent: #7c3aed; --agent-bg: #f3ecff;
@@ -9,7 +9,7 @@
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #161615; --panel: #1f1f1d; --text: #e9e8e4; --muted: #9a9993; --line: #34332f; --accent: #7fa2ff;
-      --selected: #26304a; --pass: #5cc185; --fail: #ff7b6b; --pending: #e0b050;
+      --selected: #26304a; --pass: #5cc185; --fail: #ff7b6b; --pending: #e0b050; --limit: #63c6d6;
       --more: #f0935a; --missing: #ff7b6b; --fine: #5cc185; --changed: #b18cff; --changed-bg: #2a2140;
       --written: #4fd1c0; --written-bg: #12302c;
       --agent: #b18cff; --agent-bg: #2a2140;
@@ -74,7 +74,7 @@
   .screens .count { font-size: 12px; color: var(--muted); white-space: nowrap; }
   .screens .count.none { color: var(--fail); }
   .chip { display: inline-block; padding: 0 6px; border-radius: 4px; font-size: 12px; border: 1px solid currentColor; white-space: nowrap; }
-  .chip.pass { color: var(--pass); } .chip.fail { color: var(--fail); } .chip.pending { color: var(--pending); }
+  .chip.pass { color: var(--pass); } .chip.fail { color: var(--fail); } .chip.pending { color: var(--pending); } .chip.limit { color: var(--limit); }
   .chip.partial { color: var(--more); } .chip.untested { color: var(--fail); border-style: dashed; }
   .chip.needs-more { color: var(--more); } .chip.fine { color: var(--fine); }
   .chip.code-changed { color: var(--pending); border-style: dashed; }
@@ -143,10 +143,11 @@
   table.inputs button { padding: 2px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
   table.inputs button:disabled { cursor: default; opacity: .6; }
   .chip.config { color: var(--accent); }
-  .ok { color: var(--pass); } .ng { color: var(--fail); } .wait { color: var(--pending); }
+  .ok { color: var(--pass); } .ng { color: var(--fail); } .wait { color: var(--pending); } .lim { color: var(--limit); }
   .chip.dead, .chip.v-none { color: var(--fail); } .chip.v-method-mismatch { color: var(--more); } .chip.v-match { color: var(--pass); } .chip.v-unresolved, .chip.v-unchecked { color: var(--muted); }
   .test { margin-bottom: 6px; }
   .test .detail { color: var(--muted); font-size: 12px; margin-left: 4px; }
+  .test .detail a { white-space: nowrap; }
   .test .test-tag { display: inline-block; margin-left: 4px; padding: 0 4px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
   .importers p, .detached p, .passed p { font-size: 12px; margin: 0 0 8px; }
   .chip.level-assert { color: var(--pass); } .chip.level-interact, .chip.level-call { color: var(--accent); } .chip.level-visit { color: var(--muted); }
@@ -549,6 +550,7 @@
   :is(.box.s-pass .sq, .sq.s-pass) { background: var(--pass); }
   :is(.box.s-fail .sq, .sq.s-fail) { background: var(--fail); }
   :is(.box.s-pending .sq, .sq.s-pending) { background: var(--pending); }
+  :is(.box.s-limit .sq, .sq.s-limit) { background: var(--limit); }
   :is(.box.s-none .sq, .sq.s-none) { border: 1.5px dashed var(--muted); }
   .flowbar { grid-column: 1 / -1; position: relative; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; --bar-pad: 8px; padding: 10px 16px var(--bar-pad); background: var(--bg); border-bottom: 1px solid var(--line); }
   .flowbar button { padding: 3px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }

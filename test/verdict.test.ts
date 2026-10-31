@@ -122,6 +122,22 @@ test('tags lose their @ and every tag after the colon is returned, including dep
   });
 });
 
+test('a WITHIN_LIMIT line reads as its own status only when the detail names where the limit was decided', () => {
+  const body = [
+    'VERDICT a: WITHIN_LIMIT — https://github.com/x/y/pull/12 @screen:/home#Home',
+    'VERDICT b: WITHIN_LIMIT — decided in #489',
+    'VERDICT c: WITHIN_LIMIT — docs/decisions.md',
+    'VERDICT d: WITHIN_LIMIT — 처음 틀린 시도가 동시에 오면 덜 센다',
+    'VERDICT e: WITHIN_LIMIT',
+  ].join('\n');
+  withLog(`${body}\n`, (file: string) => {
+    const vs = readVerdicts(file);
+    assert.deepEqual(vs.map((v) => v.status), ['limit', 'limit', 'limit', 'pending', 'pending']);
+    assert.equal(vs[3].detail, '출처 없음 — 처음 틀린 시도가 동시에 오면 덜 센다');
+    assert.equal(vs[4].detail, '출처 없음');
+  });
+});
+
 test('a log without verdict lines gives no tests, and a line with no colon is a pending verdict', () => {
   withLog('build ok\r\nVERDICTS follow\r\n', (file: string) => assert.deepEqual(readVerdicts(file), []));
   withLog('VERDICT half written\n', (file: string) => {
@@ -136,4 +152,22 @@ test('extra spaces around the name are not part of the title', () => {
 test('a log that cannot be read names the file', () => {
   const file = path.join(os.tmpdir(), 'duru-missing', 'checks.log');
   assert.throws(() => readVerdicts(file), (err: Error) => err.message.includes(file));
+});
+
+test('a WITHIN_LIMIT line linked to a screen keeps status limit and its detail, and one without a source is pending on that screen', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'checks.log'), [
+      'VERDICT lock count: WITHIN_LIMIT — about 9 per run, PR #7321 @screen:/document/:id#DocumentDetail',
+      'VERDICT lock order: WITHIN_LIMIT — the first wrong attempt counts less @screen:/document/:id#DocumentDetail',
+    ].join('\n') + '\n');
+    const tests = [{ format: 'verdict', path: dir, depth: 'api' }];
+    const linked = linkTests({ ...config, configDir: dir, tests }, map).nodes['/document/:id#DocumentDetail'];
+    assert.deepEqual(linked.map((t: { title: string; status: string; detail?: string }) => [t.title, t.status, t.detail]), [
+      ['lock count', 'limit', 'about 9 per run, PR #7321'],
+      ['lock order', 'pending', '출처 없음 — the first wrong attempt counts less'],
+    ]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

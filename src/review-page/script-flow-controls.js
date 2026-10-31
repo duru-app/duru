@@ -58,7 +58,7 @@ function legendInfo(key, label, items) {
   return info;
 }
 
-const KEY_STATUS = [...['pass', 'fail', 'pending'].map((s) => [`s-${s}`, TEST_STATUS[s]]), ['s-none', NO_TESTS]];
+const KEY_STATUS = [...['pass', 'limit', 'pending', 'fail'].map((s) => [`s-${s}`, TEST_STATUS[s]]), ['s-none', NO_TESTS]];
 
 function flowKey() {
   return h('ul', { class: 'flowkey', 'aria-label': '흐름도 범례' },
@@ -86,6 +86,7 @@ const FLOW_FILTERS = [
   { key: 'none', label: NO_TESTS, keep: (n) => statusOf(n.counts) === 's-none' },
   { key: 'imported', label: '태그 없는 테스트만', title: '태그 붙은 테스트는 없고, 이 화면을 불러오는 단위 테스트나 도는 동안 이 화면을 연 브라우저 테스트만 있는 화면', keep: (n) => statusOf(n.counts) === 's-none' && n.imported + n.passed > 0 },
   { key: 'fail', label: TEST_STATUS.fail, keep: (n) => n.counts.fail > 0 },
+  { key: 'limit', label: TEST_STATUS.limit, keep: (n) => statusOf(n.counts) === 's-limit' },
   { key: 'pending', label: TEST_STATUS.pending, keep: (n) => statusOf(n.counts) === 's-pending' },
   { key: 'pass', label: TEST_STATUS.pass, keep: (n) => statusOf(n.counts) === 's-pass' },
 ];

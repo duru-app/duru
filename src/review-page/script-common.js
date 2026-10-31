@@ -1,6 +1,6 @@
 /** @typedef {import('../review.ts').PageData} PageData */
 const DEPTH_LABELS = { ui: 'UI/E2E', api: 'API', render: '렌더링만', code: '코드', data: '데이터', output: '산출물' };
-const TEST_STATUS = { pass: '통과', fail: '실패', pending: '보류' };
+const TEST_STATUS = { pass: '통과', fail: '실패', pending: '보류', limit: '한계' };
 const MARK_STATUS = { 'needs-more': '테스트 필요', fine: '충분' };
 const CASE_STATUS = { needed: '필요', 'not-needed': '필요 없음' };
 const SERVER_STATUS = { match: '서버에 있음', 'method-mismatch': '메서드 불일치', none: '서버에 없음', unresolved: '판정 불가', unchecked: '대조 안 함' };
@@ -44,6 +44,7 @@ const STORY_STATUS = {
   'part-pass': { label: '일부 단계만 통과', title: '스토리 테스트는 모두 통과했지만, 어느 테스트도 스토리의 화면을 처음부터 끝까지 차례로 지나가지 않았습니다' },
   fail: { label: '실패', title: '실패한 스토리 테스트가 있습니다' },
   pending: { label: '보류', title: '실패한 스토리 테스트는 없고 보류한 것이 있습니다' },
+  limit: { label: '한계', title: '실패한 스토리 테스트는 없고, 정해 둔 한계 안에 든 스토리 테스트가 있습니다' },
   partial: { label: '일부 화면만 테스트', title: '스토리 테스트는 없고, 경로의 화면 가운데 테스트가 붙은 화면이 있습니다' },
   untested: { label: '테스트 없음', title: '스토리 테스트도, 경로의 화면에 붙은 테스트도 없습니다' },
 };

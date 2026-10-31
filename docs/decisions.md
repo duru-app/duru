@@ -5193,6 +5193,26 @@ Compared:
 - Growing `values` and skipping `requests`: the page and the task list would still have to join `tests.json` to name
   the tests that sent the values.
 
+**A limit the app already accepts is its own verdict, `WITHIN_LIMIT`, with status `limit` ranked after pass and before pending.**
+Driver's decision in #489 (2026-10-31). A check script can say that a test holds only inside a limit the app decided to
+live with, as when a first wrong attempt counts less while attempts run together; that is neither a pass nor a failure,
+and folding it into either hides it exactly where a person looks first. `limit` takes rank 1 between `pass` 0 and
+`pending` 2, so the one rank behind `worst` settles every fold at once: a test that passes in one project and is within
+a limit in another reads as `limit`, while one skipped in a project and within a limit in another reads as `pending`.
+A screen fails only when one of its tests fails, so a within-limit screen counts as a screen with tests and stays out of
+the screens to look at, and its call carries the limit too. A story reads the same order, `fail`, then `pending`, then
+`limit`, then `pass`, with 「한계」 as its word everywhere a status is shown.
+The source of a limit is read from the line's detail rather than kept as a new kind of mark: the text after `— ` must
+carry an `http(s)` link, a `#<number>` or a `.md` decision document, and a `WITHIN_LIMIT` line that carries none reads
+as pending with its detail starting `출처 없음 — `. Compared: a `(source: …)` marker in the detail, which rejects every
+line already written; and a `@source:` tag, which the tag reader takes out of what a person reads, so the reviewer
+would no longer see where the limit came from.
+A test that passed in the baseline and is within a limit now is compared but is not a regression: the limit was decided
+before the run, so nothing got worse, and the regression buckets, their chips and the summary line keep their two
+words. Compared: a third `pass→limit` word, which puts "got worse" and "already decided" under one 「회귀」 chip.
+Playwright, JUnit and Vitest reports keep their own statuses until #501: the word comes from a check script writing the
+line, and a runner's own report has no marker for a limit the app accepts.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

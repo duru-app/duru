@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export type TestStatus = 'pass' | 'fail' | 'pending';
+export type TestStatus = 'pass' | 'limit' | 'pending' | 'fail';
 
-export const STATUS_RANK: Record<string, number> = { pass: 0, pending: 1, fail: 2 };
+export const STATUS_RANK: Record<string, number> = { pass: 0, limit: 1, pending: 2, fail: 3 };
 
 export function withProjectRun<S extends string>(projects: Record<string, S> | undefined, project: string, status: S) {
   const kept = projects?.[project];
@@ -25,6 +25,7 @@ const STATUS: Record<string, TestStatus> = {
   UPHOLDS: 'pass',
   FIXED: 'pass',
   HEALTHY: 'pass',
+  WITHIN_LIMIT: 'limit',
   REPRODUCES: 'fail',
   VIOLATE: 'fail',
   VIOLATES: 'fail',
@@ -38,6 +39,7 @@ const STATUS: Record<string, TestStatus> = {
 const PREFIX = 'VERDICT ';
 const isTag = (token: string) => /^@\S/.test(token);
 export const withoutTags = (text: string) => text.split(/\s+/).filter((t) => t && !isTag(t)).join(' ');
+const namesSource = (detail: string) => /https?:\/\/|#\d+|\.md\b/.test(detail);
 export const titleWithoutTags = (title: string) => title.split(' › ').map(withoutTags).filter(Boolean).join(' › ') || title;
 
 // 판정 줄: `VERDICT <이름>: <판정> — <설명> @screen:<id>`
@@ -61,14 +63,15 @@ export function readVerdicts(file: string): VerdictResult[] {
     const status = Object.hasOwn(STATUS, tokens[0] ?? '') ? STATUS[tokens[0]] : undefined;
     const dash = body.indexOf('— ');
     const detail = withoutTags(status ? (dash === -1 ? '' : body.slice(dash + 2)) : body);
+    const noSource = status === 'limit' && !namesSource(detail);
     out.push({
       title,
       file: path.basename(file),
       line: i + 1,
       project: null,
       tags: tokens.filter(isTag).map((t) => t.slice(1)),
-      status: status ?? 'pending',
-      ...(detail && { detail }),
+      status: status === undefined || noSource ? 'pending' : status,
+      ...(noSource ? { detail: detail ? `출처 없음 — ${detail}` : '출처 없음' } : detail && { detail }),
     });
   });
   return out;

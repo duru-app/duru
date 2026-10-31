@@ -50,6 +50,11 @@ test('fail→pass, pending→fail, fail→pending and fail→fail are compared b
   assert.deepEqual(lines(base, { nodes: { '/a#A': pairs.map(([, after], i) => ({ title: `t${i}`, line: i, status: after })) } }), [summary(4, 0, 0, 0, 0, 0)]);
 });
 
+test('a test that passed in the baseline and is within a limit now is compared but is not a regression', () => {
+  const base = was({ title: 'waits on a', line: 5, project: 'chromium', status: 'pass' });
+  assert.deepEqual(lines(base, { nodes: { '/a#A': [{ title: 'waits on a @screen:/a#A', line: 5, project: 'chromium', status: 'limit' }] } }), [summary(1, 0, 0, 0, 0, 0)]);
+});
+
 test('a baseline test no current test matches is only in baseline, and a test under a screen now that no baseline test matches is only now, and neither is a regression', () => {
   const base = was({ title: 'kept', status: 'pass' }, { title: 'gone', status: 'pass' });
   assert.deepEqual(lines(base, { nodes: { '/a#A': [{ title: 'kept', status: 'pass' }, { title: 'new', status: 'fail' }] } }), [summary(1, 0, 0, 0, 1, 1)]);
@@ -276,9 +281,9 @@ test('runs made one test in the baseline take the worst status of the runs that 
 });
 
 const junitReport = (...statuses: TestStatus[]) =>
-  `<testsuites>${statuses.map((s) => `<testsuite name="login.spec.ts"><testcase classname="login.spec.ts" name="login › signs in @screen:/a#A">${{ pass: '', pending: '<skipped/>', fail: '<failure/>' }[s]}</testcase></testsuite>`).join('')}</testsuites>`;
+  `<testsuites>${statuses.map((s) => `<testsuite name="login.spec.ts"><testcase classname="login.spec.ts" name="login › signs in @screen:/a#A">${({ pass: '', pending: '<skipped/>', fail: '<failure/>' } as Record<string, string>)[s]}</testcase></testsuite>`).join('')}</testsuites>`;
 const repeatedInChromium = (title: string, ...statuses: TestStatus[]) => ({
-  suites: [{ title: 'login.spec.ts', specs: [{ title, file: 'login.spec.ts', line: 3, tests: statuses.map((s) => ({ projectName: 'chromium', status: { pass: 'expected', pending: 'skipped', fail: 'unexpected' }[s] })) }] }],
+  suites: [{ title: 'login.spec.ts', specs: [{ title, file: 'login.spec.ts', line: 3, tests: statuses.map((s) => ({ projectName: 'chromium', status: ({ pass: 'expected', pending: 'skipped', fail: 'unexpected' } as Record<string, string>)[s] })) }] }],
 });
 
 type ReadRow = { title: string; file: string | null; line: number | null; project: string | null; tags: string[]; status: TestStatus; source: string; format: string };
@@ -880,4 +885,10 @@ test('a fine on the whole screen after the comment stops it, a fine on one depth
   assert.deepEqual([...fines], [['/a#A', '2026-10-10T00:00:00.000Z']]);
   assert.equal(passedInFolder(comparison, fines, onRow('/a#A', 'opens a'), '2026-10-09T00:00:00.000Z'), null);
   assert.equal(passedInFolder(comparison, fines, onRow('/a#A', 'opens a'), '2026-10-11T00:00:00.000Z'), 'releases/1.5.0');
+});
+
+test('a comment on a row that is within a limit now gives no baseline folder, while the same test failing under another screen gives it there', () => {
+  const comparison = compareTests(was({ title: 'lock', status: 'pass' }), now({ nodes: { '/a#A': [{ title: 'lock @screen:/a#A', status: 'limit' }], '/b#B': [{ title: 'lock @screen:/b#B', line: 2, status: 'fail' }] } }), MAP);
+  assert.equal(passedInFolder(comparison, NO_FINE, onRow('/a#A', 'lock'), AFTER), null);
+  assert.equal(passedInFolder(comparison, NO_FINE, onRow('/b#B', 'lock'), AFTER), 'releases/1.5.0');
 });
