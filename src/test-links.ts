@@ -61,8 +61,9 @@ function withLimit(t: any, format: string) {
     return m ? [m[1] ?? ''] : [];
   }))];
   if (!sources.length) return t;
-  const written = sources.filter(Boolean).join(' ');
-  if (sources.every(namesSource)) return { ...t, status: 'limit', detail: written };
+  const unnamed = sources.filter((s) => !namesSource(s));
+  if (!unnamed.length) return { ...t, status: 'limit', detail: sources.join(' ') };
+  const written = unnamed.filter(Boolean).join(' ');
   return { ...t, status: 'pending', detail: written ? `출처 없음 — ${written}` : '출처 없음' };
 }
 
