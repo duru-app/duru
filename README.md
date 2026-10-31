@@ -762,6 +762,14 @@ A test of a call that sets on/off options of its request body declares each with
 is declared with the same tag, and only through that tag does such a test pass or fail. A test that walks a whole
 story declares it with `@story:<story ID>`; it may carry node tags too and then counts for each.
 
+A Playwright, JUnit or Vitest test that holds only inside a limit the app decided to accept carries
+`@limit:<source>`, the source naming where the limit was decided as on a `WITHIN_LIMIT` verdict line: a `http(s)`
+link, `#<number>` or a `.md` decision document (`@limit:#546`). The test reads as `limit` when it passes, with the
+source as its detail, and as `fail` when it fails. A passing test with a `@limit` tag that names no such source
+reads as pending, with the detail `출처 없음 — ` and what its `@limit` tags wrote that names no source, joined with a
+space (`출처 없음` when they wrote nothing, as a bare `@limit`); a source another of its tags names is left out. A tag holds no space, so it carries the source alone. For JUnit the display name must reach the
+report: Gradle writes it as it is, and Maven Surefire writes it with `usePhrasedTestCaseMethodName=true`.
+
 A test of a screen that opens only under a role or a setting declares the case it checks next to its `@screen:`
 tag. Each role that opens the screen is a case, `@role:<role>` with the role as the map writes it (`@role:ADMIN`,
 `@role:member:ADMINISTRATOR`). `@role:other` is the case where a role that does not open the screen is kept out;
@@ -1562,8 +1570,8 @@ in the task list; for a condition or a link,
 link starts on, and for a condition the `guard` as written, `via` when it sits in a function the link calls,
 `roleGuardsKey` when `roleGuards` gave its roles, or `inherited` for a link that passes on the condition of the screen
 it starts on; or `null` when the part is no longer found. A failure message is not copied in; it is read from the
-result file named in `source`. A test's own `status` may be `limit`, and its `detail` starts with `출처 없음 — ` when
-a `WITHIN_LIMIT` line names no source for the limit. A comment or reply on a `candidate` carries `"where": {"name","source","screens"}`:
+result file named in `source`. A test's own `status` may be `limit`, and its `detail` starts with `출처 없음` when
+a `WITHIN_LIMIT` line or a `@limit` tag names no source for the limit. A comment or reply on a `candidate` carries `"where": {"name","source","screens"}`:
 `screens` is the screen order, and `source` is `{"record","steps"}`, the visit record and its first and last step,
 with `stepRanges` giving the steps behind each screen, or `{"report","tests"}`, the result file and the titles of the
 tests that passed through that order. It is `null` once the candidate is no longer listed. A comment or reply on a

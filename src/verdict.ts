@@ -39,7 +39,7 @@ const STATUS: Record<string, TestStatus> = {
 const PREFIX = 'VERDICT ';
 const isTag = (token: string) => /^@\S/.test(token);
 export const withoutTags = (text: string) => text.split(/\s+/).filter((t) => t && !isTag(t)).join(' ');
-const namesSource = (detail: string) => /https?:\/\/|#\d+|\.md\b/.test(detail);
+export const namesSource = (detail: string) => /https?:\/\/|#\d+|\.md\b/.test(detail);
 export const titleWithoutTags = (title: string) => title.split(' › ').map(withoutTags).filter(Boolean).join(' › ') || title;
 
 // 판정 줄: `VERDICT <이름>: <판정> — <설명> @screen:<id>`

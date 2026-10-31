@@ -398,6 +398,44 @@ test('call IDs with colons, slashes and braces attach from every result format',
   }, ['playwright', 'vitest', 'junit', 'verdict']);
 });
 
+test('a passing test tagged @limit:<source> is within a limit in every runner format, with the source as its detail; a failing one stays failed, one with no source is pending, and a verdict line keeps its own word', () => {
+  const cases = [
+    ['a @limit:#546', true],
+    ['b @limit:https://github.com/x/y/pull/12', true],
+    ['c @limit:docs/decisions.md', true],
+    ['d @limit:#546', false],
+    ['e @limit', true],
+    ['f @limit:later', true],
+    ['h @limit:#546 @limit:later', true],
+    ['i @limit @limit:#546', true],
+  ] as const;
+  const title = (name: string) => `${name} @screen:/help#Help`;
+  const files = {
+    'e2e.json': reportOf([{ title: 'a.spec.ts', specs: cases.map(([name, passed], i) => ({ title: title(name), file: 'a.spec.ts', line: i + 1, tests: [{ status: passed ? 'expected' : 'unexpected' }] })) }]),
+    'unit.json': vitestReportOf(cases.map(([name, passed]) => ({ ancestorTitles: [], title: title(name), status: passed ? 'passed' : 'failed', tags: [] }))),
+    'TEST-c.xml': `<testsuite name="S">${cases.map(([name, passed]) => `<testcase name="${title(name)}" classname="c">${passed ? '' : '<failure/>'}</testcase>`).join('')}</testsuite>`,
+    'checks.log': 'VERDICT g: UPHOLDS — ok @screen:/help#Help @limit:#546\n',
+  };
+  withResults(files, (own) => {
+    const result = linkTests(own, { screens: [{ id: '/help#Help' }] });
+    const read = (format: string) => result.nodes['/help#Help'].filter((t) => t.format === format).map((t) => [t.title.split(' › ').at(-1).split(' ')[0], t.status, t.detail ?? null]);
+    const expected = [
+      ['a', 'limit', '#546'],
+      ['b', 'limit', 'https://github.com/x/y/pull/12'],
+      ['c', 'limit', 'docs/decisions.md'],
+      ['d', 'fail', null],
+      ['e', 'pending', '출처 없음'],
+      ['f', 'pending', '출처 없음 — later'],
+      ['h', 'pending', '출처 없음 — later'],
+      ['i', 'pending', '출처 없음'],
+    ];
+    for (const format of ['playwright', 'vitest', 'junit']) assert.deepEqual(read(format), expected, format);
+    assert.deepEqual(read('verdict'), [['g', 'pass', 'ok']]);
+    assert.equal(result.untracedCount, cases.length);
+    assert.deepEqual(result.unknownTags, []);
+  }, ['playwright', 'vitest', 'junit', 'verdict']);
+});
+
 test('a test whose only tag is a depth tag counts as untagged', () => {
   withResults({ 'unit.json': vitestReportOf([{ ancestorTitles: [], title: 'formats a date @depth:api', status: 'passed', tags: [] }]) }, (own) => {
     const result = linkTests(own, { screens: [] });

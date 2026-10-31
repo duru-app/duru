@@ -4,7 +4,7 @@ import { git } from './code-state.ts';
 import { compare } from './config.ts';
 import { testRef } from './judgments.ts';
 import type { TestRef } from './judgments.ts';
-import { NODE_TAG, READERS, resultFiles } from './test-links.ts';
+import { NODE_TAG, READERS, readResults, resultFiles } from './test-links.ts';
 import { STATUS_RANK, titleWithoutTags } from './verdict.ts';
 import type { TestStatus } from './verdict.ts';
 
@@ -83,7 +83,7 @@ export function readBaselineTests(config: { configDir: string; baselineTests: So
       const result = fromConfig(config.configDir, file);
       let read;
       try {
-        read = READERS[source.format].read(file) ?? [];
+        read = readResults(source.format, file) ?? [];
       } catch (err) {
         throw fail((err as Error).message);
       }

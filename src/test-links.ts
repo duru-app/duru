@@ -11,7 +11,7 @@ import { copyShots } from './playwright-trace.ts';
 import type { SentTrace } from './request-options.ts';
 import { traceLinker } from './trace-links.ts';
 import type { Walks } from './trace-links.ts';
-import { STATUS_RANK, readVerdicts, withProjectRun } from './verdict.ts';
+import { STATUS_RANK, namesSource, readVerdicts, withProjectRun } from './verdict.ts';
 import type { TestStatus } from './verdict.ts';
 import { readVitest } from './vitest.ts';
 
@@ -49,9 +49,27 @@ const OPTION_TAG = /^option:(.*)$/;
 const OPTION_VALUE = /^([^=]+)=(true|false)$/;
 const ACCESS_CASE_TAG = /^(role|setting):/;
 const KIND_TAG = /^case:([^=]*)(?:=(.*))?$/;
+const LIMIT_TAG = /^limit(?::(.*))?$/;
 const byKey = (a: { key: string }, b: { key: string }) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
 const shownFile = (t: { testFile?: string; file?: string | null }) => t.testFile ?? t.file ?? '';
 const byTest = (a: UntaggedTest, b: UntaggedTest) => compare(shownFile(a), shownFile(b)) || (a.line ?? 0) - (b.line ?? 0) || compare(a.title, b.title) || compare(a.source, b.source);
+
+function withLimit(t: any, format: string) {
+  if (format === 'verdict' || t.status !== 'pass') return t;
+  const sources = [...new Set<string>(t.tags.flatMap((tag: string) => {
+    const m = tag.match(LIMIT_TAG);
+    return m ? [m[1] ?? ''] : [];
+  }))];
+  if (!sources.length) return t;
+  const unnamed = sources.filter((s) => !namesSource(s));
+  if (!unnamed.length) return { ...t, status: 'limit', detail: sources.join(' ') };
+  const written = unnamed.filter(Boolean).join(' ');
+  return { ...t, status: 'pending', detail: written ? `출처 없음 — ${written}` : '출처 없음' };
+}
+
+export function readResults(format: string, file: string) {
+  return READERS[format].read(file)?.map((t) => withLimit(t, format)) ?? null;
+}
 
 export function resultFiles(p: string, extensions: string[]) {
   if (!fs.statSync(p).isDirectory()) return [p];
@@ -127,7 +145,8 @@ export function linkTests(config: any, map: any) {
       const tests = READERS[source.format].read(file);
       if (!tests) continue;
       const resultPath = path.relative(config.configDir, file);
-      for (const t of tests) {
+      for (const run of tests) {
+        const t = withLimit(run, source.format);
         const testKey = `${resultPath} ${t.file}:${t.line} ${t.title}`;
         let depth = source.depth;
         for (const tag of t.tags) {
@@ -163,7 +182,7 @@ export function linkTests(config: any, map: any) {
           }
         }
         const trace = t.trace ? linkByTrace(t.trace) : null;
-        const passedOrder = trace && !trace.reason && t.status === 'pass' && t.traceRunPassed ? trace.order! : null;
+        const passedOrder = trace && !trace.reason && (t.status === 'pass' || t.status === 'limit') && t.traceRunPassed ? trace.order! : null;
         const stepsKey = trace?.walk && JSON.stringify([resultPath.split(path.sep).join('/'), t.file, t.line, t.title]);
         if (stepsKey) {
           (walks[stepsKey] ??= {})[t.project ?? ''] = trace!.walk!;
@@ -181,7 +200,7 @@ export function linkTests(config: any, map: any) {
           for (const id of trace.calls ?? []) {
             if (!t.tags.includes(`call:${id}`)) (passed[id] ??= []).push({ ...traced, level: 'call' });
           }
-        } else if (source.format === 'playwright' && t.status !== 'pending') {
+        } else if (source.format === 'playwright' && run.status !== 'pending') {
           untracedCount += 1;
         }
         if (nodeTags.length === 0 && storyTags.length === 0) {
