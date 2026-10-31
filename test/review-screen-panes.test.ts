@@ -585,12 +585,12 @@ test('in a browser, the chosen screen shows its calls with the server match, wit
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/document/:tab")');
-        assert.deepEqual(await p.locator('table.calls td.call .chip').allTextContents(), ['판정 불가', '서버에 없음']);
+        assert.deepEqual(await p.locator('table.calls td.call .chip').allTextContents(), ['판정 불가', '서버에 없음', '기록 없음']);
         assert.equal(await p.locator('table.calls tr:has-text("판정 불가") td.cell').count(), 0);
         assert.equal(await p.locator('table.calls tr:has-text("판정 불가") .unresolved-reason').innerText(), '보내는 곳에 주소가 적혀 있지 않음');
 
         await p.click('#screen-list li:has-text("/document/:id")');
-        assert.deepEqual(await p.locator('table.calls td.call .chip').allTextContents(), ['서버에 있음 (core)', '메서드 불일치']);
+        assert.deepEqual(await p.locator('table.calls td.call .chip').allTextContents(), ['서버에 있음 (core)', '메서드 불일치', '기록 없음']);
         const rename = p.locator('table.calls tr', { hasText: 'PUT:/api/v1/document/{documentId}/name' });
         await rename.locator('td.cell').first().click();
         assert.match((await p.textContent('#right .mark-form .tags .tag-label'))!, /호출 전체/);
@@ -698,6 +698,54 @@ test('in a browser, a request-only option keeps its row, carries the 보낸 요�
         assert.equal(await rows.locator('.chip').first().getAttribute('title'), '테스트가 보낸 요청의 본문에서 읽은 옵션');
         await rows.locator('td.cell').first().click();
         assert.match(await p.locator('#center .call-info .option-sites').innerText(), /보낸 요청에서 읽음\s+sends the weekly report on Monday$/);
+      }),
+    );
+  });
+});
+
+test('in a browser, a write call no trace sent carries the 기록 없음 chip, and the heading of the calls counts them', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    editJson(path.join(config.outDir, 'map.json'), (map) => {
+      for (const c of map.calls) delete c.unrecorded;
+      map.calls.find((c: { id: string }) => c.id === 'POST:/api/v1/report/export').unrecorded = true;
+      map.calls.find((c: { id: string }) => c.id === 'POST:/api/v1/report/schedule').unrecorded = true;
+    });
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/admin/report")');
+        const rowOf = (id: string) => p.locator('#center-body > table.calls tr').filter({ has: p.locator('button.call-name', { hasText: id }) });
+        const rowChip = rowOf('POST:/api/v1/report/export').locator('.chip.unrecorded');
+        assert.equal(await rowChip.textContent(), '기록 없음');
+        assert.match((await rowChip.getAttribute('title'))!, /어느 테스트 기록에도 이 쓰기 요청이 없습니다/);
+        assert.equal(await rowChip.getAttribute('aria-label'), '어느 테스트 기록에도 이 쓰기 요청이 없습니다. 테스트가 이 요청을 보내면 옵션이 더 나올 수 있습니다');
+        assert.equal(await rowOf('POST:/api/v1/report/archive').locator('.chip.unrecorded').count(), 0);
+        const head = p.locator('#center-body h2', { hasText: 'API 호출' }).locator('.chip.unrecorded');
+        assert.equal(await head.textContent(), '기록 없음 2');
+        assert.equal(await head.getAttribute('aria-label'), '어느 테스트 기록에도 나오지 않은 쓰기 요청 2');
+      }),
+    );
+  });
+});
+
+test('in a browser, a write call of the layout around a screen no trace sent makes a 기록 없음 chip under 「공통」, and the heading counts only the screen\'s own ones', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    editJson(path.join(config.outDir, 'map.json'), (map) => {
+      for (const c of map.calls) delete c.unrecorded;
+      for (const id of ['POST:/api/v1/report/export', 'POST:/api/v1/report/archive', 'POST:/api/v1/report/schedule']) map.calls.find((c: { id: string }) => c.id === id).unrecorded = true;
+      const report = map.screens.find((s: { id: string }) => s.id === '/admin/report#AdminReport');
+      for (const c of report.apiCalls.filter((c: { endpoints: { callId: string }[] }) => ['POST:/api/v1/report/archive', 'POST:/api/v1/report/schedule'].includes(c.endpoints[0]?.callId))) c.layout = true;
+    });
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/admin/report")');
+        const common = p.locator('#center-body details.common-calls');
+        assert.equal(await common.locator('> summary .chip.unrecorded').textContent(), '기록 없음 2');
+        assert.equal(await common.locator('> summary').getAttribute('aria-label'), '앱 시작과 레이아웃이 보내는 요청 2 어느 테스트 기록에도 나오지 않은 쓰기 요청 2');
+        const head = p.locator('#center-body h2', { hasText: 'API 호출' }).locator('.chip.unrecorded');
+        assert.equal(await head.textContent(), '기록 없음 1');
+        assert.equal(await head.getAttribute('aria-label'), '어느 테스트 기록에도 나오지 않은 쓰기 요청 1');
       }),
     );
   });

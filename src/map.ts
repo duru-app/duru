@@ -101,6 +101,7 @@ export interface MapCall {
   apiFunctions: string[];
   screens: string[];
   options: { key: string; values: boolean[]; sources: string[]; sites: OptionSite[]; requests?: { test: string; file: string | null; line: number | null; project: string | null; values: boolean[] }[] }[];
+  unrecorded?: true;
   codeHash?: string;
 }
 
