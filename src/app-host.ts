@@ -581,7 +581,7 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
     }
   }
 
-  // 앱 서버가 답한 요청만 둔다. 돌려준 함수로 답이 왔는지 알린다.
+  // 돌려준 함수로 앱 서버의 답이 왔는지 알린다.
   function keepWrite(req: http.IncomingMessage, port: number) {
     const n = sentCount++;
     const kept = keptOn(port);
@@ -769,7 +769,7 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
     get sentCount() {
       return sentCount;
     },
-    // from 은 기록을 시작할 때 받은 sentCount 다. 아직 답을 기다리는 요청은 잠시 기다린다.
+    // from 은 기록을 시작할 때 받은 sentCount 다.
     async sentSince(url: string, from: number): Promise<ForwardedRequest[]> {
       const kept = keptOn(Number(new URL(url).port));
       await Promise.race([Promise.all(kept.pending), new Promise((resolve) => setTimeout(resolve, PENDING_WAIT_MS).unref())]);
