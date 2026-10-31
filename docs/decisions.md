@@ -5246,6 +5246,16 @@ one of two components), the 1127 links to those addresses reach them, and the `1
 screen` line is gone. `RouteTab` is drawn by eleven more pages whose tabs are routes already, which is why a tab whose
 address a route gives makes no screen, and why what follows `?` in a tab address is dropped.
 
+**The gathered entry screens sit under a thin line with no words; the heading 「진입 화면 N」 stays only on a map
+where a screen is folded under 「+N」.**
+Driver's choice (2026-10-31), from four crops of the same flow drawn side by side: the long heading 「딸린 화면이 없는
+진입 화면 N」, 「진입 화면 N」, a thin line, and nothing at all. The screens above the line are entry screens too, so no
+short heading names what sets the gathered ones apart, and the long one read as a sentence where the page names
+things with one or two words. The line keeps the reason in its hover and the count in its `aria-label`. It spans the
+drawing and counts as empty drawing, so a click on it lets the picked screen go, as a click beside the old heading did.
+Compared: 「진입 화면 N」, short but just as true of the screens above it; and no separation, which leaves a blank row
+with nothing saying why the screens below it were moved there.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

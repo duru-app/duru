@@ -1041,15 +1041,15 @@ link under a setting or role condition, and a green dotted line is a move writte
 hovering the screen it leads to. The flow follows a move as it follows a link: a screen not yet drawn goes under the
 screen the move leaves, and one already drawn in another branch stays where it is. The links a menu named in
 `routeTables` gives for each table item are left out of the flow. Entry screens with no screen
-drawn under them are gathered below the rest under
-「딸린 화면이 없는 진입 화면 N」, whose hover says why they are there. On a map of more than 100 screens, the gathered
+drawn under them are gathered below the rest, under a thin line whose hover says why they are there.
+On a map of more than 100 screens, the gathered
 screens that share the start of their address are folded into one box per group (a group of more than 20 is split
 again by the next part of the address): the box shows the shared start, the number of screens and, with the squares
 of the status buttons, how many pass, are within a limit, are pending, fail or have no tagged test. Pressing the box opens the group in
 its place across a whole row; pressing the group's name above the row folds it again. On such a map, every entry
 screen with screens under it is drawn folded among the gathered screens, with 「+N」 at its right end for the N
 screens under it and, with the same squares, how many of them pass, are within a limit, are pending, fail or have no tagged test; the
-heading then reads 「진입 화면 N」, counting the screens in folded groups and the opened ones too. 「+N」 draws that entry screen above the gathered
+line gives way to the heading 「진입 화면 N」 whenever a screen is folded under 「+N」, counting the screens in folded groups and the opened ones too. 「+N」 draws that entry screen above the gathered
 screens with its tree, where a screen with more than six screens under it is folded the same way; 「−」 folds it
 again, and pressing the box still picks the screen. A tree that no entry screen reaches is folded at its first
 screen in the same way, in its place.

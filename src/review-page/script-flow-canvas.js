@@ -140,7 +140,10 @@ function canvas(trees, { group = false, story = null } = {}) {
       out.marks?.forEach(({ x, y }, i) => Object.assign(path.marks[i].el.style, { left: `${x}px`, top: `${y}px`, visibility: '' }));
       if (out.group) {
         const { x, y, height, count } = out.group;
-        el.append(h('h2', { class: 'group-head', style: `left:${x}px;top:${y}px;height:${height}px`, title: foldable.size ? FOLDED_HEAD_TIP : GROUP_HEAD_TIP }, `${foldable.size ? '진입 화면' : '딸린 화면이 없는 진입 화면'} ${count}`));
+        const place = `left:${x}px;top:${y}px;height:${height}px`;
+        el.append(foldable.size
+          ? h('h2', { class: 'group-head', style: place, title: FOLDED_HEAD_TIP }, `진입 화면 ${count}`)
+          : h('div', { class: 'group-head divider', style: `${place};width:${out.width - x}px`, title: GROUP_HEAD_TIP, role: 'separator', 'aria-label': `밑으로 이어 그린 화면이 없는 진입 화면 ${count}` }));
       }
       const z = state.zoom;
       Object.assign(el.style, { width: `${out.width}px`, height: `${out.height}px`, transform: z === 1 ? '' : `scale(${z})` });
