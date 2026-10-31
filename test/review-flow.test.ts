@@ -13,6 +13,7 @@ declare const GAP: number;
 declare let drawnGrid: { count: number; cellW: number; per: number } | null;
 declare function renderFlow(): void;
 declare function countText(c: { pass: number; fail: number; pending: number; limit: number }): string | (Node | null)[];
+declare function testItem(t: { title: string; file: string; line: number; project: string | null; status: string; detail: string }): HTMLElement;
 declare const GROUP_HEAD_TIP: string;
 declare const FOLDED_HEAD_TIP: string;
 declare function screensIn(roots: { id: string; children: object[] }[]): { id: string; children: object[] }[];
@@ -1540,6 +1541,26 @@ test('in a browser, a screen whose tests are only within a limit is drawn as 한
       }, { view: 'flow', setup: changeData((data) => {
         for (const n of walkFlow(data.flow.roots)) if (Object.hasOwn(counts, n.id)) n.counts = counts[n.id as keyof typeof counts];
       }) }),
+    ),
+  );
+});
+
+test('in a browser, the address a limit names as its source reads 「출처 ↗」 and opens it, while an address in a failure and a number as a source stay as written', { skip: browserMissing }, async () => {
+  const url = 'https://github.com/duru-app/duru/issues/489';
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        const shown = (status: string, detail: string) => p.evaluate(([status, detail]) => {
+          const row = testItem({ title: 'lock first attempts', file: 'document-checks.log', line: 17, project: null, status, detail });
+          const a = row.querySelector('.detail a');
+          return { text: row.querySelector('.detail')!.textContent, link: a && [a.textContent, a.getAttribute('href'), a.getAttribute('title'), a.getAttribute('aria-label'), a.getAttribute('target')] };
+        }, [status, detail]);
+        assert.deepEqual(await shown('limit', `first wrong attempts count less ${url}`), { text: 'first wrong attempts count less 출처 ↗', link: ['출처 ↗', url, url, `출처 ${url}`, '_blank'] });
+        assert.deepEqual(await shown('limit', `first wrong attempts count less (${url}).`), { text: 'first wrong attempts count less (출처 ↗).', link: ['출처 ↗', url, url, `출처 ${url}`, '_blank'] });
+        assert.deepEqual(await shown('limit', `PR ${url}에서 정함, 「${url}」 참고`), { text: 'PR 출처 ↗에서 정함, 「출처 ↗」 참고', link: ['출처 ↗', url, url, `출처 ${url}`, '_blank'] });
+        assert.deepEqual(await shown('limit', 'first wrong attempts count less, decided in #489'), { text: 'first wrong attempts count less, decided in #489', link: null });
+        assert.deepEqual(await shown('fail', `the lock opens early ${url}`), { text: `the lock opens early ${url}`, link: null });
+      }, { view: 'flow' }),
     ),
   );
 });

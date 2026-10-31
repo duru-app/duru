@@ -8,13 +8,17 @@ const bareTitle = (title) => title.split(' › ').map((part) => part.split(/\s+/
 const tagsOf = (t) => t.tags ?? t.title.split(/\s+/).filter(isTagWord).map((w) => w.slice(1));
 const titleWithTags = (t, hide = []) => [bareTitle(t.title), ...[...new Set(tagsOf(t))].filter((tag) => !hide.includes(tag)).map((tag) => h('span', { class: 'mono test-tag' }, tag))];
 
+const detailText = (t) => t.status === 'limit'
+  ? t.detail.split(/(https?:\/\/[^\s<>()\u0080-\uffff]*[^\s<>().,;:!?'"\u0080-\uffff])/).map((part, i) => i % 2 ? h('a', { href: part, title: part, 'aria-label': `출처 ${part}`, target: '_blank', rel: 'noopener' }, '출처 ↗') : part)
+  : t.detail;
+
 function testItem(t, { depth = false, hide = [], chip = null } = {}) {
   return h('div', { class: 'test' },
     depth ? h('span', { class: 'depth' }, DEPTH_LABELS[t.depth]) : null,
     h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status]), ' ', chip, titleWithTags(t, depth ? [...hide, `depth:${t.depth}`] : hide), ' ',
     h('span', { class: 'muted mono' }, filePlace(t.file, t.line)),
     t.project ? h('span', { class: 'muted' }, ` · ${t.project}`) : null,
-    t.detail && t.status !== 'pass' ? h('div', { class: 'detail' }, t.detail) : null);
+    t.detail && t.status !== 'pass' ? h('div', { class: 'detail' }, detailText(t)) : null);
 }
 
 function importerItem(t, chip = null) {

@@ -778,7 +778,8 @@ and never counted as a failure;
 
 The text after `— ` on a `WITHIN_LIMIT` line must name where the limit was decided — a `http(s)` link, `#<number>`
 or a `.md` decision document. A `WITHIN_LIMIT` line that names none reads as pending, and its detail starts with
-`출처 없음 — ` (`출처 없음` when the line has no detail).
+`출처 없음 — ` (`출처 없음` when the line has no detail). On the review page, a `http(s)` link in the detail of a
+test within a limit shows as 「출처 ↗」, which opens it; hovering shows the whole address.
 
 ## Stories
 
