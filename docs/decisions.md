@@ -5264,6 +5264,10 @@ publish screen. The trace keeps the steps and the requests in time order, so the
 before a request names its screen through the same address match the trace links use. Only a request with a page
 counts: one the test sent itself through its API context has no screen behind it. A call the source already ties
 to that screen, or sends at app start, gets no traced screen, so a trace never repeats what the code says.
+A step that moves the address without loading a document, as a client-side route change does, leaves the trace
+only the addresses before and after the step, so a request sent during that step ties to no screen: tying it to the
+new address would be wrong for a screen that saves and then moves, and to the old one for a screen whose first
+fetch runs in the same click.
 Compared:
 - Adding the screen to `screens` and an entry to the screen's `apiCalls` with a flag: every reader of those two
   (the baseline comparison, the task list, the marks, the flow counts) would take the tie for code and would each

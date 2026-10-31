@@ -143,3 +143,14 @@ test('a screen a call is tied to only by a trace is not a change since the basel
     assert.ok(after.calls[0].tracedScreens);
     assert.deepEqual(compareMaps(before, after), { screens: { added: [], removed: [], conditions: [], calls: [] }, calls: { added: [], removed: [], server: [] } });
   }));
+
+test('a request sent while a press moves the address without loading a page is tied to no screen, and one from a press that stays is tied', () => {
+  const ep = (method: string, url: string) => ({ callId: `${method}:${url}`, method, url });
+  const map: any = {
+    screens: [screen('/list#List', '/list'), screen('/detail#Detail', '/detail')],
+    apiFunctions: { send: { endpoints: [ep('POST', '/api/save'), ep('GET', '/api/detail'), ep('POST', '/api/more')] } },
+    calls: [call('POST:/api/save', 'POST', '/api/save'), call('GET:/api/detail', 'GET', '/api/detail'), call('POST:/api/more', 'POST', '/api/more')],
+  };
+  addTracedScreens(map, [sentOf(path.join(import.meta.dirname, 'fixtures/traces/moves-in-place.zip'), 'moves in place')]);
+  assert.deepEqual(tracedOf(map), { 'POST:/api/save': ['/list#List ← moves in place'], 'POST:/api/more': ['/detail#Detail ← moves in place'] });
+});

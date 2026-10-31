@@ -84,7 +84,7 @@ test('the README, the agent skill and the decision record say what a call only a
   const readme = read('../README.md');
   assert.match(readme, /A call a trace shows a page sending from a\s+screen its source does not tie it to carries `tracedScreens`[\s\S]*`screens` stays what the source reads/);
   assert.match(readme, /`calls tied to screens only by traces N \| screens they were sent from M` — printed by `rebuild` right after it/);
-  assert.match(readme, /a request the test sent itself, without a page, ties to none/);
+  assert.match(readme, /a request the test sent itself, without a page, ties to none, and so does one\s+sent while a step moved the address without loading a page/);
   assert.match(read('../skills/duru/SKILL.md'), /`calls tied to screens only by traces N \| screens they were\s+sent from M` line counts them/);
   assert.match(read('../docs/decisions.md'), /\*\*A request a page sent in a test's trace ties its call to the screen[\s\S]*Chosen for #496 \(2026-10-31\)[\s\S]*Compared:/);
 });

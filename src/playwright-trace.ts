@@ -296,6 +296,13 @@ export function readTrace(file: string): TraceResult {
       walked.push({ at: kind === 'assert' ? endTime : input?.timestamp ?? action.startTime, page: action.pageId, shot: shotAfter(action.pageId, endTime), step: walkStepOf(action, walkKind, Boolean(end?.error)) });
     }
   }
+  // 문서를 새로 받지 않고 주소만 바뀐 동작 사이에 나간 요청은 바뀌기 전과 뒤 어느 화면이 보냈는지 trace 로 가릴 수 없다.
+  const movedInPlace = actions.flatMap((a) => {
+    const [before, after] = [snapshots.get(`before@${a.callId}`), snapshots.get(`after@${a.callId}`)];
+    if (!before || !after || withoutHash(before.frameUrl) === withoutHash(after.frameUrl)) return [];
+    if (pageRequestAt(after.frameUrl, a.startTime, after.timestamp) !== undefined) return [];
+    return [{ page: a.pageId, from: a.startTime, to: after.timestamp }];
+  });
   const lastSeen = new Map<string, { url: string; at: number; from: number }>();
   const openedAt = (page: string, url: string, at: number, from: number) => {
     const last = lastSeen.get(page);
@@ -329,7 +336,7 @@ export function readTrace(file: string): TraceResult {
     const status = e.snapshot.response?.status;
     walked.push({ at: e.snapshot._monotonicTime, ...(!e.snapshot._apiRequest && e.snapshot.pageref && { page: e.snapshot.pageref }), request: { kind: 'request', method: e.snapshot.request.method, url: e.snapshot.request.url, status: typeof status === 'number' && status > 0 ? status : null } });
   }
-  return { steps, requests, ...walkOf(walked) };
+  return { steps, requests, ...walkOf(walked, movedInPlace) };
 }
 
 export function copyShots(file: string, names: Iterable<string>, dir: string) {
@@ -353,7 +360,7 @@ export function copyShots(file: string, names: Iterable<string>, dir: string) {
   }
 }
 
-function walkOf(walked: WalkEntry[]) {
+function walkOf(walked: WalkEntry[], movedInPlace: { page: string; from: number; to: number }[]) {
   walked.sort((a, b) => a.at - b.at || Number(Boolean(a.step || a.request)) - Number(Boolean(b.step || b.request)));
   const current = new Map<string, string>();
   const walk: WalkLine[] = [];
@@ -364,11 +371,11 @@ function walkOf(walked: WalkEntry[]) {
     lastShot = shot;
     return { shot: shot ?? null };
   };
-  for (const { page, url, shot, step, request } of walked) {
+  for (const { at, page, url, shot, step, request } of walked) {
     if (request) {
       walk.push(request);
       const address = page && current.get(page);
-      if (address) pageRequests.push({ method: request.method, url: request.url, shown: address });
+      if (address && !movedInPlace.some((m) => m.page === page && m.from <= at && at <= m.to)) pageRequests.push({ method: request.method, url: request.url, shown: address });
     } else if (step) walk.push({ ...step, ...(current.has(page!) && { url: current.get(page!) }), ...shown(shot) });
     else if (NOT_THE_APP.test(url!)) current.delete(page!);
     else if (current.get(page!) !== url) {

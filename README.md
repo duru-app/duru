@@ -801,7 +801,9 @@ POST, PUT, PATCH and DELETE requests in the traces of the result folders `tests`
 well as passing ones, and give the calls they reached the `options` they sent (see **Calls**); a body that is not
 JSON, and a request with no body, is skipped. Each request a page sent is also tied to the screen whose address the
 page showed when it went out, and gives that call its `tracedScreens` when the source ties it to that screen
-neither directly nor at app start; a request the test sent itself, without a page, ties to none.
+neither directly nor at app start; a request the test sent itself, without a page, ties to none, and so does one
+sent while a step moved the address without loading a page, since the trace cannot tell which side of the move
+sent it.
 
 Two kinds of untagged tests are shown next to a screen without counting as its tests. A unit test (Vitest or
 Jest JSON) is listed under `importers` when its test file imports one of the screen's source files; a file that

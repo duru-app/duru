@@ -110,8 +110,9 @@ function methodMark(call) {
 
 function sentWhere(call) {
   const atStart = sentAtAppStart(call.id);
-  if (!call.screens.length) return atStart ? '앱 시작 때 보냄' : '보내는 화면 없음';
-  return `보내는 화면 ${call.screens.map(screenLabel).join(' · ')}${atStart ? ' · 앱 시작 때도 보냄' : ''}`;
+  const screens = [...call.screens.map(screenLabel), ...(call.tracedScreens ?? []).map((t) => `${screenLabel(t.screen)} (기록)`)];
+  if (!screens.length) return atStart ? '앱 시작 때 보냄' : '보내는 화면 없음';
+  return `보내는 화면 ${screens.join(' · ')}${atStart ? ' · 앱 시작 때도 보냄' : ''}`;
 }
 
 function caseNodeName(id) {
