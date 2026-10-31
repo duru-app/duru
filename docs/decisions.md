@@ -5213,6 +5213,39 @@ words. Compared: a third `pass→limit` word, which puts "got worse" and "alread
 Playwright, JUnit and Vitest reports keep their own statuses until #501: the word comes from a check script writing the
 line, and a runner's own report has no marker for a limit the app accepts.
 
+**A component that picks a tab by the address is named in `routeTabs`, and its tabs are read from the list the
+screen that draws it hands it.**
+Driver's decision in #452 (2026-10-31): the component is named in the config, as a list of
+`{ "import", "name", "items", "path", "component" }` with every key required, and the entries are read from the
+source, never guessed. SigNoz draws `/settings` once and `SettingsPage` hands `RouteTab` a list it builds in
+`getRoutes` by `settings.push(...generalSettings(t))` under role, feature-flag and plan conditions. duru reads the
+value handed to the named `items` prop through its `const`, its `useMemo(() => …)` and the `return`s of the functions
+it calls, and every `push(…)` onto that list, dropping the conditions around a `push` as for the items of a
+`routeTables` table, so every tab becomes a screen whose ID is `address#Component`. The frame of a tab screen is the
+screen that drew the tab component, which stays on the map with its own ID; an item address that does not start with
+`/` gets that screen's path in front, an absolute one is kept, and `path` and `component` may be dotted key paths such
+as `meta.path`. A tab component that is not handed its list through that prop, and reads it itself, is not read: that
+is the key's limit, and it is written in the README rather than answered by another reader.
+Compared:
+- Guessing the component from `matchPath`: every rule for that has cases that break it, and a wrong guess would read
+  one component's tabs as another's.
+- Following `push` accumulation in `listEntries`, the reader `routeTables` shares: it feeds the maps of six apps, so a
+  list read that way for one app could move the others. The tab list has a reader of its own, so those maps cannot
+  move.
+- Reading the conditions around a `push` into a setting: duru cannot read those conditions today, and a mis-read would
+  silently drop a screen; dropping them is what a `routeTables` item already does.
+- Making the tab component the frame: it draws no `<Route>` and has no path of its own to frame with.
+A list duru cannot read, and a component no screen draws with that prop, print a `routeTabs` line and never stop the
+run, while a config of another shape or a `name` the file does not export stops it as every key does. The
+`N addresses under <path> reach no screen` line of #449 needs no code change: it counts the addresses no link reaches,
+and the tab screens make those links reach.
+Measured on main 946ef70 against the branch (2026-10-31). With no `routeTabs` entry, the maps of SigNoz, into-sign
+1.5.0 and 2.0.0, mattermost, outline and appsmith keep the same screens, links and calls. With SigNoz's `RouteTab`
+named, its map gains the 13 screens of the settings tabs under `/settings`, on 12 addresses (ingestion settings draws
+one of two components), the 1127 links to those addresses reach them, and the `12 addresses under /settings reach no
+screen` line is gone. `RouteTab` is drawn by eleven more pages whose tabs are routes already, which is why a tab whose
+address a route gives makes no screen, and why what follows `?` in a tab address is dropped.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

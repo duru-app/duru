@@ -67,6 +67,13 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   a relative path shows on the map with that relative path. A route made for each item of a table, an object or a
   list, in a route file the config's `routeTables` names, gives screens for its items; the conditions written in an item (such as
   `isHidden`) are not read, so such a screen shows none of them.
+- A settings page that picks its tab by the address: when one route draws a page that shows a different tab at each
+  address under it (SigNoz's `/settings` and its `RouteTab`), those tabs have no screen and the links to them reach
+  nothing. Add a `routeTabs` entry to the config yourself as you add the other config items, naming the component, the
+  prop it is handed the list of tabs by, and the item fields holding a tab's address and component, as
+  `{ "import": "components/RouteTab", "name": "default", "items": "routes", "path": "route", "component": "Component" }`,
+  and tell the user which tab screens appeared. A `routeTabs … is drawn by no screen` or `routeTabs … stopped at …`
+  line in the summary means that list was not read, so those tab addresses still have no screen of their own.
 - API code whose methods find their address in a table, or get a prefix when the request is sent, is read through
   `calledApiModules` and `requestFunction`: duru calls each method with fake values and records the request it hands
   to the app's request function, or to `get`, `post`, `put`, `patch` and `delete` of the app's request object when

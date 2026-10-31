@@ -587,6 +587,56 @@ test('routeTables must be a list of entries naming a listed route file, a table 
   }
 });
 
+test('routeTabs must be a list of entries naming the component, the prop it is handed its tabs by and the fields holding a tab\'s address and component', () => {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    const configFile = path.join(copy, 'config.json');
+    const base = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    const load = (routeTabs: unknown) => {
+      fs.writeFileSync(configFile, JSON.stringify({ ...base, routeTabs }));
+      return () => loadConfig(configFile);
+    };
+    const entry = { import: 'components/RouteTab', name: 'default', items: 'routes', path: 'route', component: 'Component' };
+    assert.throws(load({ ...entry }), /^Error: routeTabs must be a list of \{ "import", "name", "items", "path", "component" \}: the import path and name the app imports a component by that picks a tab by the address/);
+    for (const wrong of [{ name: 'RouteTab default' }, { name: 'Route.Tabs' }, { items: 'routes.tabs' }, { items: '*routes' }, { path: 'meta.*' }, { path: 'a..b' }, { component: 'Component?' }, { import: 1 }]) {
+      assert.throws(load([{ ...entry, ...wrong }]), /^Error: routeTabs must be a list of/, JSON.stringify(wrong));
+    }
+    for (const missing of ['import', 'name', 'items', 'path', 'component']) {
+      const { [missing]: _, ...rest } = entry as Record<string, unknown>;
+      assert.throws(load([rest]), /^Error: routeTabs must be a list of/, missing);
+    }
+    assert.throws(load([{ ...entry, extra: 1 }]), /^Error: routeTabs must be a list of/);
+    assert.throws(load([entry, 'RouteTab']), /, not \[\{"import":"components\/RouteTab".*"RouteTab"\]$/);
+    assert.deepEqual(load([{ ...entry, path: 'meta.path' }])().routeTabs, [{ ...entry, path: 'meta.path' }]);
+    assert.deepEqual(load(undefined)().routeTabs, []);
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+});
+
+test('the usage guide, the agent skill and the decision record say what routeTabs names, what it gives on the map and what it does not read', () => {
+  const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, file), 'utf8').replace(/\s+/g, ' ');
+  const readme = read('../README.md');
+  assert.match(readme, /`routeTabs` — components that pick a tab by the address[\s\S]*"routeTabs": \[\{ "import": "components\/RouteTab", "name": "default", "items": "routes", "path": "route", "component": "Component" \}\]/);
+  assert.match(readme, /all five are required, and `path` and `component` may be dotted key paths inside the item, such as `"meta\.path"`/);
+  assert.match(readme, /conditions written around a `push` are not read, as for the items of a `routeTables` table, so every tab becomes a screen/);
+  assert.match(readme, /A tab component that is not handed its list through that prop, and reads it itself, is not read\./);
+  assert.match(readme, /with the ID `<address>#<Component>`: the screen that draws the tab component is its frame/);
+  assert.match(readme, /does not start with `\/` gets the drawing screen's path in front, so `billing` under `\/settings` gives `\/settings\/billing`, and an absolute address is kept as it is/);
+  assert.match(readme, /gives no tab screen and a `routeTabs` line, never an error/);
+  assert.match(readme, /The conditions written in an item are not read, and neither are the conditions written around a `push` of the list a tab component is handed \(`routeTabs`\)/);
+  assert.match(readme, /`routeTabs <import> <name> is drawn by no screen`/);
+  assert.match(readme, /`routeTabs <file>:<line> its <prop> stopped at <piece>`/);
+  assert.match(readme, /`routeTabs <file>:<line> the item at <file>:<line> has no <field>`/);
+  assert.match(readme, /When a `routeTabs` entry gives those addresses screens of their own, the links reach screens and the line is not printed\./);
+  assert.match(read('../skills/duru/SKILL.md'), /Add a `routeTabs` entry to the config yourself as you add the other config items[\s\S]*tell the user which tab screens appeared[\s\S]*that list was not read/);
+  const decisions = read('../docs/decisions.md');
+  assert.match(decisions, /\*\*A component that picks a tab by the address is named in `routeTabs`, and its tabs are read from the list the screen that draws it hands it\.\*\*/);
+  assert.match(decisions, /Driver's decision in #452 \(2026-10-31\)[\s\S]*the component is named in the config[\s\S]*the entries are read from the source, never guessed/);
+  assert.match(decisions, /Guessing the component from `matchPath`[\s\S]*Following `push` accumulation in `listEntries`[\s\S]*those maps cannot move/);
+});
+
 test('a table entry that finds no table, no item or no route made for each item, or two such routes, stops the run with the entry and what it found', async () => {
   await withTableCopy(({ configFile }) => {
     assert.match(failure(configFile), /routeTables\[0\]: admin\/definition\.js has no top-level const Missing holding an object or a list/);
@@ -912,4 +962,368 @@ test('the usage guide, the agent skill and the decision record describe routeTab
   assert.match(read('../skills/duru/SKILL.md'), /`routes\.map\(\(\{ path, component \}\) => …\)`[\s\S]*`"items": "\*"` for a list of routes/);
   assert.match(read('../docs/decisions.md'), /\*\*A route table may be a list, a route made for each item may take the item apart in its loop function, and a listed\nroute file with no route element is named in the summary\.\*\*/);
   assert.match(read('../docs/decisions.md'), /\*\*A route made for each item of a table gives screens for its items when the config names the table in `routeTables`,\nand a table file of its own is in no screen's sources\.\*\*/);
+});
+
+const TAB_ROUTE_TAB = `export default function RouteTab({ routes }) {
+  return <nav>{routes.map((route) => <span key={route.route}>{route.name}</span>)}</nav>;
+}
+`;
+const TAB_ENTRY = { import: './admin/RouteTab', name: 'default', items: 'routes', path: 'route', component: 'Component' };
+
+const tabPage = (name: string, list: string) => `import RouteTab from './RouteTab';
+import { ${list} } from './${list}';
+
+export default function ${name}() {
+  return <section><RouteTab routes={${list}} /></section>;
+}
+`;
+const tabList = (name: string, tabs: [string, string][]) => `${tabs.map(([, component]) => `import ${component} from './${component}';`).join('\n')}
+
+export const ${name} = [
+${tabs.map(([route, component]) => `  { Component: ${component}, route: '${route}' },`).join('\n')}
+];
+`;
+
+// 화면을 그리는 파일들. 라우트는 fixture 의 Route 에 적은 그대로 Routes.js 에 들어간다.
+async function withTabCopy<T>(fn: (copy: Copy) => T | Promise<T>, { files = {}, routes = [] as [string, string][], routeTabs = [TAB_ENTRY] as unknown[], edits = [] as [string, string, string][] }: { files?: Record<string, string>; routes?: [string, string][]; routeTabs?: unknown[]; edits?: [string, string, string][] } = {}): Promise<T> {
+  const src = { 'admin/RouteTab.js': TAB_ROUTE_TAB, ...files };
+  const imports = routes.map(([name]) => `import ${name} from './admin/${name}';\n`).join('');
+  const elements = routes.map(([name, path]) => `      <Route path="${path}" component={${name}} />`).join('\n');
+  return withTableCopy(async (copy) => {
+    for (const [file, text] of Object.entries(src)) fs.writeFileSync(path.join(copy.src, file), text);
+    return fn(copy);
+  }, {
+    configPatch: { routeTabs },
+    edits: [
+      ['Routes.js', "import Layout from './components/Layout';\n", `import Layout from './components/Layout';\n${imports}`],
+      ['Routes.js', LAST_ROUTE, `${elements}\n${LAST_ROUTE}`],
+      ...edits,
+    ],
+  });
+}
+
+const tabScreens = (map: ScreenMap, ids: string[]) => map.screens.filter((s) => ids.includes(s.id));
+
+test('a tab component drawn by two screens gives screens for the tabs of both lists, each with the screen that draws it as frame', async () => {
+  const files = {
+    'admin/settingsTabs.js': tabList('settingsTabs', [['/settings/billing', 'Billing'], ['/settings/members', 'Members']]),
+    'admin/profileTabs.js': tabList('profileTabs', [['/profile/roles', 'Roles'], ['/profile/avatar', 'Avatar']]),
+    'admin/Billing.js': page('Billing'),
+    'admin/Members.js': page('Members'),
+    'admin/Roles.js': page('Roles'),
+    'admin/Avatar.js': page('Avatar'),
+    'admin/Settings.js': tabPage('Settings', 'settingsTabs'),
+    'admin/Profile.js': tabPage('Profile', 'profileTabs'),
+  };
+  const routes: [string, string][] = [['Settings', '/settings'], ['Profile', '/profile']];
+  await withTabCopy(async ({ configFile, cli }) => {
+    const map = await build(configFile);
+    const ids = ['/settings/billing#Billing', '/settings/members#Members', '/profile/roles#Roles', '/profile/avatar#Avatar'];
+    for (const id of ids) assert.equal(tabScreens(map, [id]).length, 1, id);
+    assert.ok(screen(map, '/settings/members#Members').sourceFiles.includes('admin/Settings.js'));
+    assert.ok(screen(map, '/profile/roles#Roles').sourceFiles.includes('admin/Profile.js'));
+    assert.ok(!screen(map, '/profile/roles#Roles').sourceFiles.includes('admin/Settings.js'));
+    assert.deepEqual(map.duplicateIds, []);
+    assert.deepEqual(cli('extract').split('\n').filter((line) => line.includes('routeTabs')), []);
+  }, { files, routes });
+});
+
+test('a tab whose address a route already gives makes no screen and no line, and the route screen stays as it was', async () => {
+  const files = {
+    'admin/settingsTabs.js': tabList('settingsTabs', [['/settings/billing', 'Billing'], ['/settings/members', 'Members']]),
+    'admin/Billing.js': page('Billing'),
+    'admin/Members.js': page('Members'),
+    'admin/Settings.js': tabPage('Settings', 'settingsTabs'),
+  };
+  const routes: [string, string][] = [['Settings', '/settings'], ['Members', '/settings/members']];
+  const id = '/settings/members#Members';
+  const plain = await withTabCopy(async ({ configFile }) => tabScreens(await build(configFile), [id]), { files, routes, routeTabs: [] });
+  await withTabCopy(async ({ configFile, cli }) => {
+    const map = await build(configFile);
+    const found = tabScreens(map, [id]);
+    assert.equal(found.length, 1);
+    assert.deepEqual(found, plain);
+    assert.equal(found[0].routeFile, 'Routes.js');
+    assert.equal(found[0].componentFile, 'admin/Members.js');
+    assert.equal(screen(map, '/settings/billing#Billing').routeFile, 'admin/settingsTabs.js');
+    assert.deepEqual(map.duplicateIds, []);
+    assert.deepEqual(routeLines(cli('extract')), []);
+    assert.deepEqual(cli('extract').split('\n').filter((line) => line.includes('routeTabs')), []);
+  }, { files, routes });
+});
+
+test('one tab list drawn by two screens gives each tab screen once, with the first drawing screen as frame', async () => {
+  const files = {
+    'admin/sharedTabs.js': tabList('sharedTabs', [['/settings/billing', 'Billing'], ['/settings/members', 'Members']]),
+    'admin/Billing.js': page('Billing'),
+    'admin/Members.js': page('Members'),
+    'admin/Settings.js': tabPage('Settings', 'sharedTabs'),
+    'admin/Profile.js': tabPage('Profile', 'sharedTabs'),
+  };
+  const routes: [string, string][] = [['Settings', '/settings'], ['Profile', '/profile']];
+  await withTabCopy(async ({ configFile, cli }) => {
+    const map = await build(configFile);
+    for (const id of ['/settings/billing#Billing', '/settings/members#Members']) {
+      const found = tabScreens(map, [id]);
+      assert.equal(found.length, 1, id);
+      assert.ok(found[0].sourceFiles.includes('admin/Settings.js'), id);
+      assert.ok(!found[0].sourceFiles.includes('admin/Profile.js'), id);
+    }
+    assert.deepEqual(map.duplicateIds, []);
+    assert.deepEqual(cli('extract').split('\n').filter((line) => line.includes('routeTabs')), []);
+  }, { files, routes });
+});
+
+test('a tab address is taken without what follows ? or #, so a query on a routed address makes no screen of its own', async () => {
+  const files = {
+    'admin/settingsTabs.js': tabList('settingsTabs', [['/settings/billing?plan=pro', 'Billing'], ['/settings/members?tab=all', 'Members']]),
+    'admin/Billing.js': page('Billing'),
+    'admin/Members.js': page('Members'),
+    'admin/Settings.js': tabPage('Settings', 'settingsTabs'),
+  };
+  const routes: [string, string][] = [['Settings', '/settings'], ['Members', '/settings/members']];
+  await withTabCopy(async ({ configFile }) => {
+    const map = await build(configFile);
+    const tabs = map.screens.filter((s) => s.path.startsWith('/settings/')).map((s) => [s.id, s.routeFile]).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    assert.deepEqual(tabs, [['/settings/billing#Billing', 'admin/settingsTabs.js'], ['/settings/members#Members', 'Routes.js']]);
+    assert.deepEqual(map.duplicateIds, []);
+  }, { files, routes });
+});
+
+test('an item address that does not start with / gets the drawing screen\'s path in front, and the tab screen takes it as it is', async () => {
+  const files = {
+    'admin/settingsTabs.js': tabList('settingsTabs', [['members', 'Members']]),
+    'admin/Members.js': page('Members'),
+    'admin/Settings.js': tabPage('Settings', 'settingsTabs'),
+  };
+  await withTabCopy(async ({ configFile, cli }) => {
+    const map = await build(configFile);
+    const found = screen(map, '/settings/members#Members');
+    assert.equal(found.routeFile, 'admin/settingsTabs.js');
+    assert.equal(found.componentFile, 'admin/Members.js');
+    assert.ok(found.sourceFiles.includes('admin/Settings.js'));
+    assert.equal(map.routeTabNotices, undefined);
+    assert.deepEqual(cli('extract').split('\n').filter((line) => line.includes('routeTabs')), []);
+  }, { files, routes: [['Settings', '/settings']] });
+});
+
+test('an item\'s address and component are read from the dotted key paths the entry names', async () => {
+  const files = {
+    'admin/settingsTabs.js': `import RouteTab from './RouteTab';
+import Billing from './Billing';
+
+export const settingsTabs = [
+  { meta: { path: '/settings/billing', component: Billing } },
+];
+`,
+    'admin/Billing.js': page('Billing'),
+    'admin/Settings.js': tabPage('Settings', 'settingsTabs'),
+  };
+  const routeTabs = [{ ...TAB_ENTRY, path: 'meta.path', component: 'meta.component' }];
+  await withTabCopy(async ({ configFile, cli }) => {
+    const map = await build(configFile);
+    const found = screen(map, '/settings/billing#Billing');
+    assert.equal(found.componentFile, 'admin/Billing.js');
+    assert.equal(map.routeTabNotices, undefined);
+    assert.deepEqual(cli('extract').split('\n').filter((line) => line.includes('routeTabs')), []);
+  }, { files, routes: [['Settings', '/settings']], routeTabs });
+});
+
+test('a routeTabs entry whose import names no file under srcRoot, or whose name its file does not export, stops the run', async () => {
+  const files = {
+    'admin/settingsTabs.js': tabList('settingsTabs', [['/settings/billing', 'Billing']]),
+    'admin/Billing.js': page('Billing'),
+    'admin/Settings.js': tabPage('Settings', 'settingsTabs'),
+  };
+  const routes: [string, string][] = [['Settings', '/settings']];
+  await withTabCopy(async ({ configFile }) => {
+    assert.match(failure(configFile), /routeTabs\[0\]\.import \.\/admin\/Nope names no file under srcRoot/);
+  }, { files, routes, routeTabs: [{ ...TAB_ENTRY, import: './admin/Nope' }] });
+  await withTabCopy(async ({ configFile }) => {
+    assert.match(failure(configFile), /routeTabs\[0\]\.name Nope is not exported by admin\/RouteTab\.js/);
+  }, { files, routes, routeTabs: [{ ...TAB_ENTRY, name: 'Nope' }] });
+});
+
+test('a routeTabs entry naming a component no screen draws with that prop prints one line and gives no tab screen', async () => {
+  const files = { 'admin/Settings.js': page('Settings') };
+  await withTabCopy(async ({ configFile, cli }) => {
+    const map = await build(configFile);
+    assert.deepEqual(map.routeTabNotices, [{ file: null, line: null, reason: './admin/RouteTab default is drawn by no screen' }]);
+    assert.deepEqual(cli('extract').split('\n').filter((line) => line.includes('routeTabs')), ['  routeTabs ./admin/RouteTab default is drawn by no screen']);
+    assert.deepEqual(map.screens.filter((s) => s.id.startsWith('/settings')).map((s) => s.id), ['/settings#Settings']);
+  }, { files, routes: [['Settings', '/settings']] });
+});
+
+test('a prop the drawing screen does not hand as a list prints the part duru could not follow and gives no tab screen', async () => {
+  const files = {
+    'admin/Settings.js': `import RouteTab from './RouteTab';
+
+export default function Settings({ x }) {
+  return <section><RouteTab routes={x.tabs} /></section>;
+}
+`,
+  };
+  await withTabCopy(async ({ configFile, cli }) => {
+    const map = await build(configFile);
+    assert.deepEqual(map.screens.filter((s) => s.id.startsWith('/settings')).map((s) => s.id), ['/settings#Settings']);
+    assert.deepEqual(cli('extract').split('\n').filter((line) => line.includes('routeTabs')), ['  routeTabs admin/Settings.js:4 its routes stopped at x.tabs']);
+    assert.deepEqual(map.routeTabNotices, [{ file: 'admin/Settings.js', line: 4, reason: 'its routes stopped at x.tabs' }]);
+  }, { files, routes: [['Settings', '/settings']] });
+});
+
+test('an item without the fields the entry names, and a field whose value stops, each print one line, once for a list two screens hand', async () => {
+  const files = {
+    'admin/sharedTabs.js': `import RouteTab from './RouteTab';
+import Billing from './Billing';
+
+export const sharedTabs = [
+  { Component: Billing },
+  { route: '/settings/billing' },
+  { route: window.foo, Component: Billing },
+];
+`,
+    'admin/Billing.js': page('Billing'),
+    'admin/Settings.js': tabPage('Settings', 'sharedTabs'),
+    'admin/Profile.js': tabPage('Profile', 'sharedTabs'),
+  };
+  await withTabCopy(async ({ configFile, cli }) => {
+    const map = await build(configFile);
+    const printed = cli('extract').split('\n').filter((line) => line.includes('routeTabs'));
+    assert.deepEqual(printed, [
+      '  routeTabs admin/sharedTabs.js:5 the item at admin/sharedTabs.js:5 has no route',
+      '  routeTabs admin/sharedTabs.js:6 the item at admin/sharedTabs.js:6 has no Component',
+      '  routeTabs admin/sharedTabs.js:7 the item at admin/sharedTabs.js:7: its route stopped at window.foo',
+    ]);
+    assert.equal(map.routeTabNotices?.length, 3);
+    assert.deepEqual(map.screens.filter((s) => s.path.startsWith('/settings/billing')), []);
+  }, { files, routes: [['Settings', '/settings'], ['Profile', '/profile']] });
+});
+
+const TAB_SETTINGS_DRAWING = `import { useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import RouteTab from './RouteTab';
+import { settingsTabs } from './settingsTabs';
+import { ajaxMemberList } from '../_ajax/AjaxFunc';
+
+export default function Settings() {
+  useEffect(() => {
+    ajaxMemberList({ page: 1 });
+  }, []);
+  return <section><Link to="/home">home</Link><RouteTab routes={settingsTabs} /></section>;
+}
+`;
+
+test('a tab screen holds the code of its own component and of the screen that draws it, and the links and requests that screen writes', async () => {
+  const files = {
+    'admin/settingsTabs.js': tabList('settingsTabs', [['/settings/billing', 'Billing'], ['/settings/members', 'Members']]),
+    'admin/Billing.js': page('Billing'),
+    'admin/Members.js': page('Members'),
+    'admin/Settings.js': TAB_SETTINGS_DRAWING,
+  };
+  await withTabCopy(async ({ configFile }) => {
+    const map = await build(configFile);
+    const billing = screen(map, '/settings/billing#Billing');
+    const members = screen(map, '/settings/members#Members');
+    for (const found of [billing, members]) {
+      assert.deepEqual(found.links.filter((l) => l.file === 'admin/Settings.js').map((l) => l.to), ['/home'], found.id);
+      assert.deepEqual(found.apiCalls.filter((c) => c.file === 'admin/Settings.js').map((c) => c.fn), ['ajaxMemberList'], found.id);
+    }
+    // 탭의 소스는 그 탭의 컴포넌트와 그것을 그리는 화면, 그리고 그 화면이 그리는 파일들이다. 다른 탭의 컴포넌트는 아니다.
+    assert.deepEqual(billing.sourceFiles, ['admin/Billing.js', 'admin/RouteTab.js', 'admin/Settings.js', 'admin/settingsTabs.js']);
+    assert.deepEqual(members.sourceFiles, ['admin/Members.js', 'admin/RouteTab.js', 'admin/Settings.js', 'admin/settingsTabs.js']);
+    assert.notEqual(billing.codeHash, members.codeHash);
+    assert.deepEqual(map.duplicateIds, []);
+  }, { files, routes: [['Settings', '/settings']] });
+});
+
+test('a condition written around the tab component reaches the links and requests the drawing screen gives its tabs', async () => {
+  const drawing = `import { useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import RouteTab from './RouteTab';
+import { settingsTabs } from './settingsTabs';
+import { ajaxMemberList } from '../_ajax/AjaxFunc';
+
+export default function Settings({ isAdmin }) {
+  useEffect(() => {
+    ajaxMemberList({ page: 1 });
+  }, []);
+  return (
+    <section>
+      <Link to="/home">home</Link>
+      {isAdmin && (
+        <RouteTab routes={settingsTabs} />
+      )}
+    </section>
+  );
+}
+`;
+  const files = {
+    'admin/settingsTabs.js': tabList('settingsTabs', [['/settings/billing', 'Billing'], ['/settings/members', 'Members']]),
+    'admin/Billing.js': page('Billing'),
+    'admin/Members.js': page('Members'),
+    'admin/Settings.js': drawing,
+  };
+  const line = drawing.split('\n').findIndex((l) => l.includes('<RouteTab ')) + 1;
+  await withTabCopy(async ({ configFile }) => {
+    const map = await build(configFile);
+    const under = { via: 'RouteTab', line, guards: ['isAdmin'], file: 'admin/Settings.js' };
+    for (const id of ['/settings/billing#Billing', '/settings/members#Members']) {
+      const found = screen(map, id);
+      const [link] = found.links.filter((l) => l.file === 'admin/Settings.js');
+      assert.deepEqual(link.inheritedGuards, [under], id);
+      assert.deepEqual(found.apiCalls.filter((c) => c.file === 'admin/Settings.js').map((c) => c.inheritedGuards), [[under]], id);
+      assert.ok(found.sourceFiles.includes('admin/Settings.js'), id);
+    }
+  }, { files, routes: [['Settings', '/settings']] });
+});
+
+test('a tab screen takes the files drawn around the screen that draws its tabs, and the links they write', async () => {
+  const files = {
+    'admin/settingsTabs.js': tabList('settingsTabs', [['/settings/billing', 'Billing'], ['/settings/members', 'Members']]),
+    'admin/Billing.js': page('Billing'),
+    'admin/Members.js': page('Members'),
+    'admin/Settings.js': TAB_SETTINGS_DRAWING,
+    'components/Shell.js': `import { Link } from 'react-router-dom';
+
+export default function Shell({ children }) {
+  return <div><Link to="/help">help</Link>{children}</div>;
+}
+`,
+  };
+  const edits: [string, string, string][] = [
+    ['Routes.js', "import Layout from './components/Layout';\n", "import Layout from './components/Layout';\nimport Shell from './components/Shell';\n"],
+    ['Routes.js', '<Route path="/settings" component={Settings} />', '<Route path="/settings"><Shell><Settings /></Shell></Route>'],
+  ];
+  await withTabCopy(async ({ configFile }) => {
+    const map = await build(configFile);
+    for (const id of ['/settings/billing#Billing', '/settings/members#Members']) {
+      const found = screen(map, id);
+      assert.deepEqual(found.links.filter((l) => l.file === 'components/Shell.js').map((l) => l.to), ['/help'], id);
+      assert.ok(found.sourceFiles.includes('components/Shell.js'), id);
+      assert.ok(found.sourceFiles.includes('admin/Settings.js'), id);
+    }
+  }, { files, routes: [['Settings', '/settings']], edits });
+});
+
+test('a tab screen takes the frames of the screen that draws its tabs, such as a header drawn beside the routes', async () => {
+  const files = {
+    'admin/settingsTabs.js': tabList('settingsTabs', [['/settings/billing', 'Billing']]),
+    'admin/Billing.js': page('Billing'),
+    'admin/Settings.js': tabPage('Settings', 'settingsTabs'),
+    'components/Header.js': `import { Link } from 'react-router-dom';
+
+export default function Header() {
+  return <nav><Link to="/help">help</Link></nav>;
+}
+`,
+  };
+  await withTabCopy(async ({ src, configFile }) => {
+    const routes = path.join(src, 'Routes.js');
+    const text = fs.readFileSync(routes, 'utf8');
+    fs.writeFileSync(routes, `import Header from './components/Header';\n${text.replace('  return (\n    <Switch>\n', '  return (\n    <>\n    <Header />\n    <Switch>\n').replace('    </Switch>\n  );\n}', '    </Switch>\n    </>\n  );\n}')}`);
+    const map = await build(configFile);
+    const billing = screen(map, '/settings/billing#Billing');
+    assert.ok(billing.sourceFiles.includes('components/Header.js'));
+    assert.ok(billing.links.some((l) => l.file === 'components/Header.js' && l.to === '/help'));
+  }, { files, routes: [['Settings', '/settings']] });
 });

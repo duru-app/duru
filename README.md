@@ -91,7 +91,8 @@ client with example results and a config to start from.
   ```
 
   The items give screens whose sources hold the components each item names, with the path of the screen that draws
-  the route file in front. The conditions written in an item are not read. Without the entry, such a route gives no
+  the route file in front. The conditions written in an item are not read, and neither are the conditions written
+  around a `push` of the list a tab component is handed (`routeTabs`). Without the entry, such a route gives no
   screen for each item; the lines that can point to it are a `route not read` line whose reason starts with `made
   for each item of a list` and a `route path not read` line that stopped at a field of the item, with its `{?}`
   screen. An entry of another shape, one naming a file not in `routesFile`, or a route file named twice stops the run
@@ -109,6 +110,30 @@ client with example results and a config to start from.
   Each file gives every screen that holds it links to the item screens, each with its `to` set to the screen's path
   and the screen's `tableItem`. A menu file that is not there, or in which duru does not find the one element drawn
   for each item, stops the run with an error.
+- `routeTabs` — components that pick a tab by the address, such as SigNoz's `RouteTab`, which shows the tab whose
+  address the browser is at and draws no route of its own (optional):
+
+  ```json
+  "routeTabs": [{ "import": "components/RouteTab", "name": "default", "items": "routes", "path": "route", "component": "Component" }]
+  ```
+
+  `import` and `name` name the component, `items` the prop the screen that draws it hands the list of tabs by, and
+  `path` and `component` the fields of an item holding the tab's address and the component it draws; all five are
+  required, and `path` and `component` may be dotted key paths inside the item, such as `"meta.path"`. `import` and
+  `name` are read as in `history`, with `default` for a default export. duru finds the screens whose own component draws the
+  component with that prop, or whose `<Route>` sits inside it in the function that draws the route, and reads the list
+  each hands it. The conditions written around a `push` are not read, as
+  for the items of a `routeTables` table, so every tab becomes a screen. A tab component that is not handed its list
+  through that prop, and reads it itself, is not read. Each item gives a screen for the address and the component it
+  names, with the ID `<address>#<Component>`: the screen that draws the tab component is its frame, so the tab
+  screen's sources include the drawing screen's, and that screen stays on the map with its own ID. An item address
+  that does not start with `/` gets the drawing screen's path in front, so `billing` under `/settings` gives
+  `/settings/billing`, and an absolute address is kept as it is; what follows `?` or `#` in an address is dropped. A
+  tab whose address is already the path of a route gives no screen, since the route gives it, and a tab that several
+  screens hand the same list for is one screen, framed by the first of them. A list duru cannot read gives no tab
+  screen and a `routeTabs` line, never an error (see "What extract and rebuild print"). An entry of another shape,
+  an `import` that names no file under `srcRoot` or a `name` that file does not export stops the run with an error
+  naming the key. Without the entry, such a component gives no screen for each tab.
 - `redirectElements` — the elements that redirect in the route files (default `Redirect` and
   `Navigate`; a config that lists them uses exactly the names listed).
 - `entryPaths` — route paths of further screens users start from when the code does not show them.
@@ -128,7 +153,8 @@ client with example results and a config to start from.
   draws (see "The map").
 - `linkComponents` — link components whose source duru does not read, such as a design system package's `Link`
   (optional): `[{ "import": "@appsmith/ads", "name": "Link" }]`. Where one is used, its `to` is a link, except an
-  address of another site or a file opened in a new tab.
+  address of another site or a file opened in a new tab. A component that picks a tab by the address is named in
+  `routeTabs` instead.
 - `linkFunctions` — functions whose call stands for a link while the move happens elsewhere, such as a menu action
   made from an address (optional): `[{ "import": "~/actions", "name": "createInternalLinkAction", "address": "0.to"
   }]`. `address` is where the address is among the values the function is given, as the place of the value counted
@@ -602,7 +628,8 @@ listing the places whose value the source does not show in full.
   route that draws the addresses under its own too, and none of these links reaches a screen. For a route made for
   each item of a table, ` (table item <key> at <file>:<line>)` follows its place. The first three addresses are
   shown and the map lists them all (`addressesUnderRoutes`). The page that route draws opens at each of
-  them, but the map has no screen for each, so no test can be tagged with one.
+  them, but the map has no screen for each, so no test can be tagged with one. When a `routeTabs` entry gives those
+  addresses screens of their own, the links reach screens and the line is not printed.
 - `requests sent for the whole app N | from <name> (<file>), …` — the number of calls the components named in
   `appWideComponents` send, and those components (`appWide`).
 - `N calls reach no screen: N unused by app code (<call IDs>, …), N other (<call IDs>, …)` — calls of API functions that
@@ -645,6 +672,18 @@ listing the places whose value the source does not show in full.
   that duru does not read as settings; a default the function is given that differs from the `settingsDefaults`
   value (the map keeps that value), or that differs from another call's or cannot be compared with it (the map
   leaves the default unknown); and a function called in none of those files (`settingsCallNotices`).
+- `routeTabs <import> <name> is drawn by no screen` — an entry of `routeTabs` naming a component that no screen's own
+  component draws with the prop the entry names, nor a component the screen's `<Route>` sits inside in the function
+  that draws it, so duru found no list of tabs to read and made no tab screen.
+  The file and the name are the ones the entry gives (`routeTabNotices`).
+- `routeTabs <file>:<line> its <prop> stopped at <piece>` — the value handed to that prop was not read as a list of
+  tabs: `<piece>` is the part duru could not follow, written as for `route path not read`. The screen that draws the
+  component is on the map as before, and the tab screens are the ones whose items were read.
+- `routeTabs <file>:<line> the item at <file>:<line> has no <field>` — an item of the tab list without the field the
+  entry's `path` or `component` names, with the item's own file and line. `: its <field> stopped at <piece>` takes the
+  place of `has no <field>` when the field is there but its value could not be read in full, followed by
+  ` in <file>:<line>` when duru stopped in another file, and `is not an object written in the source` takes its place
+  for an item that is not written as an object. That item gives no tab screen and the other items do.
 - An alias import that finds no file, with the number of files that write it (`unresolvedAliasImports`).
 - Routes that end up with the same ID, each place as `file:line`, the table item's place for a screen made from a
   table item (`duplicateIds`).
