@@ -10,6 +10,7 @@ import { loadConfig } from '../src/config.ts';
 import { addJudgment, applyJudgments } from '../src/judgments.ts';
 import { readJunit } from '../src/junit.ts';
 import { readPlaywright } from '../src/playwright.ts';
+import { readResults } from '../src/test-links.ts';
 import { BASELINE_TESTS, editJson, keepRelease } from './baseline-helpers.ts';
 import type { TestStatus } from '../src/verdict.ts';
 
@@ -299,6 +300,17 @@ function comparedFromFiles(format: 'junit' | 'playwright', baseline: unknown, cu
   });
   return compared;
 }
+
+test('a passing test tagged @limit reads the same in the baseline as now, with or without a source, so a report gives no regression against itself', () => {
+  const report = repeatedInChromium('login › signs in @screen:/a#A @limit', 'pass');
+  report.suites[0].specs.push({ ...report.suites[0].specs[0], title: 'login › signs out @screen:/a#A @limit:#546', line: 9 });
+  inFolder({ 'releases/1.5.0/e2e.json': report, 'results/e2e.json': report }, (dir) => {
+    const base = readBaselineTests({ configDir: dir, baselineTests: [{ format: 'playwright', path: path.join(dir, 'releases/1.5.0/e2e.json') }] });
+    const rows = readResults('playwright', path.join(dir, 'results/e2e.json'))!.map((t) => ({ ...t, source: 'results/e2e.json', format: 'playwright' }));
+    assert.deepEqual(rows.map((t) => t.status), ['pending', 'limit']);
+    assert.deepEqual(baselineTestsLines(compareTests(base, { nodes: { '/a#A': rows } }, MAP)), [summary(2, 0, 0, 0, 0, 0)]);
+  });
+});
 
 test('runs skipped now are left out only as far as the same test in the baseline had skipped runs, so a report gives no regression against itself and a run newly skipped since the baseline is pass→pending', () => {
   const junit = (baseline: TestStatus[], current: TestStatus[]) => comparedFromFiles('junit', junitReport(...baseline), junitReport(...current), (rows) => ({ nodes: { '/a#A': rows } }));

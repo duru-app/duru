@@ -56,12 +56,18 @@ const byTest = (a: UntaggedTest, b: UntaggedTest) => compare(shownFile(a), shown
 
 function withLimit(t: any, format: string) {
   if (format === 'verdict' || t.status !== 'pass') return t;
-  const sources: string[] = t.tags.flatMap((tag: string) => {
+  const sources = [...new Set<string>(t.tags.flatMap((tag: string) => {
     const m = tag.match(LIMIT_TAG);
     return m ? [m[1] ?? ''] : [];
-  });
+  }))];
   if (!sources.length) return t;
-  return sources.every(namesSource) ? { ...t, status: 'limit', detail: sources.join(' ') } : { ...t, status: 'pending', detail: '출처 없음' };
+  const written = sources.filter(Boolean).join(' ');
+  if (sources.every(namesSource)) return { ...t, status: 'limit', detail: written };
+  return { ...t, status: 'pending', detail: written ? `출처 없음 — ${written}` : '출처 없음' };
+}
+
+export function readResults(format: string, file: string) {
+  return READERS[format].read(file)?.map((t) => withLimit(t, format)) ?? null;
 }
 
 export function resultFiles(p: string, extensions: string[]) {
@@ -175,7 +181,7 @@ export function linkTests(config: any, map: any) {
           }
         }
         const trace = t.trace ? linkByTrace(t.trace) : null;
-        const passedOrder = trace && !trace.reason && run.status === 'pass' && t.traceRunPassed ? trace.order! : null;
+        const passedOrder = trace && !trace.reason && (t.status === 'pass' || t.status === 'limit') && t.traceRunPassed ? trace.order! : null;
         const stepsKey = trace?.walk && JSON.stringify([resultPath.split(path.sep).join('/'), t.file, t.line, t.title]);
         if (stepsKey) {
           (walks[stepsKey] ??= {})[t.project ?? ''] = trace!.walk!;
@@ -193,7 +199,7 @@ export function linkTests(config: any, map: any) {
           for (const id of trace.calls ?? []) {
             if (!t.tags.includes(`call:${id}`)) (passed[id] ??= []).push({ ...traced, level: 'call' });
           }
-        } else if (source.format === 'playwright' && t.status !== 'pending') {
+        } else if (source.format === 'playwright' && run.status !== 'pending') {
           untracedCount += 1;
         }
         if (nodeTags.length === 0 && storyTags.length === 0) {

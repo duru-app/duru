@@ -406,6 +406,7 @@ test('a passing test tagged @limit:<source> is within a limit in every runner fo
     ['d @limit:#546', false],
     ['e @limit', true],
     ['f @limit:later', true],
+    ['h @limit:#546 @limit:later', true],
   ] as const;
   const title = (name: string) => `${name} @screen:/help#Help`;
   const files = {
@@ -423,10 +424,12 @@ test('a passing test tagged @limit:<source> is within a limit in every runner fo
       ['c', 'limit', 'docs/decisions.md'],
       ['d', 'fail', null],
       ['e', 'pending', '출처 없음'],
-      ['f', 'pending', '출처 없음'],
+      ['f', 'pending', '출처 없음 — later'],
+      ['h', 'pending', '출처 없음 — #546 later'],
     ];
     for (const format of ['playwright', 'vitest', 'junit']) assert.deepEqual(read(format), expected, format);
     assert.deepEqual(read('verdict'), [['g', 'pass', 'ok']]);
+    assert.equal(result.untracedCount, cases.length);
     assert.deepEqual(result.unknownTags, []);
   }, ['playwright', 'vitest', 'junit', 'verdict']);
 });
