@@ -94,3 +94,10 @@ test('a trace that cannot be read records nothing, and the calls it might have s
     markUnrecorded(map, [...sent.map((s) => ({ ...s, trace: `${s.trace}.gone` }))]);
     assert.ok(unrecordedOf(map).includes('POST:/api/report'));
   }));
+
+test('a write call a trace sent with its method in lower case is not unrecorded', () =>
+  withTraces([[{ method: 'put', url: '/api/report/7' }]], (sent) => {
+    const map = mapOf();
+    markUnrecorded(map, sent);
+    assert.ok(!unrecordedOf(map).includes('PUT:/api/report/{0}'));
+  }));
