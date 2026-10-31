@@ -1,17 +1,13 @@
 import { callFinder } from './address-match.ts';
-import { readTrace } from './playwright-trace.ts';
-import type { SentTrace } from './request-options.ts';
+import type { SentRequests } from './request-options.ts';
 
-const WRITES = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+export const WRITES = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-// 읽지 못한 trace 는 건너뛰므로, 그 trace 에만 있던 호출도 기록되지 않은 호출이 된다.
-export function markUnrecorded(map: any, sent: SentTrace[]): { calls: number; screens: number } {
+export function markUnrecorded(map: any, sent: SentRequests[]): { calls: number; screens: number } {
   const callAt = callFinder(map);
   const recorded = new Set<string>();
   for (const t of sent) {
-    const trace = readTrace(t.trace);
-    if ('reason' in trace) continue;
-    for (const { method, url } of trace.requests) {
+    for (const { method, url } of t.requests) {
       const id = callAt(method, url);
       if (id) recorded.add(id);
     }

@@ -104,6 +104,14 @@ export function reviewAuthor(config: any, { gitName = gitUserName, userName = co
 
 type AppHost = Awaited<ReturnType<typeof startAppHost>>;
 
+function sentDuring(app: AppHost, { pane, from }: Record<string, unknown>) {
+  if (from === undefined) return [];
+  const panes = [app.url, app.signedOutUrl, ...app.roles.map((r) => r.url)].filter(Boolean);
+  if (!Number.isInteger(from) || (from as number) < 0) throw new Error('from 은 기록을 시작할 때 받은 0 이상의 정수여야 합니다');
+  if (!panes.includes(pane as string)) throw new Error(`pane 은 앱 칸의 주소 가운데 하나여야 합니다: ${panes.join(', ')}`);
+  return app.sentSince(pane as string, from as number);
+}
+
 function readJson(file: string) {
   if (!fs.existsSync(file)) throw new Error(`${file} does not exist — run "duru rebuild" first`);
   return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -591,6 +599,10 @@ export async function startReviewServer(config: any, { port = 0, author = review
         if (!SHOT_NAME.test(name)) return send(res, 404, 'text/plain', 'no such screen picture');
         return sendFile(res, 'image/jpeg', path.join(config.outDir, SHOTS_DIR, name), 'no such screen picture');
       }
+      if (req.method === 'GET' && req.url === '/api/records/start') {
+        if (!app) return send(res, 404, 'text/plain', 'no app is served');
+        return send(res, 200, 'application/json', JSON.stringify({ from: app.sentCount }));
+      }
       if (req.method === 'GET' && url.pathname === '/api/path-values' && url.searchParams.has('screen')) {
         return await sendPathValues(res, url.searchParams.get('screen'), url.searchParams.get('role'));
       }
@@ -665,7 +677,7 @@ export async function startReviewServer(config: any, { port = 0, author = review
           if (!app) return send(res, 404, 'text/plain', 'no app is served');
           let file;
           try {
-            file = saveVisitRecord(config.storiesDir, input.steps);
+            file = saveVisitRecord(config.storiesDir, input.steps, new Date(), sentDuring(app, input));
           } catch (err: any) {
             return send(res, 400, 'text/plain', err.message);
           }

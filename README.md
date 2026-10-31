@@ -502,15 +502,17 @@ going to an error screen when loading fails.
 **Calls.** Each API call is a node under `calls` with an ID `<METHOD>:<path>`
 (`GET:/api/v1/document/{documentId}`), its server match, the API functions that make it, the screens that reach
 it, and the on/off `options` of its request body. A call's `options` come from its source, its body type, the
-config and the bodies of the write requests the tests sent: `sources` names where each comes from, `source`, `type`,
-`config` or `request`, and an option a request body sent carries `requests`, one entry per test and project that sent
-it, with the test's title, file, line, project and the values it sent. A call a trace shows a page sending from a
+config and the bodies of the write requests the tests and the visit records sent: `sources` names where each comes
+from, `source`, `type`, `config` or `request`, and an option a request body sent carries `requests`, one entry per
+test and project that sent it, with the test's title, file, line, project and the values it sent. A call a trace shows a page sending from a
 screen its source does not tie it to carries `tracedScreens`, one entry per such screen with the `tests` (title,
 file, line, project) whose run sent it there; `screens` stays what the source reads, and a call sent at app start
-gets none. The review page lists such a call under that screen with a `기록` chip. A POST, PUT, PATCH or DELETE call that a
-screen reaches and that no trace sent carries `unrecorded: true`, so an empty `options` can be told apart from a
-request no test has sent yet; the review page marks it `기록 없음` and the screen's `API 호출` heading counts the screen's
-own such calls while the 「공통」 line counts the shared ones. The server match is one of:
+gets none. The review page lists such a call under that screen with a `기록` chip. A request a visit record kept
+counts the same way, with the record file, from the config's folder, as its title and `null` file, line and project
+(see **Story candidates**). A POST, PUT, PATCH or DELETE call that a
+screen reaches and that no trace or visit record sent carries `unrecorded: true`, so an empty `options` can be told
+apart from a request no test has sent yet; the review page marks it `기록 없음` and the screen's `API 호출` heading counts
+the screen's own such calls while the 「공통」 line counts the shared ones. The server match is one of:
 
 - `match` — on the server, with the endpoint list labels
 - `method-mismatch` — the server has the path with another method
@@ -745,12 +747,14 @@ listing the places whose value the source does not show in full.
   many of those undecided candidates are screens or calls the baseline map does not have. When the marks cannot be read, `  case kinds not counted: <why>` takes the place of these
   lines.
 - `options sent in requests N | calls with them M` — printed by `rebuild` after the line of the calls with tests,
-  also when both are 0: how many of the map's options came at least partly from the body of a request a test sent,
-  and how many calls carry at least one of them.
-- `calls tied to screens only by traces N | screens they were sent from M` — printed by `rebuild` right after it,
-  also when both are 0: how many calls got `tracedScreens` (see **Calls**) and how many screens they hang under.
-- `write calls on screens no trace sent N | screens with them M` — printed by `rebuild` right after it, also when
-  both are 0: how many calls carry `unrecorded` (see **Calls**) and how many screens reach at least one of them.
+  also when both are 0: how many of the map's options came at least partly from the body of a request a test or a
+  visit record sent, and how many calls carry at least one of them.
+- `calls tied to screens only by traces and visit records N | screens they were sent from M` — printed by
+  `rebuild` right after it, also when both are 0: how many calls got `tracedScreens` (see **Calls**) and how many
+  screens they hang under.
+- `write calls on screens no trace or visit record sent N | screens with them M` — printed by `rebuild` right after
+  it, also when both are 0: how many calls carry `unrecorded` (see **Calls**) and how many screens reach at least one
+  of them.
 - `rebuild` also prints the story and candidate counts, how many of the candidates came from traces, how many it
   newly stored in `candidates/`, and the files skipped, the need files in `needs/`, how many conditions pick a need
   file that is not there and each need file it could not read with why, the links from untagged tests to screens and the trace or test files it could not read, the judged test
@@ -809,8 +813,8 @@ page showed when it went out, and gives that call its `tracedScreens` when the s
 neither directly nor at app start; a request the test sent itself, without a page, ties to none, and so does one
 sent while a step moved the address without loading a page, since the trace cannot tell which side of the move
 sent it. Any request in those traces, with a body or without, from a page or sent by the test itself, and whether
-or not it ties to a screen, counts as sent for `unrecorded`; the visit records do not keep requests yet, so a call
-sent only while recording a visit stays `unrecorded`.
+or not it ties to a screen, counts as sent for `unrecorded`. The requests a visit record kept count the same way
+(see **Story candidates**).
 
 Two kinds of untagged tests are shown next to a screen without counting as its tests. A unit test (Vitest or
 Jest JSON) is listed under `importers` when its test file imports one of the screen's source files; a file that
@@ -954,6 +958,12 @@ in the shape a story step's `inputs` has, and `skipped`, how many inputs were le
   ]
 }
 ```
+
+An object may also carry `requests`, the write requests sent while the record was made, each with its `method`,
+its `url` inside the app (starting with `/`), its `body` as text and `shown`, the address the app showed when it was
+sent; `body` and `shown` may be left out. They count as sent the way a trace's requests do: a body gives the call its
+options, `shown` ties the call to that screen, and the call is not `unrecorded` (see **Calls**). A record without
+`requests` reads as before, and a `requests` that is not such a list leaves the whole record out with a notice.
 
 duru turns each record named in `visitRecords`, and each file in `records/` in `storiesDir`, into a story candidate:
 each address goes to the screen whose route path matches it, steps in a row on the same screen become one step, and
@@ -1136,7 +1146,11 @@ the app chooses the account it is open as: the default account, each role in `ap
 「기록 끝」 writes the record into `records/` in `storiesDir` as
 `{ "steps": [{ "url": "/home" }, { "url": "/signin", "inputs": [...], "skipped": 1 }] }`, with the path, the query and
 what follows `#` and no host or port, in a file named by the date and a random ID (`2026-10-15-1a2b3c4d.json`) that is
-never changed or deleted; keep the folder in git with the stories. The record is listed as a candidate even if the
+never changed or deleted; keep the folder in git with the stories. The POST, PUT, PATCH and DELETE requests the app
+sent to the paths in `app.apiPaths` while the record was made go into its `requests`; a body is kept only when it
+reads as JSON and is at most 1 MB, and `shown` comes from the request's `Referer`, so an app that sends no
+`Referer` leaves it out. The review server holds the last 1000 such requests and at most 32 MB of their bodies, so a
+recording longer than that loses its first ones. The record is listed as a candidate even if the
 page is closed before saving. 「기록 끝」 also draws the steps on one line as a story's
 steps are drawn; 「전체 그림에서 보기」 shows them on the whole flow, where pressing a box adds a step, and 「한 줄로
 보기」 goes back. If no address came, as when the app's Content Security Policy blocks inline scripts, the page says so

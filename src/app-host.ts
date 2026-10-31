@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { pipeline } from 'node:stream';
 import vm from 'node:vm';
+import { WRITES } from './unrecorded-calls.ts';
 
 export interface AppAccount {
   id: string;
@@ -53,6 +54,14 @@ export interface AppHostOptions {
   pageOrigins?: () => string[];
 }
 
+// shown 은 요청의 Referer 에서 읽은, 그때 앱이 보이던 주소다. body 는 JSON 으로 읽히는 본문만 둔다.
+export interface ForwardedRequest {
+  method: string;
+  url: string;
+  body?: string;
+  shown?: string;
+}
+
 interface Login {
   token?: string;
   storage?: { key: string; value: string };
@@ -68,6 +77,19 @@ interface ServerFetchOptions {
   headers?: Record<string, string>;
   body?: unknown;
   signal?: AbortSignal;
+}
+
+const MAX_KEPT_BODY = 1024 * 1024;
+const MAX_KEPT_REQUESTS = 1000;
+const MAX_KEPT_BYTES = 32 * 1024 * 1024;
+
+function isJsonText(text: string) {
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export const MIME: Record<string, string> = {
@@ -474,6 +496,9 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
   const { settingsFile } = app;
   const globalNames = settingsFile && globalNamesOf(settingsFile);
   let overrides: SettingsOverride[] = [];
+  const sent: (ForwardedRequest & { n: number; port: number })[] = [];
+  let sentCount = 0;
+  let keptBytes = 0;
 
   // 앱 스크립트보다 먼저 돌아야, 앱이 처음 읽을 때 localStorage 에 토큰이 들어 있고 앱이 처음 주소를 바꿀 때도 알린다.
   const withScripts = (html: string, login: Login | null) => {
@@ -528,7 +553,28 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
     }
   }
 
-  function forward(req: http.IncomingMessage, res: http.ServerResponse) {
+  function keepWrite(req: http.IncomingMessage, port: number) {
+    const n = sentCount++;
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size <= MAX_KEPT_BODY) chunks.push(chunk);
+    });
+    req.on('end', () => {
+      const text = size <= MAX_KEPT_BODY ? Buffer.concat(chunks).toString('utf8') : '';
+      const referer = URL.canParse(req.headers.referer ?? '') ? new URL(req.headers.referer!) : null;
+      const shown = referer && referer.host === req.headers.host ? referer.pathname + referer.search : undefined;
+      const body = isJsonText(text) ? text : undefined;
+      sent.push({ n, port, method: req.method!, url: req.url!, ...(body !== undefined && { body }), ...(shown && { shown }) });
+      sent.sort((a, b) => a.n - b.n);
+      keptBytes += body?.length ?? 0;
+      while (sent.length > MAX_KEPT_REQUESTS || keptBytes > MAX_KEPT_BYTES) keptBytes -= sent.shift()!.body?.length ?? 0;
+    });
+  }
+
+  function forward(req: http.IncomingMessage, res: http.ServerResponse, port: number) {
+    if (WRITES.has(req.method!)) keepWrite(req, port);
     const target = new URL(join(app.server, req.url!));
     const client = target.protocol === 'https:' ? https : http;
     const up = client.request(target, { method: req.method, headers: { ...req.headers, host: target.host } }, (r) => {
@@ -611,7 +657,7 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
           return await logInAgain(res, account, holder);
         }
         if (settingsFile && pathname === settingsFile.path) return await serveSettings(res);
-        if (app.apiPaths.some((p) => pathname.startsWith(p))) return forward(req, res);
+        if (app.apiPaths.some((p) => pathname.startsWith(p))) return forward(req, res, (server.address() as AddressInfo).port);
         if (fromFolder(app)) return serveFolder(res, pathname, holder.login);
         await serveDeployed(req, res, holder.login);
       } catch (err: any) {
@@ -679,6 +725,14 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
       return overrides;
     },
     fileSettings,
+    get sentCount() {
+      return sentCount;
+    },
+    // from 은 기록을 시작할 때 받은 sentCount 다.
+    sentSince(url: string, from: number): ForwardedRequest[] {
+      const pane = Number(new URL(url).port);
+      return sent.filter((r) => r.port === pane && r.n >= from).map(({ n, port, ...r }) => r);
+    },
     close() {
       servers.forEach(close);
     },

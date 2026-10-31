@@ -6,7 +6,7 @@ import path from 'node:path';
 import { screenAccess, screenCases } from '../src/access.ts';
 import { loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
-import { addRequestOptions } from '../src/request-options.ts';
+import { addRequestOptions, traceSent } from '../src/request-options.ts';
 import type { MapScreen, ScreenMap } from '../src/map.ts';
 import { checkStories } from '../src/story-paths.ts';
 
@@ -1760,7 +1760,7 @@ function withRequestBody<T>(body: string, fn: (trace: string) => T) {
 test('an option the tests sent in a request joins the one the source found, with both sources', async () => {
   const map = await buildFixture();
   withRequestBody('{"withHistory":false,"watermark":true}', (trace) => {
-    const counts = addRequestOptions(map, [{ trace, title: 'exports the report', file: 'e2e/export.spec.ts', line: 9, project: 'chromium', status: 'pass' }]);
+    const counts = addRequestOptions(map, [traceSent({ trace, title: 'exports the report', file: 'e2e/export.spec.ts', line: 9, project: 'chromium' })!]);
     assert.deepEqual(counts, { options: 2, calls: 1 });
     const sent = [{ test: 'exports the report', file: 'e2e/export.spec.ts', line: 9, project: 'chromium' }];
     assert.deepEqual(optionsOf(map, 'POST:/api/v1/report/export'), [
