@@ -242,6 +242,7 @@ export function readTrace(file: string): TraceResult {
   }
 
   const resources = network.filter((e) => e.type === 'resource-snapshot').sort((a, b) => a.snapshot._monotonicTime - b.snapshot._monotonicTime);
+  for (const { snapshot } of resources) if (typeof snapshot.request?.method === 'string') snapshot.request.method = snapshot.request.method.toUpperCase();
   const frameUrls = [...snapshots.values()].map((snapshot) => snapshot.frameUrl);
   const shown: Shown = {
     addresses: new Set(frameUrls.map(withoutHash)),

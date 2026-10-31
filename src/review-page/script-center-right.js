@@ -243,7 +243,8 @@ function callTableBody(s, rows, depths, extra = []) {
         h('td', { class: 'call pick', onclick: () => pickCall(r.call.id) },
           h('div', { class: 'mono' }, h('button', { type: 'button', class: 'call-name', title: '이 호출을 고르고 호출 정보를 엽니다' }, r.call.id)), verdictChip(r.call.server),
           sent ? h('span', { class: 'sent-count', title: '이 호출의 태그 없이, 도는 동안 이 호출을 보낸 브라우저 테스트' }, `호출함 ${sent}`) : null,
-          r.traced ? tracedChip(r.traced) : null),
+          r.traced ? tracedChip(r.traced) : null,
+          r.call.unrecorded ? unrecordedChip() : null),
         cell({ node: r.call.id }, tests),
         depths.map((d) => cell({ node: r.call.id, depth: d }, tests.filter((t) => t.depth === d))),
         compared ? callCompareCell(s, r.call.id) : null),
@@ -257,18 +258,30 @@ function tracedChip(tests) {
   return h('span', { class: 'chip traced', title, 'aria-label': title }, '기록');
 }
 
+const UNRECORDED_TITLE = '어느 테스트 기록에도 이 쓰기 요청이 없습니다. 테스트가 이 요청을 보내면 옵션이 더 나올 수 있습니다';
+const unrecordedChip = () => h('span', { class: 'chip unrecorded', title: UNRECORDED_TITLE, 'aria-label': UNRECORDED_TITLE }, '기록 없음');
+
+const unrecordedCount = (rows) => {
+  const n = rows.filter((r) => r.call?.unrecorded).length;
+  const t = `어느 테스트 기록에도 나오지 않은 쓰기 요청 ${n}`;
+  return n ? h('span', { class: 'chip unrecorded', title: t, 'aria-label': t }, `기록 없음 ${n}`) : null;
+};
+
 const COMMON_TITLE = '앱 시작과 레이아웃이 보내는 요청';
 
-/** @param {'commonCallsOpen' | 'commonLinksOpen' | 'commonIncomingOpen'} openKey */
-function commonSection(className, title, count, openKey, body) {
+/**
+ * @param {'commonCallsOpen' | 'commonLinksOpen' | 'commonIncomingOpen'} openKey
+ * @param {HTMLElement | null} [extra]
+ */
+function commonSection(className, title, count, openKey, body, extra = null) {
   return h('details', { class: className, open: state[openKey], ontoggle: (e) => { state[openKey] = e.currentTarget.open; } },
-    h('summary', { title, 'aria-label': `${title} ${count}` }, `공통 ${count}`),
+    h('summary', { title, 'aria-label': extra ? `${title} ${count} ${extra.getAttribute('aria-label')}` : `${title} ${count}` }, `공통 ${count}`, extra ? [' ', extra] : null),
     body);
 }
 
 function commonCalls(s, rows, depths) {
   if (!rows.length) return null;
-  return commonSection('common-calls', COMMON_TITLE, rows.length, 'commonCallsOpen', callTableBody(s, rows, depths));
+  return commonSection('common-calls', COMMON_TITLE, rows.length, 'commonCallsOpen', callTableBody(s, rows, depths), unrecordedCount(rows));
 }
 
 function callTable(s) {
@@ -277,8 +290,9 @@ function callTable(s) {
   const removed = removedCallRows(s, depths);
   const shared = commonCalls(s, common, depths);
   if (!own.length && !removed.length) return [h('h2', {}, 'API 호출'), h('p', { class: 'muted' }, shared ? '이 화면만 부르는 API 호출이 없습니다.' : '부르는 API 호출이 없습니다.'), shared];
+  const ownUnrecorded = unrecordedCount(own);
   return [
-    h('h2', {}, `API 호출 ${own.length}`, listAbsentNote('서버 목록 없음')),
+    h('h2', {}, `API 호출 ${own.length}`, ownUnrecorded ? [' ', ownUnrecorded] : null, listAbsentNote('서버 목록 없음')),
     callTableBody(s, own, depths, removed),
     shared,
   ];

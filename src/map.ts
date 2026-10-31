@@ -103,6 +103,7 @@ export interface MapCall {
   screens: string[];
   options: { key: string; values: boolean[]; sources: string[]; sites: OptionSite[]; requests?: { test: string; file: string | null; line: number | null; project: string | null; values: boolean[] }[] }[];
   tracedScreens?: TracedScreen[];
+  unrecorded?: true;
   codeHash?: string;
 }
 

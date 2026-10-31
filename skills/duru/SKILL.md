@@ -143,6 +143,11 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   does not: the call carries `tracedScreens`, and a `calls tied to screens only by traces N | screens they were
   sent from M` line counts them. Such a tie comes from what a test did, not from the code, so it is no change
   against the baseline map.
+  A write call a screen reaches that no trace sent carries `unrecorded: true`, and a `write calls on screens no
+  trace sent N | screens with them M` line counts them: an `unrecorded` call with no options may still have some,
+  so tell the user a browser test that sends it is what fills them in. When `rebuild` also reports
+  `browser tests that ran without a trace N` above 0, turning tracing on for those tests (Playwright
+  `trace: 'on'`) is the first step.
 - An `input keys to check N` line lists the state keys a screen writes and hands to an API function that the
   function's request does not carry, each on its own line as `<screen> <API function> <key> <file>:<line>`; tell
   the user these are worth a test of what the screen sends and what reaches the server. A key a reviewer marked

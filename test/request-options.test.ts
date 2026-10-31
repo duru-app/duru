@@ -96,6 +96,18 @@ test('two requests to the same call merge into one option that keeps both values
   });
 });
 
+test('a write request whose method the browser kept in lower case still gives its body options to the call', () => {
+  withTrace([{ method: 'patch', url: '/api/v1/report', body: '{"notify":true}' }], (trace) => {
+    const map = {
+      screens: [],
+      apiFunctions: { send: { endpoints: [{ callId: 'PATCH:/api/v1/report', method: 'PATCH', url: '/api/v1/report' }] } },
+      calls: [{ id: 'PATCH:/api/v1/report', method: 'PATCH', path: '/api/v1/report', server: {}, apiFunctions: [], screens: [], options: [] as Option[] }],
+    };
+    assert.deepEqual(addRequestOptions(map, [sentOf(trace, 'exports the report', 'chromium')]), { options: 1, calls: 1 });
+    assert.deepEqual(map.calls[0].options, [{ key: 'notify', values: [true, false], sources: ['request'], sites: [], requests: [{ test: 'exports the report', file: 'test/report.spec.ts', line: 1, project: 'chromium', values: [true] }] }]);
+  });
+});
+
 test('each request option names the tests and the values they sent, sorted by file, line, test and project', () => {
   withTrace([{ url: '/api/v1/report', body: '{"notify":true}' }], (chromium) =>
     withTrace([{ url: '/api/v1/report', body: '{"notify":false}' }], (webkit) => {

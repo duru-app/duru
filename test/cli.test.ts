@@ -18,6 +18,35 @@ const CLI = path.join(import.meta.dirname, '../src/cli.ts');
 type Failure = Error & { status: number | null; stderr: string };
 type HandOver = { node: string; title: string; file?: string | null };
 
+function storedZip(files: Record<string, string>) {
+  const bodies: Buffer[] = [];
+  const directory: Buffer[] = [];
+  let offset = 0;
+  for (const [name, content] of Object.entries(files)) {
+    const nameBytes = Buffer.from(name);
+    const data = Buffer.from(content);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(nameBytes.length, 26);
+    const entry = Buffer.alloc(46);
+    entry.writeUInt32LE(0x02014b50, 0);
+    entry.writeUInt32LE(data.length, 20);
+    entry.writeUInt32LE(data.length, 24);
+    entry.writeUInt16LE(nameBytes.length, 28);
+    entry.writeUInt32LE(offset, 42);
+    bodies.push(local, nameBytes, data);
+    directory.push(entry, nameBytes);
+    offset += 30 + nameBytes.length + data.length;
+  }
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(Object.keys(files).length, 10);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...bodies, ...directory, end]);
+}
+
 test('rebuild writes map.json and tests.json to the configured output folder and prints a summary', () => {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
@@ -87,6 +116,94 @@ test('the README, the agent skill and the decision record say what a call only a
   assert.match(readme, /a request the test sent itself, without a page, ties to none, and so does one\s+sent while a step moved the address without loading a page/);
   assert.match(read('../skills/duru/SKILL.md'), /`calls tied to screens only by traces N \| screens they were\s+sent from M` line counts them/);
   assert.match(read('../docs/decisions.md'), /\*\*A request a page sent in a test's trace ties its call to the screen[\s\S]*Chosen for #496 \(2026-10-31\)[\s\S]*Compared:/);
+});
+
+test('rebuild prints how many write calls on screens no trace sent, right after the line for the calls only a trace ties to a screen', () => {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    const lines = execFileSync(process.execPath, [CLI, 'rebuild', path.join(copy, 'config.json')], { encoding: 'utf8' }).split('\n');
+    const at = lines.findIndex((l) => l.startsWith('write calls on screens no trace sent '));
+    assert.match(lines[at], /^write calls on screens no trace sent [1-9]\d* \| screens with them [1-9]\d*$/);
+    assert.match(lines[at - 1], /^calls tied to screens only by traces \d+ \| screens they were sent from \d+$/);
+    const map = JSON.parse(fs.readFileSync(path.join(copy, 'out', 'map.json'), 'utf8'));
+    const marked = map.calls.filter((c: { unrecorded?: true }) => c.unrecorded);
+    assert.equal(lines[at], `write calls on screens no trace sent ${marked.length} | screens with them ${new Set(marked.flatMap((c: { screens: string[] }) => c.screens)).size}`);
+    assert.ok(marked.every((c: { method: string; screens: string[] }) => c.method !== 'GET' && c.screens.length));
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+});
+
+test('on the example app, a write call a trace sent carries no unrecorded mark while the write calls no trace sent keep it', () => {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    const line = (e: object) => `${JSON.stringify(e)}\n`;
+    const sent = path.join(copy, 'results/sent/report-export/trace.zip');
+    fs.mkdirSync(path.dirname(sent), { recursive: true });
+    fs.writeFileSync(sent, storedZip({
+      '0-trace.trace': line({ type: 'context-options', version: 8 }),
+      '0-trace.network': line({
+        type: 'resource-snapshot',
+        snapshot: { _monotonicTime: 1, request: { method: 'POST', url: 'http://x/api/v1/report/export', headers: [] }, response: { status: 200, content: { mimeType: 'application/json' } } },
+      }),
+    }));
+    fs.writeFileSync(path.join(copy, 'results/sent/report.json'), JSON.stringify({
+      config: { projects: [] },
+      suites: [{
+        title: 'sent.spec.ts',
+        file: 'sent.spec.ts',
+        line: 0,
+        column: 0,
+        specs: [{
+          title: 'exports the report',
+          ok: true,
+          tags: [],
+          tests: [{
+            timeout: 30000,
+            annotations: [],
+            expectedStatus: 'passed',
+            projectId: 'chromium',
+            projectName: 'chromium',
+            results: [{ retry: 0, status: 'passed', attachments: [{ name: 'trace', contentType: 'application/zip', path: sent }] }],
+            status: 'expected',
+          }],
+          id: 'sent-1',
+          file: 'sent.spec.ts',
+          line: 6,
+          column: 1,
+        }],
+      }],
+      errors: [],
+      stats: { startTime: '2026-10-04T00:00:00.000Z', duration: 2000, expected: 1, skipped: 0, unexpected: 0, flaky: 0 },
+    }));
+    const configFile = path.join(copy, 'config.json');
+    const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    fs.writeFileSync(configFile, JSON.stringify({ ...config, tests: [...config.tests, { format: 'playwright', path: 'results/sent', depth: 'ui' }] }));
+    const stdout = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+
+    const map = JSON.parse(fs.readFileSync(path.join(copy, 'out', 'map.json'), 'utf8'));
+    const callOf = (id: string) => map.calls.find((c: { id: string }) => c.id === id);
+    assert.equal(callOf('POST:/api/v1/report/export').unrecorded, undefined);
+    assert.equal(callOf('POST:/api/v1/report/schedule').unrecorded, true);
+    const marked = map.calls.filter((c: { unrecorded?: true }) => c.unrecorded);
+    const screens = new Set(marked.flatMap((c: { screens: string[] }) => c.screens)).size;
+    assert.match(stdout, new RegExp(`^write calls on screens no trace sent ${marked.length} \\| screens with them ${screens}$`, 'm'));
+    assert.equal(marked.length, 5);
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+});
+
+test('the README, the agent skill and the decision record say what an unrecorded write call is and how it is counted', () => {
+  const read = (rel: string) => fs.readFileSync(path.join(import.meta.dirname, rel), 'utf8');
+  const readme = read('../README.md');
+  assert.match(readme, /A POST, PUT, PATCH or DELETE call that a\s+screen reaches and that no trace sent carries `unrecorded: true`/);
+  assert.match(readme, /`write calls on screens no trace sent N \| screens with them M` — printed by `rebuild` right after it/);
+  assert.match(readme, /the visit records do not keep requests yet/);
+  assert.match(read('../skills/duru/SKILL.md'), /`write calls on screens no\s+trace sent N \| screens with them M` line counts them/);
+  assert.match(read('../docs/decisions.md'), /\*\*A write call a screen reaches that no trace sent is marked `unrecorded`[\s\S]*Chosen for #497 \(2026-10-31\)[\s\S]*Compared:/);
 });
 
 test('the README, the agent skill and the decision record say what the line for the options the tests sent in a request means', () => {

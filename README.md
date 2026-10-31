@@ -507,7 +507,10 @@ config and the bodies of the write requests the tests sent: `sources` names wher
 it, with the test's title, file, line, project and the values it sent. A call a trace shows a page sending from a
 screen its source does not tie it to carries `tracedScreens`, one entry per such screen with the `tests` (title,
 file, line, project) whose run sent it there; `screens` stays what the source reads, and a call sent at app start
-gets none. The review page lists such a call under that screen with a `기록` chip. The server match is one of:
+gets none. The review page lists such a call under that screen with a `기록` chip. A POST, PUT, PATCH or DELETE call that a
+screen reaches and that no trace sent carries `unrecorded: true`, so an empty `options` can be told apart from a
+request no test has sent yet; the review page marks it `기록 없음` and the screen's `API 호출` heading counts the screen's
+own such calls while the 「공통」 line counts the shared ones. The server match is one of:
 
 - `match` — on the server, with the endpoint list labels
 - `method-mismatch` — the server has the path with another method
@@ -746,6 +749,8 @@ listing the places whose value the source does not show in full.
   and how many calls carry at least one of them.
 - `calls tied to screens only by traces N | screens they were sent from M` — printed by `rebuild` right after it,
   also when both are 0: how many calls got `tracedScreens` (see **Calls**) and how many screens they hang under.
+- `write calls on screens no trace sent N | screens with them M` — printed by `rebuild` right after it, also when
+  both are 0: how many calls carry `unrecorded` (see **Calls**) and how many screens reach at least one of them.
 - `rebuild` also prints the story and candidate counts, how many of the candidates came from traces, how many it
   newly stored in `candidates/`, and the files skipped, the need files in `needs/`, how many conditions pick a need
   file that is not there and each need file it could not read with why, the links from untagged tests to screens and the trace or test files it could not read, the judged test
@@ -803,7 +808,9 @@ JSON, and a request with no body, is skipped. Each request a page sent is also t
 page showed when it went out, and gives that call its `tracedScreens` when the source ties it to that screen
 neither directly nor at app start; a request the test sent itself, without a page, ties to none, and so does one
 sent while a step moved the address without loading a page, since the trace cannot tell which side of the move
-sent it.
+sent it. Any request in those traces, with a body or without, from a page or
+sent by the test itself, counts as sent for `unrecorded`; the visit records do not keep requests yet, so a call sent
+only while recording a visit stays `unrecorded`.
 
 Two kinds of untagged tests are shown next to a screen without counting as its tests. A unit test (Vitest or
 Jest JSON) is listed under `importers` when its test file imports one of the screen's source files; a file that

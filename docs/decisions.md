@@ -5277,6 +5277,20 @@ Compared:
   requests in order, but the page, the task list and an agent reading `map.json` would each have to match the
   addresses to screens again.
 
+**A write call a screen reaches that no trace sent is marked `unrecorded`, also when the config names no trace at
+all.**
+Chosen for #497 (2026-10-31). Since the bodies of sent requests give a call its options (#495), a call with no
+options is either one that has none or one no test has sent; the mark tells them apart. Only POST, PUT, PATCH and
+DELETE calls that a screen reaches are marked (driver, 2026-10-30: only those tied to a screen): a GET carries no
+body to read options from, and a call no screen reaches has nowhere to show the mark. Every request in a trace
+counts as sent, one the test sends itself too, since its body gives options all the same. The visit records keep no
+requests yet, so they send nothing until they do.
+Compared:
+- Marking nothing when no trace is read: an app with no browser tests would show no mark, but its write calls are
+  exactly the ones no test has sent, and the count line already says how many there are.
+- Keeping the mark off the map and working it out on the review page from `tests.json`: the task list and an agent
+  reading `map.json` would have to match the requests to calls again.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

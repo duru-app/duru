@@ -144,6 +144,7 @@
   table.inputs button:disabled { cursor: default; opacity: .6; }
   .chip.config { color: var(--accent); }
   .chip.traced { color: var(--more); }
+  .chip.unrecorded { color: var(--pending); }
   .ok { color: var(--pass); } .ng { color: var(--fail); } .wait { color: var(--pending); } .lim { color: var(--limit); }
   .chip.dead, .chip.v-none { color: var(--fail); } .chip.v-method-mismatch { color: var(--more); } .chip.v-match { color: var(--pass); } .chip.v-unresolved, .chip.v-unchecked { color: var(--muted); }
   .test { margin-bottom: 6px; }
