@@ -554,6 +554,22 @@ const overlapping = (boxes: Awaited<ReturnType<typeof flowBoxes>>) => boxes.flat
   .filter((b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom)
   .map((b) => `${a.id} / ${b.id}`));
 
+const dividerHead = async (p: Page, count: number) => {
+  const head = p.locator('#flow .group-head');
+  assert.equal(await head.evaluate((e) => e.classList.contains('divider')), true, 'a divider stands in the heading\'s place');
+  assert.equal(await head.textContent(), '', 'the divider shows no text');
+  assert.equal(await head.getAttribute('role'), 'separator');
+  assert.equal(await head.getAttribute('aria-label'), `밑으로 이어 그린 화면이 없는 진입 화면 ${count}`);
+  const reach = await head.evaluate((node) => {
+    const e = node as HTMLElement;
+    return { from: e.offsetLeft, x: Number.parseFloat(e.style.left), to: e.offsetLeft + e.offsetWidth, drawing: e.parentElement!.offsetWidth, height: e.offsetHeight };
+  });
+  assert.ok(Math.abs(reach.from - reach.x) <= 1, `the divider starts where the layout put the group (${reach.from} at ${reach.x})`);
+  assert.ok(Math.abs(reach.to - reach.drawing) <= 1, `the divider runs to the drawing's right edge (${reach.to} of ${reach.drawing})`);
+  assert.ok(reach.height >= 12, `the divider keeps a box to hover (${reach.height}px tall)`);
+  return head;
+};
+
 test('in a browser, every flow box stands where the layout put it, each line ending at the middle of its box and boxes under one another keeping the layout\'s gap, also with gathered entry screens', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
@@ -944,12 +960,12 @@ test('in a browser, Enter in the flow search goes through the branching drawing 
   );
 });
 
-test('in a browser, entry screens with nothing drawn under them are gathered under 「딸린 화면이 없는 진입 화면 N」 below the branching ones, its hover saying why, in several columns, each box showing what any box shows', { skip: browserMissing }, async () => {
+test('in a browser, entry screens with nothing drawn under them are gathered below a thin divider line under the branching ones, its hover saying why, in several columns, each box showing what any box shows', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#flow .group-head');
-        assert.equal(await p.textContent('#flow .group-head'), '딸린 화면이 없는 진입 화면 8');
+        await dividerHead(p, 8);
         assert.match((await p.getAttribute('#flow .group-head', 'title'))!, /^밑으로 이어 그린 화면이 없는 진입 화면입니다\./);
         const boxes = await flowBoxes(p);
         const grouped = boxes.filter((b) => b.grouped);
@@ -958,7 +974,7 @@ test('in a browser, entry screens with nothing drawn under them are gathered und
         const tree = boxes.filter((b) => !b.grouped);
         assert.ok(tree.some((b) => b.id === '/signin#SignIn'));
         assert.ok(tree.every((b) => b.bottom <= head.top), 'the branching entry screens come first');
-        assert.ok(grouped.every((b) => b.top >= head.bottom), 'the gathered boxes sit under the heading');
+        assert.ok(grouped.every((b) => b.top >= head.bottom), 'the gathered boxes sit under the divider');
         assert.ok(new Set(grouped.map((b) => b.left)).size > 1, 'the gathered boxes stand in more than one column');
         assert.deepEqual(overlapping(boxes), []);
 
@@ -969,8 +985,10 @@ test('in a browser, entry screens with nothing drawn under them are gathered und
         await failing.click();
         assert.deepEqual(await pickedBoxes(p), ['/extra/7#Extra7']);
         assert.equal((await boxesWith(p, 'dim')).length, (await boxCount(p)) - 1, 'a gathered screen has no paths, so every other screen dims');
-        assert.equal(await p.textContent('#flow .group-head'), '딸린 화면이 없는 진입 화면 8');
+        await dividerHead(p, 8);
         assert.deepEqual(overlapping(await flowBoxes(p)), []);
+        await (await dividerHead(p, 8)).click({ position: { x: 400, y: 14 } });
+        assert.deepEqual(await pickedBoxes(p), [], 'a click on the divider lets the picked screen go, as one on the empty drawing does');
       }, { view: 'flow', setup: changeData((data) => { data.flow.roots.push(...leafEntries(data, 8)); }) }),
     ),
   );
@@ -978,7 +996,7 @@ test('in a browser, entry screens with nothing drawn under them are gathered und
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#flow .group-head');
-        assert.equal(await p.textContent('#flow .group-head'), '딸린 화면이 없는 진입 화면 3');
+        await dividerHead(p, 3);
         const first = await p.$$eval('#flow .canvas', ([canvas]) => [...canvas.querySelectorAll('.box.screen')].map((e) => e.classList.contains('grouped')));
         assert.deepEqual(first, [true, true, true]);
       }, { view: 'flow', setup: changeData((data) => {
@@ -1102,7 +1120,7 @@ test('in a browser, gathered entry screens the server put in one group stand as 
         assert.equal(await group.getAttribute('aria-expanded'), 'false');
         assert.equal(await group.getAttribute('aria-label'), '/extra 묶음 펴기');
         assert.deepEqual((await group.getAttribute('title'))!.split('\n'), ['/extra · 화면 5', '통과 2 · 보류 1 · 실패 1 · 테스트 없음 1', '누르면 이 묶음을 펴서 그 안의 화면을 그립니다']);
-        assert.equal(await p.textContent('#flow .group-head'), '딸린 화면이 없는 진입 화면 8', 'the heading still counts the screens, folded or not');
+        await dividerHead(p, 8);
         for (const id of GROUPED) assert.equal(await p.locator(`#flow .box.screen[data-key="${id}"]`).count(), 0, `${id} is folded away`);
         const grid = await gridBoxes(p);
         assert.deepEqual(grid.map((b) => b.id), ['/extra · 화면 5', '/extra/5#Extra5', '/extra/6#Extra6', '/extra/7#Extra7']);
@@ -1224,8 +1242,8 @@ test('in a browser, on a big map an entry screen with screens under it is drawn 
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#flow .group-head');
-        assert.equal(await p.textContent('#flow .group-head'), '딸린 화면이 없는 진입 화면 3', 'a big map with nothing to fold keeps the heading');
-        assert.equal(await p.getAttribute('#flow .group-head', 'title'), await p.evaluate(() => GROUP_HEAD_TIP));
+        await dividerHead(p, 3);
+        assert.equal(await p.getAttribute('#flow .group-head', 'title'), await p.evaluate(() => GROUP_HEAD_TIP), 'a big map with nothing to fold keeps the divider');
       }, { view: 'flow', setup: folding((data) => { data.flow.roots = leafEntries(data, 3); }) }),
     ),
   );

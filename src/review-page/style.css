@@ -522,6 +522,8 @@
   .canvas > .mark { position: absolute; }
   .box.on-story { box-shadow: 0 0 0 2px var(--text); }
   #flow .canvas .group-head { position: absolute; margin: 0; line-height: 28px; white-space: nowrap; }
+  #flow .canvas .group-head.divider { display: flex; align-items: center; cursor: help; }
+  #flow .canvas .group-head.divider::before { content: ''; flex: 1 1 auto; border-top: 1px solid var(--line); }
   .box { position: absolute; display: flex; align-items: center; gap: 6px; box-sizing: border-box; margin: 0; padding: 3px 8px 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; font-size: 12px; line-height: 1.35; text-align: left; cursor: pointer; transition: opacity .15s; }
   .box.measuring { left: 0; top: 0; width: max-content; max-width: 360px; min-width: min-content; visibility: hidden; }
   .box:hover { border-color: var(--accent); }

@@ -30,7 +30,7 @@ document.addEventListener('keydown', (e) => {
   if (!open.length && state.view === 'flow' && state.flowPicked && !(e.target instanceof Element && e.target.closest('input, select, textarea, #center, #right'))) unpickScreen();
 });
 // 끌었다 놓거나 스크롤바를 눌러도 click 이 오고, 상자를 누른 채 옆으로 비껴 놓으면 click 이 빈 곳으로 온다.
-const FLOW_EMPTY = '#flow, #flow .zoom-box, #flow .canvas';
+const FLOW_EMPTY = '#flow, #flow .zoom-box, #flow .canvas, #flow .canvas > .group-head.divider';
 let flowPress = null;
 document.getElementById('flow').addEventListener('pointerdown', (e) => {
   const flow = /** @type {HTMLElement} */ (e.currentTarget);
