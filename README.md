@@ -766,8 +766,8 @@ A Playwright, JUnit or Vitest test that holds only inside a limit the app decide
 `@limit:<source>`, the source naming where the limit was decided as on a `WITHIN_LIMIT` verdict line: a `http(s)`
 link, `#<number>` or a `.md` decision document (`@limit:#546`). The test reads as `limit` when it passes, with the
 source as its detail, and as `fail` when it fails. A passing test with a `@limit` tag that names no such source
-reads as pending, with the detail `출처 없음 — ` and what that tag wrote (`출처 없음` when it wrote nothing, as a bare
-`@limit`). A tag holds no space, so it carries the source alone. For JUnit the display name must reach the
+reads as pending, with the detail `출처 없음 — ` and what its `@limit` tags wrote that names no source, joined with a
+space (`출처 없음` when they wrote nothing, as a bare `@limit`); a source another of its tags names is left out. A tag holds no space, so it carries the source alone. For JUnit the display name must reach the
 report: Gradle writes it as it is, and Maven Surefire writes it with `usePhrasedTestCaseMethodName=true`.
 
 A test of a screen that opens only under a role or a setting declares the case it checks next to its `@screen:`
