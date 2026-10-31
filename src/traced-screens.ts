@@ -9,7 +9,7 @@ export type TracedScreen = { screen: string; tests: TracedTest[] };
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const byTest = (a: TracedTest, b: TracedTest) => compare(a.file ?? '', b.file ?? '') || (a.line ?? 0) - (b.line ?? 0) || compare(a.test, b.test) || compare(a.project ?? '', b.project ?? '');
 
-// 요청을 보낸 순간 페이지가 보이던 주소의 화면에 그 요청의 호출을 잇는다. 소스가 이미 그 화면에 이었거나 앱 시작 때 보내는 호출은 두지 않는다.
+// 요청을 보낸 순간 페이지가 보이던 주소의 화면에 그 요청의 호출을 잇는다.
 export function addTracedScreens(map: any, sent: SentTrace[]): { calls: number; screens: number } {
   const callAt = callFinder(map);
   const screenAt = screenFinder(map);
