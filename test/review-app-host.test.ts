@@ -538,7 +538,7 @@ test('a visit recorded on the page keeps the write requests the app pane passed 
   );
 });
 
-test('a write request the API server never answered is not kept in the visit record', async () => {
+test('a write request that never reached the API server is not kept in the visit record', async () => {
   const down = http.createServer();
   await new Promise<void>((resolve) => down.listen(0, '127.0.0.1', resolve));
   const server = `http://127.0.0.1:${(down.address() as AddressInfo).port}`;
@@ -609,7 +609,7 @@ test('a write request the API server received is kept in the visit record even w
   );
 });
 
-test('a write request the API server read and then dropped without answering is not kept in the visit record', async () => {
+test('a write request the API server read and then dropped without answering is still kept in the visit record', async () => {
   await withSlowApi((api) =>
     withPassword('s3cret', () =>
       withRebuiltFixture(appSettings(api), (config) =>
@@ -619,8 +619,11 @@ test('a write request the API server read and then dropped without answering is 
           const sent = await fetch(`${app.url}/api/v1/drop`, { method: 'POST', body: '{"notify":true}', headers: { referer: `${app.url}/home` } });
           assert.equal(sent.status, 502);
           const res = await fetch(`${base}/api/records`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ steps: [{ url: '/home' }], pane: app.url, from }) });
-          const { requests } = await res.json();
-          assert.equal(requests, 0);
+          const { record, requests } = await res.json();
+          assert.equal(requests, 1);
+          assert.deepEqual(JSON.parse(fs.readFileSync(path.join(config.configDir, record), 'utf8')).requests, [
+            { method: 'POST', url: '/api/v1/drop', body: '{"notify":true}', shown: '/home' },
+          ]);
         }),
       ),
     ),
