@@ -127,7 +127,13 @@ function screenCallOptions(apiCalls: MapScreen['apiCalls'], callsById: Map<strin
   };
   keysOf(apiCalls, true);
   keysOf(appStart, false);
-  return Object.fromEntries([...sent].map(([id, keys]) => [id, callsById.get(id)!.options.filter((o) => keys.has(o.key) || o.sources.includes('type') || o.sources.includes('config') || o.sources.includes('request'))]));
+  return Object.fromEntries([...sent].map(([id, keys]) => [id, callsById.get(id)!.options.filter((o) => keys.has(o.key) || notOnlyInSource(o))]));
+}
+
+const notOnlyInSource = (o: MapCall['options'][number]) => o.sources.includes('type') || o.sources.includes('config') || o.sources.includes('request');
+
+function tracedCallOptions(screen: string, calls: MapCall[]) {
+  return Object.fromEntries(calls.filter((c) => c.tracedScreens?.some((t) => t.screen === screen)).map((c) => [c.id, c.options.filter(notOnlyInSource)]));
 }
 
 const isStaleMap = (map: any) => Array.isArray(map?.screens) && map.screens.some((s: any) => !s.routeFile);
@@ -209,7 +215,7 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
   const settingsFile = config.app?.settingsFile ? { root: config.app.settingsFile.root, merged: config.app.settingsFile.merged, file: fileSettings?.file ?? null } : null;
   const screens = map.screens.map((s) => ({
     ...s,
-    callOptions: screenCallOptions(s.apiCalls, callsById, map.appWide?.apiCalls),
+    callOptions: { ...tracedCallOptions(s.id, map.calls), ...screenCallOptions(s.apiCalls, callsById, map.appWide?.apiCalls) },
     cases: [...screenCases(s.access), ...pickedCases(s.id)],
     access: {
       ...s.access,

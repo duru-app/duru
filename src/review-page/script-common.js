@@ -129,6 +129,7 @@ function othersSigned() {
 }
 const signedAt = (record) => (othersSigned() ? `${record.author} · ${fmtDate(record.date)}` : fmtDate(record.date));
 const CODE_CHANGED = '코드 바뀜';
+const TRACED_LABEL = '기록 연결';
 const codeChangedChip = (title) => h('span', { class: 'chip code-changed', title, 'aria-label': title }, CODE_CHANGED);
 const markChip = (m) => (m?.current ? [
   h('span', { class: `chip ${m.current.status}`, title: m.current.note || '' }, MARK_STATUS[m.current.status] ?? CASE_STATUS[m.current.status]),
@@ -143,13 +144,15 @@ function codeState(code) {
 const callOf = (id) => state.data.map.calls.find((c) => c.id === id);
 const nodeWord = (id) => (callOf(id) ? '호출' : '화면');
 const callIdsOf = (s) => [...new Set(s.apiCalls.flatMap((c) => (c.endpoints ?? []).map((e) => e.callId)).filter(Boolean))];
+const tracedOn = (call, screenId) => call.tracedScreens?.find((t) => t.screen === screenId);
+const tracedCallsOf = (s) => state.data.map.calls.filter((c) => tracedOn(c, s.id));
 const hasOption = (tests, key, value) => tests.filter((t) => t.options?.some((o) => o.key === key && o.value === value));
 const optionsOf = (s, callId) => s.callOptions[callId] ?? state.data.map.appWide?.callOptions[callId] ?? [];
 let appStartIds = new Set();
 const sentAtAppStart = (id) => appStartIds.has(id);
 function callScreen(id) {
   const call = callOf(id);
-  if (!call || call.screens.length || !sentAtAppStart(id)) return call?.screens[0];
+  if (!call || call.screens.length || !sentAtAppStart(id)) return call?.screens[0] ?? call?.tracedScreens?.[0]?.screen;
   const { screens } = state.data.map;
   return screens.some((s) => s.id === state.selected) ? state.selected : screens[0]?.id;
 }
@@ -173,7 +176,7 @@ async function load() {
   state.selected = screen?.id ?? null;
   const t = state.target;
   const targetKept = t && screen && (t.node === screen.id
-    || ((callIdsOf(screen).includes(t.node) || sentAtAppStart(t.node)) && (!t.option || optionsOf(screen, t.node).some((o) => o.key === t.option.key))));
+    || ((callIdsOf(screen).includes(t.node) || sentAtAppStart(t.node) || tracedOn(callOf(t.node) ?? {}, screen.id)) && (!t.option || optionsOf(screen, t.node).some((o) => o.key === t.option.key))));
   if (!targetKept) {
     state.target = screen ? { node: screen.id } : null;
     state.draft = null;

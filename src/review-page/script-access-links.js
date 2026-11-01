@@ -4,6 +4,7 @@ function callDetails(call, s) {
   const sends = (c) => (c.endpoints ?? []).some((e) => e.callId === call.id);
   const sites = s.apiCalls.filter(sends);
   const appSites = (state.data.map.appWide?.apiCalls ?? []).filter(sends);
+  const traced = tracedOn(call, s.id);
   const option = picked && call.options.find((o) => o.key === picked.key);
   return [
     option ? h('h2', {}, '옵션을 찾은 자리') : null,
@@ -23,8 +24,12 @@ function callDetails(call, s) {
     h('ul', { class: 'plain' }, sites.map((c) => h('li', {}, h('code', {}, c.fn), ' ', h('span', { class: 'muted mono' }, `${c.file}:${c.line}`)))),
     appSites.length ? h('h2', {}, '앱 시작 때 부르는 곳') : null,
     appSites.length ? h('ul', { class: 'plain' }, appSites.map((c) => h('li', {}, h('code', {}, c.fn), ' ', h('span', { class: 'muted mono' }, `${c.file}:${c.line}`)))) : null,
-    h('h2', {}, `이 호출을 쓰는 화면 ${call.screens.length}`),
-    h('ul', { class: 'plain' }, call.screens.map((id) => h('li', {}, h('code', {}, id)))),
+    traced ? h('h2', {}, '이 화면에서 보낸 테스트') : null,
+    traced ? h('ul', { class: 'plain' }, traced.tests.map((t) => h('li', {}, t.test, ' ', h('span', { class: 'muted mono' }, [t.file && `${t.file}${t.line ? `:${t.line}` : ''}`, t.project].filter(Boolean).join(' · '))))) : null,
+    h('h2', {}, `이 호출을 쓰는 화면 ${call.screens.length + (call.tracedScreens?.length ?? 0)}`),
+    h('ul', { class: 'plain' },
+      call.screens.map((id) => h('li', {}, h('code', {}, id))),
+      (call.tracedScreens ?? []).map((t) => h('li', {}, h('code', {}, t.screen), ' ', tracedChip(t.tests)))),
   ];
 }
 
