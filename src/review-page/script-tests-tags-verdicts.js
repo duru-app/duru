@@ -14,7 +14,7 @@ const detailText = (t) => t.status === 'limit'
 
 function testItem(t, { depth = false, hide = [], chip = null } = {}) {
   return h('div', { class: 'test' },
-    depth ? h('span', { class: 'depth' }, DEPTH_LABELS[t.depth]) : null,
+    depth ? h('span', { class: 'depth', title: DEPTH_TITLES[t.depth] }, DEPTH_LABELS[t.depth]) : null,
     h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status]), ' ', chip, titleWithTags(t, depth ? [...hide, `depth:${t.depth}`] : hide), ' ',
     h('span', { class: 'muted mono' }, filePlace(t.file, t.line)),
     t.project ? h('span', { class: 'muted' }, ` · ${t.project}`) : null,
@@ -23,7 +23,7 @@ function testItem(t, { depth = false, hide = [], chip = null } = {}) {
 
 function importerItem(t, chip = null) {
   return h('div', { class: 'test' },
-    h('span', { class: 'depth' }, DEPTH_LABELS[t.depth]),
+    h('span', { class: 'depth', title: DEPTH_TITLES[t.depth] }, DEPTH_LABELS[t.depth]),
     h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status]), ' ', chip, titleWithTags(t, [`depth:${t.depth}`]), ' ',
     h('span', { class: 'muted mono' }, filePlace(t.testFile, t.line)),
     viaRow(t.via));

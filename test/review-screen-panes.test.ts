@@ -824,13 +824,15 @@ test('in a browser, reloading a map with no screens while a call is chosen leave
   );
 });
 
-test('in a browser, the output depth row comes after the other depths and takes a mark', { skip: browserMissing }, async () => {
+test('in a browser, the output depth row comes after the other depths and takes a mark, and the render depth row says in its title what a render test checks', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/lab/result")');
-        assert.deepEqual(await p.locator('#center td.depth').allTextContents(), ['화면 전체', 'UI/E2E', 'API', '렌더링만', '코드', '데이터', '산출물']);
+        assert.deepEqual(await p.locator('#center td.depth').allTextContents(), ['화면 전체', 'UI/E2E', 'API', '렌더링', '코드', '데이터', '산출물']);
+        const render = p.locator('#center td.depth span[title]', { hasText: '렌더링' });
+        assert.equal(await render.getAttribute('title'), '화면이나 컴포넌트를 그려 보기만 하는 테스트');
         await p.click('#center tr:has-text("산출물")');
         assert.match((await p.textContent('#right .mark-form .tags .tag-label'))!, /산출물 깊이/);
         await p.click('#right .statuses button:has-text("테스트 필요")');
