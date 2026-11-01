@@ -112,6 +112,7 @@ const untaggedTests = () => state.data.tests.untagged ?? [];
 const untaggedListMissing = () => !state.data.tests.untagged && state.data.tests.untaggedCount > 0;
 const untaggedCount = () => state.data.tests.untagged?.length ?? state.data.tests.untaggedCount ?? 0;
 const untaggedKey = (t) => JSON.stringify([t.source, t.file, t.line, t.title]);
+const senderKey = (r) => JSON.stringify([r.file, r.line, r.test]);
 const traceNoticeOf = (t) => (state.data.tests.traceNotices ?? []).find(({ test: n }) => n.file === t.file && n.line === t.line && n.title === t.title
   && (n.source == null || n.source === t.source)
   && (n.project == null || (t.projects ? Object.hasOwn(t.projects, n.project) : t.project == null || n.project === t.project)));

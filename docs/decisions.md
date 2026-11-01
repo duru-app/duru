@@ -5193,6 +5193,37 @@ Compared:
 - Growing `values` and skipping `requests`: the page and the task list would still have to join `tests.json` to name
   the tests that sent the values.
 
+**On an option's row, a value no `@option` tag covers but a test's trace sent reads 「호출함 N」 in the test cell and
+stays a gap; the source chips sit on the option's first row only.**
+Chosen for #515 (2026-11-01). The cell counted tagged tests only, so on an app with no `@option` tags every row read
+「테스트 없음」, even where the traces show a test sending that value, and a chip saying the other value was never sent
+contradicted the cell beside it. Sending a value does not check what it does, so the number of test runs whose trace
+sent it goes into the same cell, dashed and under its own word, and is never counted as a test: the row stays red, the
+task list keeps the case, and pass and fail still come from tagged tests only. 「호출함」 is the word the call row already
+uses, next to the call's name, for the same kind of count: the runs of browser tests without that row's tag that sent
+it, one per Playwright project, so a test run in two projects counts twice on both rows. The option's center pane
+lists every run with a recorded trace that sent the option, tagged or not, one per line with the project and the
+values each sent, the driver's choice (2026-11-01) after seeing it drawn beside a list of the picked value's runs only
+and a list of tests with their projects and values merged: while no test carries this call's tag and the value's
+`@option` tag, the lines carrying that value add up to its cell, and the list stays the same on both rows because it
+says where the option was found. The option row reads the trace records directly, so a pair a reviewer discarded on
+the call row still counts there, and runs with the same title, file, line and project count once, such as one run
+found in two result files or two file-less runs of one title. The source chips (본문 타입, 설정, 보낸 요청) say where the option
+was found, which is the same for both values, so they are drawn on the 켬 row alone.
+Compared:
+- A chip beside the value, 「안 보냄」 or 「기록 있음」 and 「기록 없음」: the reviewer had to read the chip and the cell together, and
+  the cell still said 「테스트 없음」 for a value a test sent.
+- The word 「기록」: the page uses it for things that are not counts, the link a trace made between a call and a screen
+  (「기록 연결」, which #507 adds) and a write call no trace sent (「기록 없음」), and the call row counts the same kind of
+  thing as 「호출함」.
+- Counting a sent value as a test in the cell, the red row and the task list: the map would call a value covered by a
+  test that never checked its outcome, against the #495 rule that tests count only through tags.
+- Comparable tools show the two in one place and keep them apart: Restats and the REST API coverage criteria it
+  implements (Martin-Lopez et al.) count the boolean and enum values seen in recorded requests as a measure of their
+  own; open-api-coverage keeps a parameter that was sent apart from a response that was asserted; Karate grades a
+  tagged requirement only when the run also called it, and marks a call with no tag as incidental; Anectico lists
+  what was declared and observed, declared only and observed only side by side.
+
 **A limit the app already accepts is its own verdict, `WITHIN_LIMIT`, with status `limit` ranked after pass and before pending.**
 Driver's decision in #489 (2026-10-31). A check script can say that a test holds only inside a limit the app decided to
 live with, as when a first wrong attempt counts less while attempts run together; that is neither a pass nor a failure,

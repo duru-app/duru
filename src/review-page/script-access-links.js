@@ -6,13 +6,20 @@ function callDetails(call, s) {
   const appSites = (state.data.map.appWide?.apiCalls ?? []).filter(sends);
   const traced = tracedOn(call, s.id);
   const option = picked && call.options.find((o) => o.key === picked.key);
+  const requests = option?.requests ?? [];
+  const placesPerTitle = new Map();
+  for (const r of new Map(requests.filter((r) => r.file).map((r) => [senderKey(r), r])).values()) placesPerTitle.set(r.test, (placesPerTitle.get(r.test) ?? 0) + 1);
+  const senders = requests.map((r) => {
+    const where = r.file && placesPerTitle.get(r.test) > 1 ? ` (${filePlace(r.file, r.line)})` : '';
+    return `${r.test}${where}${r.project ? ` · ${r.project}` : ''} (${r.values.map((v) => VALUE_LABEL[v]).join('·')})`;
+  });
   return [
     option ? h('h2', {}, '옵션을 찾은 자리') : null,
     option ? h('ul', { class: 'plain option-sites' },
       option.sites.map((site) => h('li', {}, h('code', {}, `${site.file}:${site.line}`), ' ', h('span', { class: 'muted mono' }, site.screen))),
       option.sources.includes('type') ? h('li', {}, '본문 타입에서 읽음 ', h('span', { class: 'muted mono' }, call.apiFunctions.join(', '))) : null,
       option.sources.includes('config') ? h('li', {}, '설정에 적음 ', h('span', { class: 'muted mono' }, 'bodyOptions')) : null,
-      option.requests?.length ? h('li', {}, '보낸 요청에서 읽음 ', h('span', { class: 'muted mono' }, [...new Set(option.requests.map((r) => r.test))].join(', '))) : null) : null,
+      senders.length ? h('li', {}, '보낸 요청에서 읽음 ', h('span', { class: 'muted mono' }, senders.join(', '))) : null) : null,
     h('h2', {}, '서버 대조', listAbsentNote('목록 없음')),
     h('div', {}, verdictChip(call.server), ' ', call.server.path ? h('code', {}, call.server.path) : null),
     call.server.candidates ? h('ul', { class: 'plain' }, call.server.candidates.map((c) => h('li', {}, '서버에는 ', h('code', {}, c)))) : null,
