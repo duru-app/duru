@@ -133,7 +133,8 @@
   table.calls button.call-name { display: block; width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
   table.calls tr.option td { padding-top: 4px; padding-bottom: 4px; }
   table.calls tr.option td.call { padding-left: 24px; font-size: 12px; }
-  table.calls tr.option td.call .chip + .chip { margin-left: 6px; }
+  table.calls tr.option td.call > .chip { margin-right: 6px; }
+  table.calls tr.option td.call div .chip { margin-left: 6px; }
   table.calls td.count { white-space: nowrap; font-size: 12px; }
   table.calls tr.option.gap td.call > div:first-child, table.calls td.cell .none, table.calls td.count .none { color: var(--fail); font-weight: 600; }
   table.calls .result-title { color: var(--muted); font-weight: 600; }

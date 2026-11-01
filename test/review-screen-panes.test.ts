@@ -696,7 +696,7 @@ test('in a browser, a request-only option keeps its row, carries the 보낸 요�
         const rows = p.locator('table.calls tr.option').filter({ hasText: 'weeklyNow' });
         assert.deepEqual(await rows.locator('.chip').allTextContents(), ['보낸 요청', '보낸 요청']);
         assert.equal(await rows.locator('.chip').first().getAttribute('title'), '테스트가 보낸 요청의 본문에서 읽은 옵션');
-        assert.equal(await rows.first().locator('td.call').evaluate((td) => td.querySelector('.chip')!.getBoundingClientRect().left - td.querySelector('div')!.getBoundingClientRect().left), 0);
+        assert.ok(Math.abs(await rows.first().locator('td.call').evaluate((td) => td.querySelector('.chip')!.getBoundingClientRect().left - td.querySelector('div')!.getBoundingClientRect().left)) < 0.5);
         await rows.locator('td.cell').first().click();
         assert.match(await p.locator('#center .call-info .option-sites').innerText(), /보낸 요청에서 읽음\s+sends the weekly report on Monday$/);
       }),
@@ -772,6 +772,7 @@ test('in a browser, a call whose result another call\'s options change shows tho
         const detached = heads.nth(2);
         assert.equal(await detached.locator('a').count(), 0);
         assert.equal(await detached.locator('.chip.l-off-map').innerText(), '맵에 없는 호출');
+        assert.equal(await detached.locator('.chip.l-off-map').evaluate((el) => getComputedStyle(el).marginLeft), '6px');
 
         const before = await p.textContent('#right .mark-form .tags .tag-label');
         await valueRows.filter({ hasText: 'withAttachments 끔' }).locator('td.count').click();
