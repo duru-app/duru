@@ -717,6 +717,7 @@ test('in a browser, a write call no trace sent carries the 기록 없음 chip, a
         const rowOf = (id: string) => p.locator('#center-body > table.calls tr').filter({ has: p.locator('button.call-name', { hasText: id }) });
         const rowChip = rowOf('POST:/api/v1/report/export').locator('.chip.unrecorded');
         assert.equal(await rowChip.textContent(), '기록 없음');
+        assert.deepEqual(await rowChip.evaluate((el) => [el.previousElementSibling?.className, getComputedStyle(el).marginLeft]), ['chip v-match', '6px']);
         assert.match((await rowChip.getAttribute('title'))!, /어느 테스트 기록에도 이 쓰기 요청이 없습니다/);
         assert.equal(await rowChip.getAttribute('aria-label'), '어느 테스트 기록에도 이 쓰기 요청이 없습니다. 테스트가 이 요청을 보내면 옵션이 더 나올 수 있습니다');
         assert.equal(await rowOf('POST:/api/v1/report/archive').locator('.chip.unrecorded').count(), 0);
