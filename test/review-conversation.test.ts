@@ -63,6 +63,39 @@ test('in a browser, the bubble of a tagged, an importing, a passing and a callin
       })));
 });
 
+test('in a browser, the bubble of a test box takes no room in the box, shows on the box\'s top edge at its right over none of the box\'s buttons while the pointer is anywhere on the box, a line of the screen\'s test table being one box, and the box\'s 제외 and 포함 stand one above the other', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        const onEdge = async (box: Locator, hoverOn: Locator) => {
+          const bubble = box.locator('.part-row > .bubble');
+          assert.equal(await bubble.isVisible(), false, 'hidden until the pointer is on the box');
+          assert.equal(await bubble.evaluate((b) => getComputedStyle(b).position), 'absolute', 'the bubble takes no room in the row');
+          await hoverOn.hover();
+          assert.equal(await bubble.isVisible(), true);
+          const [b, r] = [(await bubble.boundingBox())!, (await box.boundingBox())!];
+          assert.ok(b.y < r.y && b.y + b.height > r.y, 'the bubble sits on the box\'s top edge');
+          assert.ok(b.x + b.width <= r.x + r.width && b.x + b.width > r.x + r.width - 20, 'at the box\'s right');
+          const covered = await box.evaluate((el) => {
+            const bubble = el.querySelector('.bubble')!.getBoundingClientRect();
+            return [...el.querySelectorAll('button:not(.bubble), a, .chip')].map((c) => [c.textContent, c.getBoundingClientRect()] as const)
+              .filter(([, c]) => c.right > bubble.left && c.left < bubble.right && c.bottom > bubble.top && c.top < bubble.bottom).map(([text]) => text);
+          });
+          assert.deepEqual(covered, [], 'the bubble covers none of the box\'s buttons');
+        };
+        await p.waitForSelector('#screen-list li');
+        await chooseScreen(p, '/help');
+        const importer = p.locator('#center .importers .pair-test', { hasText: 'renders the help text' });
+        await onEdge(importer, importer.locator('.judge-row'));
+        const [out, keep] = [(await importer.locator('.judge-row > :nth-child(1)').boundingBox())!, (await importer.locator('.judge-row > :nth-child(2)').boundingBox())!];
+        assert.ok(keep.y >= out.y + out.height && Math.abs(keep.x - out.x) < 0.5, '포함 stands under 제외');
+
+        await chooseScreen(p, '/lab');
+        const line = p.locator('#center-body table tr.test-line', { hasText: /opens the lab home\.spec\.ts/ });
+        await onEdge(line, line.locator('td.test-buttons'));
+      })));
+});
+
 test('in a browser, the conversation of a screen holds the comments on it and on its tests oldest first, each with its tag; the count of a test row narrows it to that test and its replies, and the status buttons work only while the screen itself is the one tag; with every tag taken off the comment is saved with no target', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) => {
     const lab = partOf('/lab#Lab', 'results/playwright/e2e.json', 'home.spec.ts', 'opens the lab');

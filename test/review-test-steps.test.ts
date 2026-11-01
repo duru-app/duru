@@ -173,7 +173,7 @@ test('in a browser, a test in a call\'s list of tests that sent it shows the sta
   });
 });
 
-test('in a browser, each test of a screen sits on its own line, the tests of one depth have no line between them and a line separates one depth from the next, with the line under the pointer shaded', { skip: browserMissing }, async () => {
+test('in a browser, each test of a screen sits on its own line, the tests of one depth have no line between them and a line separates one depth from the next, with the line under the pointer shaded and showing its bubble, and no line\'s bubble while the pointer is on a cell spanning the depth\'s lines', { skip: browserMissing }, async () => {
   await withSteps(async (p) => {
     const rows = p.locator('#center tr.test-line');
     const count = await rows.count();
@@ -221,6 +221,18 @@ test('in a browser, each test of a screen sits on its own line, the tests of one
     await one.locator('td.test-buttons').hover();
     assert.equal(await shade(one), shaded, 'the line is shaded under its buttons too');
     assert.equal(await shade(other), plain);
+
+    const bubbles = () => rows.locator('.bubble').evaluateAll((list) => list.map((b) => getComputedStyle(b).visibility));
+    const shown = (i: number) => Array.from({ length: count }, (_, j) => (j === i ? 'visible' : 'hidden'));
+    assert.deepEqual(await bubbles(), shown(groups[0].first + 1), 'pointing at a line\'s buttons shows that line\'s bubble');
+    const spanned = rows.nth(groups[0].first).locator('td[rowspan]').first();
+    const cell = (await spanned.boundingBox())!;
+    await spanned.hover({ position: { x: 4, y: cell.height - 4 } });
+    assert.deepEqual(await bubbles(), shown(-1), 'a cell spanning the depth\'s lines shows no line\'s bubble');
+    const single = groups.find((g) => g.size === 1);
+    assert.ok(single, 'the screen has a depth with one test');
+    await rows.nth(single.first).locator('td[rowspan]').first().hover();
+    assert.deepEqual(await bubbles(), shown(single.first), 'the depth cell of a depth with one test belongs to its line');
   });
 });
 
