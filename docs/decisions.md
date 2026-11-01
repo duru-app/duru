@@ -5319,6 +5319,21 @@ Compared:
 - Taking the requests by the time the recording started on the page's clock: the page and the server read the same
   clock only when both run on one machine, and the count needs no clock at all.
 
+**A write request whose whole body the review server sent on to the app server is kept in a visit record even when
+no answer came back, whether the browser left first or the app server dropped the connection; a request refused at
+connect or cut before its body was sent is not kept.**
+Chosen for #510 (2026-11-01). A record is read for the options and the screens a visit exercised, so a request the app
+really sent is worth keeping even when its outcome is unknown: the record says what was sent, not what the server did
+with it. The line is where the review server finished writing the body into its connection to the app server. Whether the app
+server read it cannot be told from there, so a server that drops the connection right after the headers still has the
+request kept. Two reviews of the first fix disagreed on the dropped case, one calling the kept request wrong
+because the app showed a 502, the other calling it needed; the driver chose to keep what can be kept.
+Compared:
+- Keeping only the answered requests and those the browser left: a server that crashed on a write would hide the
+  request that crashed it.
+- Keeping every request the browser sent: one refused at connect or cut before its body was sent never reached the
+  server whole.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

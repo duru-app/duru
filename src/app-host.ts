@@ -597,14 +597,15 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
     });
     let delivered = false;
     up.on('finish', () => (delivered = true));
-    up.on('close', () => answer?.(delivered));
     up.on('error', (err) => {
-      answer?.(false);
+      answer?.(delivered);
       if (!res.headersSent) send(res, 502, 'text/plain', err.message);
       else if (!res.writableEnded) res.destroy();
     });
     res.on('close', () => {
-      if (!res.writableEnded) up.destroy();
+      if (res.writableEnded) return;
+      answer?.(delivered);
+      up.destroy();
     });
     pipeline(req, up, () => {});
   }
