@@ -559,6 +559,79 @@ test('a write request the API server never answered is not kept in the visit rec
   );
 });
 
+async function withSlowApi(fn: (api: string, received: (url: string) => Promise<void>) => Promise<void>) {
+  const arrived = new Map<string, () => void>();
+  const waits = new Map<string, Promise<void>>();
+  const received = (url: string) => {
+    if (!waits.has(url)) waits.set(url, new Promise<void>((resolve) => arrived.set(url, resolve)));
+    return waits.get(url)!;
+  };
+  const held: http.ServerResponse[] = [];
+  const api = http.createServer((req, res) => {
+    req.resume().on('end', () => {
+      received(req.url!);
+      arrived.get(req.url!)!();
+      if (req.url!.startsWith('/api/v1/slow')) held.push(res);
+      else res.end('{}');
+    });
+  });
+  await new Promise<void>((resolve) => api.listen(0, '127.0.0.1', resolve));
+  try {
+    await fn(`http://127.0.0.1:${(api.address() as AddressInfo).port}`, received);
+  } finally {
+    held.forEach((res) => res.destroy());
+    await new Promise((resolve) => api.close(resolve));
+  }
+}
+
+test('a write request the API server received is kept in the visit record even when the browser left before the answer came', async () => {
+  await withSlowApi((api, received) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(appSettings(api), (config) =>
+        withServer(config, 'reviewer', async (base) => {
+          const { app } = await (await fetch(`${base}/api/data`)).json();
+          const { from } = await (await fetch(`${base}/api/records/start`)).json();
+          const left = new AbortController();
+          const sent = fetch(`${app.url}/api/v1/slow`, { method: 'POST', body: '{"notify":true}', headers: { referer: `${app.url}/home` }, signal: left.signal }).catch(() => null);
+          await received('/api/v1/slow');
+          left.abort();
+          await sent;
+          const res = await fetch(`${base}/api/records`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ steps: [{ url: '/home' }], pane: app.url, from }) });
+          const { record, requests } = await res.json();
+          assert.equal(requests, 1);
+          assert.deepEqual(JSON.parse(fs.readFileSync(path.join(config.configDir, record), 'utf8')).requests, [
+            { method: 'POST', url: '/api/v1/slow', body: '{"notify":true}', shown: '/home' },
+          ]);
+        }),
+      ),
+    ),
+  );
+});
+
+test('saving a visit record does not wait for a write request still unanswered from before recording started', async () => {
+  await withSlowApi((api, received) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(appSettings(api), (config) =>
+        withServer(config, 'reviewer', async (base) => {
+          const { app } = await (await fetch(`${base}/api/data`)).json();
+          const left = new AbortController();
+          const before = fetch(`${app.url}/api/v1/slow`, { method: 'POST', body: '{"before":true}', signal: left.signal }).catch(() => null);
+          await received('/api/v1/slow');
+          const { from } = await (await fetch(`${base}/api/records/start`)).json();
+          await fetch(`${app.url}/api/v1/documents/search`, { method: 'POST', body: '{"notify":true}', headers: { referer: `${app.url}/home` } });
+          const started = Date.now();
+          const res = await fetch(`${base}/api/records`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ steps: [{ url: '/home' }], pane: app.url, from }) });
+          const { requests } = await res.json();
+          assert.ok(Date.now() - started < 2000, `saving took ${Date.now() - started} ms`);
+          assert.equal(requests, 1);
+          left.abort();
+          await before;
+        }),
+      ),
+    ),
+  );
+});
+
 test('without signedOutPaths there is no signed-out address', async () => {
   await withFakeApi((api) =>
     withPassword('s3cret', () =>
