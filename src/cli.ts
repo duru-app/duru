@@ -24,6 +24,7 @@ import { readCaseTargets, reviewAuthor, SHOTS_DIR, startReviewServer, writeCaseM
 import type { AnnouncedMark } from './review.ts';
 import { SERVER_NOT_COMPARED } from './server.ts';
 import { checkStoryFiles } from './story-paths.ts';
+import { markUnrecorded } from './unrecorded-calls.ts';
 import { atTableItem, linkText, storyBrief, taskList, undecidedLines } from './tasks.ts';
 import { linkTests, sentTraces, writeShots } from './test-links.ts';
 
@@ -308,7 +309,9 @@ if (command === 'tasks') {
     console.error(err.message);
     process.exit(1);
   });
-  const sentCounts = addRequestOptions(map, sentTraces(config));
+  const sent = sentTraces(config);
+  const sentCounts = addRequestOptions(map, sent);
+  const unrecordedCounts = markUnrecorded(map, sent);
   const changes = baseline && compareMaps(baseline, map);
   console.log(`wrote ${write('map.json', map)}`);
   const allEndpoints = Object.values<any>(map.apiFunctions).flatMap((f) => f.endpoints);
@@ -433,6 +436,7 @@ if (command === 'tasks') {
     console.log(`screens with tests ${covered}/${map.screens.length} | tags pointing outside the map ${unknownTags.length} | tests without a node or story tag ${links.untaggedCount}`);
     console.log(`calls with tests ${map.calls.filter((c: any) => links.nodes[c.id]).length}/${map.calls.length}`);
     console.log(`options sent in requests ${sentCounts.options} | calls with them ${sentCounts.calls}`);
+    console.log(`write calls on screens no trace sent ${unrecordedCounts.calls} | screens with them ${unrecordedCounts.screens}`);
     const pairs = (byScreen: Record<string, unknown[]>) => Object.values(byScreen).reduce((n, tests) => n + tests.length, 0);
     console.log(`links from unit tests to screens by the files they import ${pairs(judged.importers)} | test files not read ${links.importNotices.length}`);
     console.log(`links from browser tests to screens they passed through and calls they sent ${pairs(judged.passed)} | traces not read ${links.traceNotices.length} | browser tests that ran without a trace ${links.untracedCount}`);

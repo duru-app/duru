@@ -536,10 +536,10 @@ test('in a browser, with no server API list the header line carries a 「서버 
         assert.equal(await p.locator('#left input[type=checkbox]').count(), 5);
 
         await p.click('#screen-list li:has-text("/document/:tab")');
-        assert.deepEqual(await p.locator('table.calls td.call .chip').allTextContents(), ['판정 불가', '대조 안 함']);
+        assert.deepEqual(await p.locator('table.calls td.call .chip').allTextContents(), ['판정 불가', '대조 안 함', '기록 없음']);
         assert.equal(await p.locator('table.calls td.call .chip.v-unchecked').count(), 1);
         assert.deepEqual(await p.locator('#center .list-absent').allTextContents(), ['서버 목록 없음']);
-        assert.match((await p.textContent('#center h2:has(.list-absent)'))!, /^API 호출 \d+ 서버 목록 없음$/);
+        assert.match((await p.textContent('#center h2:has(.list-absent)'))!, /^API 호출 \d+ 기록 없음 1 서버 목록 없음$/);
         await p.locator('table.calls tr:has(.chip.v-unchecked) td.cell').first().click();
         assert.match((await p.textContent('#center .call-info'))!, /서버 대조 목록 없음\s*대조 안 함/);
         assert.deepEqual(await p.locator('#center .call-info .list-absent').allTextContents(), ['목록 없음']);
