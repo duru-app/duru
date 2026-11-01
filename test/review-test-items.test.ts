@@ -345,7 +345,7 @@ test('in a browser, the imported-only filter keeps the screens with importing te
 });
 
 
-test('in a browser, a browser test that passed through a screen is included with one press and waits for its tag, one excluded with a reason moves to the excluded pairs, and each comes back when undone', { skip: browserMissing }, async () => {
+test('in a browser, a browser test that passed through a screen is included with one press and waits for its tag, one excluded with a reason moves to the excluded pairs, each with its test buttons one above the other, and each comes back when undone', { skip: browserMissing }, async () => {
   await withRebuiltFixture(TRACED, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -364,6 +364,12 @@ test('in a browser, a browser test that passed through a screen is included with
         await p.waitForSelector('#center .discarded');
         assert.equal(await p.textContent('#center .passed h2'), '지나간 테스트 4');
         assert.match((await p.textContent('#center .discarded .pair-test'))!, /^조작함 통과 hovers and uses the keyboard on help.*only hovers · \d/s);
+        const stacked = (box: string) => p.locator(box).evaluate((el) => {
+          const rects = [...el.querySelectorAll(':scope > .part-row > .test-acts > *')].map((b) => b.getBoundingClientRect());
+          return rects.length > 1 && rects.slice(1).every((r, k) => r.top >= rects[k].bottom && Math.abs(r.left - rects[k].left) < 0.5);
+        });
+        assert.ok(await stacked('#center .passed .pair-test >> nth=0'), 'a passing test\'s buttons stand one above the other');
+        assert.ok(await stacked('#center .discarded .pair-test'), 'so do an excluded test\'s');
         assert.deepEqual(loadJudgments(config.judgmentsDir).judgments.map((j) => [j.test.source, j.test.file, j.test.title, j.node, j.kind, j.author]).sort(), [
           ['results/playwright-traced/visits.json', 'visits.spec.ts', 'hovers and uses the keyboard on help', '/help#Help', 'discard', 'reviewer'],
           ['results/playwright-traced/visits.json', 'visits.spec.ts', 'opens home and then help', '/help#Help', 'hand-over', 'reviewer'],

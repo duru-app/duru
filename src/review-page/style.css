@@ -404,6 +404,7 @@
   .test-row:hover, #center .pair-test:hover { background: var(--selected); }
   :is(.steps-toggle, .replay, .trace) { flex: none; border: 1px solid var(--line); border-radius: 10px; padding: 0 8px; font: inherit; font-size: 12px; line-height: 18px; background: var(--panel); color: var(--text); cursor: pointer; white-space: nowrap; }
   a.trace { text-decoration: none; }
+  .test-acts { flex: none; display: flex; flex-direction: column; gap: 4px; text-align: center; }
   .trace:disabled { color: var(--muted); cursor: default; }
   .test-steps button.shot-thumb { display: block; width: fit-content; max-width: 100%; margin: 2px 0 4px; padding: 0; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); cursor: zoom-in; }
   .test-steps button.shot-thumb img { display: block; max-width: min(360px, 100cqw - 24px); max-height: 240px; border-radius: 3px; }
