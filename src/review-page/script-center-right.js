@@ -254,7 +254,7 @@ function callTableBody(s, rows, depths, extra = []) {
 }
 
 function tracedChip(tests) {
-  const title = `테스트 기록으로 이은 화면: ${[...new Set(tests.map((t) => t.test))].join(', ')}`;
+  const title = `소스 대신 테스트 기록으로 연결: ${[...new Set(tests.map((t) => t.test))].join(', ')}`;
   return h('span', { class: 'chip traced', title, 'aria-label': title }, '기록 연결');
 }
 

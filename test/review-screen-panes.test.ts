@@ -15,9 +15,10 @@ declare function render(): void;
 declare function hasUnsavedMark(): boolean;
 declare function opensOnPage(id: string): boolean;
 declare function optionsOf(s: unknown, callId: string): { key: string }[];
+declare function sentWhere(call: unknown): string;
 declare function wayGuards(r: { from: string; to: string; ways: { file: string; line: number }[] }): unknown[][];
 declare function screenOf(id: string): { access: { menuLinks: { from: string; file: string; line: number; guards: unknown[] }[] } };
-declare const state: { target: unknown; draft: unknown; selected: string | null; openGroups: Set<string>; data: { map: { screens: { id: string }[] } } };
+declare const state: { target: unknown; draft: unknown; selected: string | null; openGroups: Set<string>; data: { map: { screens: { id: string }[]; calls: { id: string }[] } } };
 
 test('in a browser, a screen that opens only under a role or a setting shows its tests for each case under what it needs', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
@@ -752,7 +753,7 @@ test('in a browser, a write call of the layout around a screen no trace sent mak
   });
 });
 
-test('in a browser, a call a trace alone ties to a screen shows under it with the 기록 chip, and names the tests that sent it there', { skip: browserMissing }, async () => {
+test('in a browser, a call a trace alone ties to a screen shows under it with the 기록 연결 chip, and names the tests that sent it there', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) => {
     editJson(path.join(config.outDir, 'map.json'), (map) => {
       const call = map.calls.find((c: { id: string }) => c.id === 'POST:/api/v1/auth/sign-in');
@@ -767,7 +768,8 @@ test('in a browser, a call a trace alone ties to a screen shows under it with th
         const row = p.locator('#center-body > table.calls tr').filter({ has: p.locator('button.call-name', { hasText: 'POST:/api/v1/auth/sign-in' }) });
         const chip = row.locator('.chip.traced');
         assert.equal(await chip.textContent(), '기록 연결');
-        assert.equal(await chip.getAttribute('title'), '테스트 기록으로 이은 화면: renames from the report');
+        assert.equal(await chip.getAttribute('title'), '소스 대신 테스트 기록으로 연결: renames from the report');
+        assert.equal(await p.evaluate(() => sentWhere(state.data.map.calls.find((c) => c.id === 'POST:/api/v1/auth/sign-in'))), '보내는 화면 /admin/report (기록 연결)');
         assert.equal(await chip.evaluate((el) => getComputedStyle(el).marginLeft), '6px');
         await row.locator('button.call-name').click();
         const info = await p.locator('#center .call-info').innerText();
