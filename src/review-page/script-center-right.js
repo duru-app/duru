@@ -253,9 +253,11 @@ function callTableBody(s, rows, depths, extra = []) {
     }), extra));
 }
 
+const TRACED_LABEL = '기록 연결';
+
 function tracedChip(tests) {
   const title = `소스 대신 테스트 기록으로 연결: ${[...new Set(tests.map((t) => t.test))].join(', ')}`;
-  return h('span', { class: 'chip traced', title, 'aria-label': title }, '기록 연결');
+  return h('span', { class: 'chip traced', title, 'aria-label': title }, TRACED_LABEL);
 }
 
 const UNRECORDED_TITLE = '어느 테스트 기록에도 이 쓰기 요청이 없습니다. 테스트가 이 요청을 보내면 옵션이 더 나올 수 있습니다';
