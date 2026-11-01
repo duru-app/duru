@@ -636,7 +636,7 @@ test('in a browser, each call shows on and off rows for its options and a no-opt
         for (const row of await p.locator('table.calls tr.option.gap').all()) gaps.push(await label(row));
         assert.deepEqual(gaps, ['withAttachments 끔', 'signedOnly 끔', 'withHistory 끔', 'weekly 켬', 'weekly 끔']);
         assert.equal(await p.locator('table.calls tr.option.gap td.cell').first().innerText(), '테스트 없음');
-        assert.deepEqual(await p.locator('table.calls tr.option:has-text("weekly") .chip').allTextContents(), ['설정', '설정']);
+        assert.deepEqual(await p.locator('table.calls tr.option:has-text("weekly") .chip').allTextContents(), ['설정']);
 
         const exportRows = (text: string) => p.locator('table.calls tr.option').filter({ hasText: text }).first();
         assert.deepEqual(await exportRows('withHistory 켬').locator('td.cell').allInnerTexts(), ['✓2', '✓2', '—', '—', '—', '—', '—']);
@@ -684,22 +684,56 @@ test('in a browser, each call shows on and off rows for its options and a no-opt
   );
 });
 
-test('in a browser, a request-only option keeps its row, carries the 보낸 요청 chip and lists the tests that sent it', { skip: browserMissing }, async () => {
+test('in a browser, a request-only option keeps its rows, carries the 보낸 요청 chip on its first row and lists the runs that sent it, and a value a test sent without a tag reads 호출함 in the test cell and stays a gap', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) => {
     editJson(path.join(config.outDir, 'map.json'), (map) => {
       const call = map.calls.find((c: { id: string }) => c.id === 'POST:/api/v1/report/schedule');
-      call.options.push({ key: 'weeklyNow', values: [true, false], sources: ['request'], sites: [], requests: [{ test: 'sends the weekly report on Monday', file: 'export.spec.ts', line: 3, project: 'chromium', values: [true] }] });
+      call.options.push({ key: 'weeklyNow', values: [true, false], sources: ['request'], sites: [], requests: [
+        { test: 'sends the weekly report on Monday', file: 'export.spec.ts', line: 3, project: 'chromium', values: [true] },
+        { test: 'sends the weekly report on Monday', file: 'export.spec.ts', line: 3, project: 'firefox', values: [true] },
+        { test: 'sends the weekly report on Monday', file: 'schedule.spec.ts', line: 7, project: 'chromium', values: [true] },
+      ] });
+      call.options.push({ key: 'monthlyNow', values: [true, false], sources: ['request'], sites: [], requests: [
+        { test: 'sends the monthly report', file: null, line: null, project: null, values: [false] },
+        { test: 'sends the monthly report', file: 'export.spec.ts', line: 21, project: 'chromium', values: [true] },
+      ] });
+      call.options.push({ key: 'yearlyNow', values: [true, false], sources: ['request'], sites: [], requests: [
+        { test: 'sends the yearly report', file: null, line: null, project: null, values: [false] },
+        { test: 'sends the yearly report', file: 'export.spec.ts', line: 27, project: 'chromium', values: [true] },
+        { test: 'sends the yearly report', file: 'schedule.spec.ts', line: 11, project: 'chromium', values: [true] },
+      ] });
+      call.options.push({ key: 'dailyNow', values: [true, false], sources: ['request'], sites: [], requests: [
+        { test: 'sends the daily report', file: 'export.spec.ts', line: 9, project: 'chromium', values: [true] },
+        { test: 'sends the daily report', file: 'export.spec.ts', line: 9, project: 'firefox', values: [false] },
+        { test: 'holds the daily report', file: 'export.spec.ts', line: 15, project: 'chromium', values: [false] },
+      ] });
     });
     return withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/admin/report")');
         const rows = p.locator('table.calls tr.option').filter({ hasText: 'weeklyNow' });
-        assert.deepEqual(await rows.locator('.chip').allTextContents(), ['보낸 요청', '보낸 요청']);
-        assert.equal(await rows.locator('.chip').first().getAttribute('title'), '테스트가 보낸 요청의 본문에서 읽은 옵션');
+        assert.deepEqual(await rows.locator('.chip').allTextContents(), ['보낸 요청']);
+        assert.equal(await rows.first().locator('.chip').getAttribute('title'), '테스트가 보낸 요청의 본문에서 읽은 옵션');
         assert.ok(Math.abs(await rows.first().locator('td.call').evaluate((td) => td.querySelector('.chip')!.getBoundingClientRect().left - td.querySelector('div')!.getBoundingClientRect().left)) < 0.5);
-        await rows.locator('td.cell').first().click();
-        assert.match(await p.locator('#center .call-info .option-sites').innerText(), /보낸 요청에서 읽음\s+sends the weekly report on Monday$/);
+        const testCell = (row: Locator) => row.locator('td.cell').first().locator('div').first();
+        assert.equal(await testCell(rows.first()).innerText(), '호출함 3');
+        assert.equal(await testCell(rows.first()).locator('.recorded').getAttribute('title'), '이 값의 태그 없이, 도는 동안 이 값을 보낸 브라우저 테스트 실행 (Playwright 프로젝트마다 따로 셈)');
+        assert.equal(await testCell(rows.first()).locator('.recorded').getAttribute('aria-label'), '이 값의 태그 없이, 도는 동안 이 값을 보낸 브라우저 테스트 실행 (Playwright 프로젝트마다 따로 셈) 3');
+        assert.equal(await testCell(rows.last()).innerText(), '테스트 없음');
+        assert.deepEqual(await rows.evaluateAll((trs) => trs.map((tr) => tr.classList.contains('gap'))), [true, true]);
+        const daily = p.locator('table.calls tr.option').filter({ hasText: 'dailyNow' });
+        assert.deepEqual(await daily.evaluateAll((trs) => trs.map((tr) => tr.querySelector('td.cell div')?.textContent)), ['호출함 1', '호출함 2']);
+        await rows.first().locator('td.cell').first().click();
+        assert.match(await p.locator('#center .call-info .option-sites').innerText(), /보낸 요청에서 읽음\s+sends the weekly report on Monday \(export\.spec\.ts:3\) · chromium \(켬\), sends the weekly report on Monday \(export\.spec\.ts:3\) · firefox \(켬\), sends the weekly report on Monday \(schedule\.spec\.ts:7\) · chromium \(켬\)$/);
+        await rows.last().locator('td.cell').first().click();
+        assert.match(await p.locator('#center .call-info .option-sites').innerText(), /보낸 요청에서 읽음\s+sends the weekly report on Monday \(export\.spec\.ts:3\) · chromium \(켬\), sends the weekly report on Monday \(export\.spec\.ts:3\) · firefox \(켬\), sends the weekly report on Monday \(schedule\.spec\.ts:7\) · chromium \(켬\)$/);
+        await daily.first().locator('td.cell').first().click();
+        assert.match(await p.locator('#center .call-info .option-sites').innerText(), /보낸 요청에서 읽음\s+sends the daily report · chromium \(켬\), sends the daily report · firefox \(끔\), holds the daily report · chromium \(끔\)$/);
+        await p.locator('table.calls tr.option').filter({ hasText: 'monthlyNow' }).first().locator('td.cell').first().click();
+        assert.match(await p.locator('#center .call-info .option-sites').innerText(), /보낸 요청에서 읽음\s+sends the monthly report \(끔\), sends the monthly report · chromium \(켬\)$/);
+        await p.locator('table.calls tr.option').filter({ hasText: 'yearlyNow' }).first().locator('td.cell').first().click();
+        assert.match(await p.locator('#center .call-info .option-sites').innerText(), /보낸 요청에서 읽음\s+sends the yearly report \(끔\), sends the yearly report \(export\.spec\.ts:27\) · chromium \(켬\), sends the yearly report \(schedule\.spec\.ts:11\) · chromium \(켬\)$/);
       }),
     );
   });

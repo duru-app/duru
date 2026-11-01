@@ -100,6 +100,7 @@ test('in a browser, a call shows the untagged browser tests that sent it apart f
         await chooseScreen(p, '/home');
         const row = (id: string) => p.locator('table.calls tbody tr:not(.option)', { hasText: id });
         assert.equal(await row('GET:/api/v1/document/list').locator('.sent-count').textContent(), '호출함 1');
+        assert.equal(await row('GET:/api/v1/document/list').locator('.sent-count').getAttribute('aria-label'), '이 호출의 태그 없이, 도는 동안 이 호출을 보낸 브라우저 테스트 실행 (Playwright 프로젝트마다 따로 셈) 1');
         assert.equal(await row('POST:/api/v1/archive/document').locator('.sent-count').count(), 0);
         assert.match((await row('GET:/api/v1/document/list').locator('td.cell').first().textContent())!, /^✓1\s*$/);
 

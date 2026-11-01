@@ -137,10 +137,15 @@ function cell(target, tests, empty) {
     class: `cell${keyOf(target) === keyOf(state.target) ? ' selected' : ''}`,
     onclick: () => selectTarget(target),
   },
-    h('div', {}, !tests.length && empty ? h('span', { class: 'none' }, empty) : countsOf(tests)),
+    h('div', {}, !tests.length && empty ? (typeof empty === 'string' ? h('span', { class: 'none' }, empty) : empty) : countsOf(tests)),
     markChip(markOf(target)),
     talkCount(entriesAt(target), target));
 }
+
+const sentCount = (what, count, cls) => {
+  const title = `이 ${what}의 태그 없이, 도는 동안 이 ${what}을 보낸 브라우저 테스트 실행 (Playwright 프로젝트마다 따로 셈)`;
+  return h('span', { class: cls, title, 'aria-label': `${title} ${count}` }, `호출함 ${count}`);
+};
 
 // 「옵션 지정 없음」 줄은 표시 대상이 아니라서 칸을 눌러도 고를 수 없다.
 function optionRows(s, call, depths) {
@@ -149,15 +154,18 @@ function optionRows(s, call, depths) {
   const tests = testsOf(call.id);
   const byDepth = (list) => depths.map((d) => list.filter((t) => t.depth === d));
   const rows = options.flatMap((o) => [true, false].map((value) => {
+    const sent = (o.requests ?? []).filter((r) => r.values.includes(value)).length;
     const target = { node: call.id, option: { key: o.key, value } };
     const matching = hasOption(tests, o.key, value);
     const split = byDepth(matching);
     return h('tr', { class: `option${matching.length ? '' : ' gap'}` },
       h('td', { class: 'call' }, h('div', {}, optionLabel(target.option)),
-        o.sources.includes('type') ? h('span', { class: 'chip config', title: 'API 메서드가 보내는 본문의 타입에서 읽은 옵션' }, '본문 타입') : null,
-        o.sources.includes('config') ? h('span', { class: 'chip config', title: '설정 bodyOptions 에 적은 옵션' }, '설정') : null,
-        o.sources.includes('request') ? h('span', { class: 'chip config', title: '테스트가 보낸 요청의 본문에서 읽은 옵션' }, '보낸 요청') : null),
-      cell(target, matching, '테스트 없음'),
+        value && o.sources.includes('type') ? h('span', { class: 'chip config', title: 'API 메서드가 보내는 본문의 타입에서 읽은 옵션' }, '본문 타입') : null,
+        value && o.sources.includes('config') ? h('span', { class: 'chip config', title: '설정 bodyOptions 에 적은 옵션' }, '설정') : null,
+        value && o.sources.includes('request') ? h('span', { class: 'chip config', title: '테스트가 보낸 요청의 본문에서 읽은 옵션' }, '보낸 요청') : null),
+      cell(target, matching, sent
+        ? sentCount('값', sent, 'none recorded')
+        : '테스트 없음'),
       depths.map((d, i) => cell({ ...target, depth: d }, split[i])),
       compareGap());
   }));
@@ -244,7 +252,7 @@ function callTableBody(s, rows, depths, extra = []) {
           h('div', { class: 'mono' }, h('button', { type: 'button', class: 'call-name', title: '이 호출을 고르고 호출 정보를 엽니다' }, r.call.id)), verdictChip(r.call.server),
           r.traced ? tracedChip(r.traced) : null,
           r.call.unrecorded ? unrecordedChip() : null,
-          sent ? h('span', { class: 'sent-count', title: '이 호출의 태그 없이, 도는 동안 이 호출을 보낸 브라우저 테스트' }, `호출함 ${sent}`) : null),
+          sent ? sentCount('호출', sent, 'sent-count') : null),
         cell({ node: r.call.id }, tests),
         depths.map((d) => cell({ node: r.call.id, depth: d }, tests.filter((t) => t.depth === d))),
         compared ? callCompareCell(s, r.call.id) : null),
