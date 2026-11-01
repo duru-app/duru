@@ -25,6 +25,24 @@ test('in a browser, an entry under 「떨어져 나감」 with a comment and an 
   });
 });
 
+const bubbleOnEdge = async (box: Locator, hoverOn: Locator = box) => {
+  await box.page().mouse.move(0, 0);
+  const bubble = box.locator('.bubble').first();
+  assert.equal(await bubble.isVisible(), false, 'hidden until the pointer is on the box');
+  assert.equal(await bubble.evaluate((b) => getComputedStyle(b).position), 'absolute', 'the bubble takes no room in the row');
+  await hoverOn.hover();
+  assert.equal(await bubble.isVisible(), true);
+  const [b, r] = [(await bubble.boundingBox())!, (await box.boundingBox())!];
+  assert.ok(b.y < r.y && b.y + b.height > r.y, 'the bubble sits on the box\'s top edge');
+  assert.ok(b.x + b.width <= r.x + r.width && b.x + b.width > r.x + r.width - 20, 'at the box\'s right');
+  const covered = await box.evaluate((el) => {
+    const bubble = el.querySelector('.bubble')!.getBoundingClientRect();
+    return [...el.querySelectorAll('button:not(.bubble), a, .chip')].map((c) => [c.textContent, c.getBoundingClientRect()] as const)
+      .filter(([, c]) => c.right > bubble.left && c.left < bubble.right && c.bottom > bubble.top && c.top < bubble.bottom).map(([text]) => text);
+  });
+  assert.deepEqual(covered, [], 'the bubble covers none of the box\'s buttons');
+};
+
 const partOf = (node: string, source: string, file: string, title: string) => ({ node, part: { kind: 'test', key: { source, file, title } } });
 
 test('in a browser, the bubble of a tagged, an importing, a passing and a calling test row puts that test in as the tag, a comment saved with it shows its count on the row, also after reloading, and the status buttons stay off', { skip: browserMissing }, async () => {
@@ -67,32 +85,16 @@ test('in a browser, the bubble of a test box takes no room in the box, shows on 
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
-        const onEdge = async (box: Locator, hoverOn: Locator) => {
-          const bubble = box.locator('.part-row > .bubble');
-          assert.equal(await bubble.isVisible(), false, 'hidden until the pointer is on the box');
-          assert.equal(await bubble.evaluate((b) => getComputedStyle(b).position), 'absolute', 'the bubble takes no room in the row');
-          await hoverOn.hover();
-          assert.equal(await bubble.isVisible(), true);
-          const [b, r] = [(await bubble.boundingBox())!, (await box.boundingBox())!];
-          assert.ok(b.y < r.y && b.y + b.height > r.y, 'the bubble sits on the box\'s top edge');
-          assert.ok(b.x + b.width <= r.x + r.width && b.x + b.width > r.x + r.width - 20, 'at the box\'s right');
-          const covered = await box.evaluate((el) => {
-            const bubble = el.querySelector('.bubble')!.getBoundingClientRect();
-            return [...el.querySelectorAll('button:not(.bubble), a, .chip')].map((c) => [c.textContent, c.getBoundingClientRect()] as const)
-              .filter(([, c]) => c.right > bubble.left && c.left < bubble.right && c.bottom > bubble.top && c.top < bubble.bottom).map(([text]) => text);
-          });
-          assert.deepEqual(covered, [], 'the bubble covers none of the box\'s buttons');
-        };
         await p.waitForSelector('#screen-list li');
         await chooseScreen(p, '/help');
         const importer = p.locator('#center .importers .pair-test', { hasText: 'renders the help text' });
-        await onEdge(importer, importer.locator('.judge-row'));
+        await bubbleOnEdge(importer, importer.locator('.judge-row'));
         const [out, keep] = [(await importer.locator('.judge-row > :nth-child(1)').boundingBox())!, (await importer.locator('.judge-row > :nth-child(2)').boundingBox())!];
         assert.ok(keep.y >= out.y + out.height && Math.abs(keep.x - out.x) < 0.5, '포함 stands under 제외');
 
         await chooseScreen(p, '/lab');
         const line = p.locator('#center-body table tr.test-line', { hasText: /opens the lab home\.spec\.ts/ });
-        await onEdge(line, line.locator('td.test-buttons'));
+        await bubbleOnEdge(line, line.locator('td.test-buttons'));
       })));
 });
 
@@ -368,13 +370,13 @@ test('in a browser, 「전체」 groups every attached comment by its screen, ca
   });
 });
 
-test('in a browser, each step of a story and each link between two steps has a bubble that puts it in as the tag with the status buttons off, a comment saved there shows its count, and the count narrows the conversation', { skip: browserMissing }, async () => {
+test('in a browser, each step of a story has a bubble, taking no room and shown on its top edge at its right while the pointer is on it, and each link between two steps has one right beside its pencil, shown with it while the pointer is on the link, that puts it in as the tag with the status buttons off, a comment saved there shows its count, and the count narrows the conversation', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
         const comment = async (row: Locator, tag: string, note: string) => {
-          await row.locator('.part-row').hover();
-          await row.locator('.part-row .bubble').click();
+          await row.hover({ position: { x: 4, y: 4 } });
+          await row.locator(':scope > .part-row > .bubble, :scope > .hop-acts > .bubble').click();
           assert.equal(await p.textContent('#right-dock .mark-form .tags .tag-label'), tag);
           assert.equal(await p.locator('#right-dock .statuses button:not(:disabled)').count(), 0);
           await p.fill('#right-dock textarea', note);
@@ -384,6 +386,17 @@ test('in a browser, each step of a story and each link between two steps has a b
         await p.waitForSelector('#screen-list li');
         await p.click('#view-story');
         await p.click('#story-list li:has-text("실험실을 열어")');
+        await bubbleOnEdge(p.locator('#center .story-path .step').nth(1));
+        const hop = p.locator('#center .story-path .link').first();
+        await p.mouse.move(0, 0);
+        const hopBubble = hop.locator(':scope > .hop-acts > .bubble');
+        assert.equal(await hopBubble.isVisible(), false, 'hidden until the pointer is on the link');
+        await hop.hover({ position: { x: 4, y: 4 } });
+        assert.equal(await hopBubble.isVisible(), true);
+        const [pencil, beside] = [(await hop.locator(':scope > .hop-acts > button.edit-fields').boundingBox())!, (await hopBubble.boundingBox())!];
+        assert.ok(beside.x >= pencil.x + pencil.width && beside.x <= pencil.x + pencil.width + 8, 'right after the pencil');
+        assert.ok(Math.abs(beside.y + beside.height / 2 - (pencil.y + pencil.height / 2)) < 2, 'on the pencil\'s line');
+        assert.ok(Math.abs(beside.height - pencil.height) < 2, `as tall as the pencil: ${beside.height} and ${pencil.height}`);
         await comment(p.locator('#center .story-path .step').nth(1), '단계 2 /lab', 'check the result table here');
         await comment(p.locator('#center .story-path .link').first(), '단계 1 → 2 연결', 'is this link always there?');
         assert.deepEqual(loadMarks(config.marksDir).map((m) => m.target).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))), [
@@ -402,7 +415,7 @@ test('in a browser, each step of a story and each link between two steps has a b
       })));
 });
 
-test('in a browser, each role and each setting under 「접근 조건」 and each incoming link has a bubble that puts it in as the tag, a comment saved with it shows its count there, the count narrows the conversation, and the same works on a screen picked in the flow', { skip: browserMissing }, async () => {
+test('in a browser, each role and each setting under 「접근 조건」 and each incoming link has a bubble, taking no room and shown on its top edge at its right while the pointer is on it, that puts it in as the tag, a comment saved with it shows its count there, the count narrows the conversation, and the same works on a screen picked in the flow', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
@@ -425,11 +438,12 @@ test('in a browser, each role and each setting under 「접근 조건」 and eac
           '필요한 설정: SYSTEM.MAIN_MENU.ADMIN.LIST 에 "ADMIN_REPORT"',
           '필요한 설정: SYSTEM.MAIN_MENU.ADMIN 있음',
         ]);
-        assert.equal(await tips.nth(0).locator('.bubble').isVisible(), false, 'a bubble shows only on hover');
+        await bubbleOnEdge(tips.nth(1));
         await comment(tips.nth(1), '역할 OWNER', 'is OWNER really allowed?');
         await comment(tips.nth(3), '설정 SYSTEM.MAIN_MENU.ADMIN=present', 'is the menu enough?');
         await openLinkGroups(p.locator('#center .access'));
         const home = p.locator('#center .access .link-group li .part-row', { has: p.locator('code.from', { hasText: /^\/home#Home$/ }) });
+        await bubbleOnEdge(home.locator('..'));
         await comment(home, '/home#Home 에서 오는 링크', 'is this link shown?');
 
         const node = '/admin/report#AdminReport';
@@ -653,7 +667,7 @@ test('a comment on a candidate from a trace is announced with its result file, t
   });
 });
 
-test('in a browser, the bubble of a candidate from a visit record and of one from a trace puts that candidate in as the one tag with the status buttons off, keeping a note already typed, and a comment saved there shows its count on the candidate, also after reloading; the count opens its conversation', { skip: browserMissing }, async () => {
+test('in a browser, the bubble of a candidate from a visit record and of one from a trace, taking no room and shown on its top edge at its right while the pointer is on it, puts that candidate in as the one tag with the status buttons off, keeping a note already typed, and a comment saved there shows its count on the candidate, also after reloading; the count opens its conversation', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ ...CANDIDATES, ...TRACED }, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
@@ -671,6 +685,7 @@ test('in a browser, the bubble of a candidate from a visit record and of one fro
           await p.click('#right-dock button.save');
           await p.locator('#candidate-list li', { hasText: name }).locator('.part-count', { hasText: '코멘트 1' }).waitFor();
         };
+        await bubbleOnEdge(p.locator('#candidate-list li').nth(1));
         await comment('open-help', 'why the beta inbox?');
         await p.fill('#right-dock textarea', 'and here: ');
         await comment('opens home and then help', 'which test gives this?');
