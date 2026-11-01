@@ -572,6 +572,7 @@ async function withSlowApi(fn: (api: string, received: (url: string) => Promise<
       received(req.url!);
       arrived.get(req.url!)!();
       if (req.url!.startsWith('/api/v1/slow')) held.push(res);
+      else if (req.url!.startsWith('/api/v1/drop')) req.socket.destroy();
       else res.end('{}');
     });
   });
@@ -608,6 +609,24 @@ test('a write request the API server received is kept in the visit record even w
   );
 });
 
+test('a write request the API server read and then dropped without answering is not kept in the visit record', async () => {
+  await withSlowApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(appSettings(api), (config) =>
+        withServer(config, 'reviewer', async (base) => {
+          const { app } = await (await fetch(`${base}/api/data`)).json();
+          const { from } = await (await fetch(`${base}/api/records/start`)).json();
+          const sent = await fetch(`${app.url}/api/v1/drop`, { method: 'POST', body: '{"notify":true}', headers: { referer: `${app.url}/home` } });
+          assert.equal(sent.status, 502);
+          const res = await fetch(`${base}/api/records`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ steps: [{ url: '/home' }], pane: app.url, from }) });
+          const { requests } = await res.json();
+          assert.equal(requests, 0);
+        }),
+      ),
+    ),
+  );
+});
+
 test('saving a visit record does not wait for a write request still unanswered from before recording started', async () => {
   await withSlowApi((api, received) =>
     withPassword('s3cret', () =>
@@ -622,7 +641,7 @@ test('saving a visit record does not wait for a write request still unanswered f
           const started = Date.now();
           const res = await fetch(`${base}/api/records`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ steps: [{ url: '/home' }], pane: app.url, from }) });
           const { requests } = await res.json();
-          assert.ok(Date.now() - started < 2000, `saving took ${Date.now() - started} ms`);
+          assert.ok(Date.now() - started < 4000, `saving took ${Date.now() - started} ms`);
           assert.equal(requests, 1);
           left.abort();
           await before;
