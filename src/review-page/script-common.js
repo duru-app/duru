@@ -128,6 +128,7 @@ function othersSigned() {
 }
 const signedAt = (record) => (othersSigned() ? `${record.author} · ${fmtDate(record.date)}` : fmtDate(record.date));
 const CODE_CHANGED = '코드 바뀜';
+const TRACED_LABEL = '기록 연결';
 const codeChangedChip = (title) => h('span', { class: 'chip code-changed', title, 'aria-label': title }, CODE_CHANGED);
 const markChip = (m) => (m?.current ? [
   h('span', { class: `chip ${m.current.status}`, title: m.current.note || '' }, MARK_STATUS[m.current.status] ?? CASE_STATUS[m.current.status]),

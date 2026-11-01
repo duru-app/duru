@@ -253,8 +253,6 @@ function callTableBody(s, rows, depths, extra = []) {
     }), extra));
 }
 
-const TRACED_LABEL = '기록 연결';
-
 function tracedChip(tests) {
   const title = `소스 대신 테스트 기록으로 연결: ${[...new Set(tests.map((t) => t.test))].join(', ')}`;
   return h('span', { class: 'chip traced', title, 'aria-label': title }, TRACED_LABEL);
