@@ -240,14 +240,14 @@ const bubbleButton = (target, words, name) => h('button', {
   onkeydown: (e) => e.stopPropagation(),
 }, BUBBLE());
 
-function slotRow(item, target, words, name = tagLabel(target), control = null) {
+function slotRow(item, target, words, name = tagLabel(target), control = null, { bubble = true } = {}) {
   pickable(target, tagLabel(target));
   const n = commentsIn(markOf(target));
   return h('div', { class: 'part-row' },
     item,
     control,
     n ? h('button', { class: 'part-count', title: words.narrow, onclick: (e) => { e.stopPropagation(); narrowTalk(target); } }, unansweredDot(entriesAt(target)), `코멘트 ${n}`) : null,
-    bubbleButton(target, words, name));
+    bubble ? bubbleButton(target, words, name) : null);
 }
 
 const testButtons = (node, t) => {

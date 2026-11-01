@@ -147,6 +147,7 @@ const gapTitle = (on) => (on ? '이 사이를 대화 꼬리표에서 뺍니다' 
 
 function linkItem(l, story, i, fields, gap, pick = null) {
   const place = { kind: 'link', step: i + 2, screen: l.to };
+  const hop = story ? hopTarget(story, i, l) : null;
   const head = h('span', { class: 'slot-text' },
     gap && l.verdict === 'broken'
       ? h('button', { type: 'button', class: 'chip link-verdict l-broken gap-pick', 'aria-pressed': String(gap.on), title: gapTitle(gap.on), onclick: gap.toggle }, LINK_VERDICT[l.verdict])
@@ -155,13 +156,13 @@ function linkItem(l, story, i, fields, gap, pick = null) {
     l.verdict === 'configured' ? h('span', { class: 'muted' }, ` ${l.reasons.join(', ')}`) : null,
     l.verdict === 'unknown' ? h('span', { class: 'muted' }, ' 주소 못 읽은 링크') : null);
   return h('div', { class: `link l-${l.verdict}${l.walks === 0 ? ' unwalked' : ''}`, 'data-hop': i },
-    story ? slotRow(head, hopTarget(story, i, l), SLOT_WORDS.hop) : head,
+    hop ? slotRow(head, hop, SLOT_WORDS.hop, tagLabel(hop), null, { bubble: false }) : head,
     l.walks !== undefined ? h('div', { class: 'walks muted', title: '통과한 스토리 테스트 가운데, trace 를 보면 앞 화면에서 곧장 이 화면으로 넘어간 테스트 수' }, l.walks ? `스토리 테스트 ${l.walks}개가 지나감` : '지나간 스토리 테스트 없음') : null,
     l.passedBy ? h('div', { class: 'walks moves-missing' }, `맵에는 링크가 없지만 통과한 테스트 ${l.passedBy}개가 이 사이를 지나갔습니다. 설정의 moves 가 빠졌을 수 있습니다`) : null,
     l.verdict === 'broken' ? goesOn(l.from) : null,
     l.verdict === 'unknown' ? unknownList(l.unknownLinks) : null,
     l.ways.length ? h('ul', { class: 'plain ways' }, l.ways.map((w) => wayItem(w))) : null,
     l.ways.length > 0 && l.unknownLinks ? skippedLinks(l.unknownLinks) : null,
-    story ? [fieldsButton(story, place, Boolean(fields?.linkNeeds?.length)), ...fieldsBelow(story, place, linkWritten(fields))] : linkWritten(fields, pick));
+    hop ? [h('div', { class: 'hop-acts' }, fieldsButton(story, place, Boolean(fields?.linkNeeds?.length)), bubbleButton(hop, SLOT_WORDS.hop, tagLabel(hop))), ...fieldsBelow(story, place, linkWritten(fields))] : linkWritten(fields, pick));
 }
 
