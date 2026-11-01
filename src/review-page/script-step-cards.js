@@ -131,7 +131,7 @@ function depthCounts(tests, empty) {
   if (!tests.length) return h('div', { class: 'step-tests' }, h('span', { class: 'none' }, empty));
   return h('div', { class: 'step-tests' }, state.data.depths.map((d) => {
     const at = tests.filter((t) => t.depth === d);
-    return at.length ? h('span', { title: at.map((t) => `${TEST_STATUS[t.status]} ${t.title}`).join('\n') }, DEPTH_LABELS[d], ' ', countsOf(at)) : null;
+    return at.length ? h('span', { title: [DEPTH_TITLES[d], at.map((t) => `${TEST_STATUS[t.status]} ${t.title}`).join('\n')].filter(Boolean).join('\n\n') }, DEPTH_LABELS[d], ' ', countsOf(at)) : null;
   }));
 }
 

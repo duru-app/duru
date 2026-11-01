@@ -137,14 +137,14 @@ test('in a browser, the story list shows only the statuses that need a look, fil
         ]);
         assert.match((await p.locator('#center .story-tests .test').first().textContent())!, /Lab flow › runs the lab and reads the result com\.example/);
         const stepTests = () => p.locator('#center .story-path .step').evaluateAll((steps) => steps.map((s) => [...s.querySelectorAll('.step-tests > span')].map((e) => e.textContent.trim())));
-        assert.deepEqual(await stepTests(), [['UI/E2E ✓3', 'API ✓1 ○1', '렌더링만 ✕1', '코드 ✓1', '데이터 ✕1'], ['UI/E2E ✓2 ○1', '코드 ○1'], ['화면 테스트 없음']]);
+        assert.deepEqual(await stepTests(), [['UI/E2E ✓3', 'API ✓1 ○1', '렌더링 ✕1', '코드 ✓1', '데이터 ✕1'], ['UI/E2E ✓2 ○1', '코드 ○1'], ['화면 테스트 없음']]);
         assert.match((await p.getAttribute('#center .story-path .step:nth-child(3) .step-tests > span:first-child', 'title'))!, /opens the lab @screen:\/lab#Lab/);
 
         await p.uncheck('#left input[name=fail]');
         assert.equal((await ids()).length, 5);
         await p.click('#story-list li:has-text("문서를 연다")');
         assert.deepEqual(await p.locator('#center .title-row .chip:not(.verdict)').allTextContents(), ['통과', '단계 확인 못 함']);
-        assert.deepEqual(await stepTests(), [['UI/E2E ✓1', '코드 ✓1'], ['UI/E2E ✓3', 'API ✓1 ○1', '렌더링만 ✕1', '코드 ✓1', '데이터 ✕1'], ['API ✓1 ✕2 ○1', '데이터 ○4'], ['UI/E2E ✓1', 'API ✓3 ✕3', '데이터 ✓2 ○2']]);
+        assert.deepEqual(await stepTests(), [['UI/E2E ✓1', '코드 ✓1'], ['UI/E2E ✓3', 'API ✓1 ○1', '렌더링 ✕1', '코드 ✓1', '데이터 ✕1'], ['API ✓1 ✕2 ○1', '데이터 ○4'], ['UI/E2E ✓1', 'API ✓3 ✕3', '데이터 ✓2 ○2']]);
 
         await p.click('#story-list li:has-text("보고서")');
         assert.deepEqual(await p.locator('#center .title-row .chip:not(.verdict)').allTextContents(), ['테스트 없음']);

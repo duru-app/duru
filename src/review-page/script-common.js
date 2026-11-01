@@ -1,5 +1,6 @@
 /** @typedef {import('../review.ts').PageData} PageData */
-const DEPTH_LABELS = { ui: 'UI/E2E', api: 'API', render: '렌더링만', code: '코드', data: '데이터', output: '산출물' };
+const DEPTH_LABELS = { ui: 'UI/E2E', api: 'API', render: '렌더링', code: '코드', data: '데이터', output: '산출물' };
+const DEPTH_TITLES = { render: '화면이나 컴포넌트를 그려 보기만 하는 테스트' };
 const TEST_STATUS = { pass: '통과', fail: '실패', pending: '보류', limit: '한계' };
 const MARK_STATUS = { 'needs-more': '테스트 필요', fine: '충분' };
 const CASE_STATUS = { needed: '필요', 'not-needed': '필요 없음' };

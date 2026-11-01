@@ -59,7 +59,7 @@ function renderCenter() {
 function depthRows(r, s, total) {
   const on = keyOf(r.target) === keyOf(state.target);
   const pick = () => selectTarget(r.target);
-  const depthCell = (span) => h('td', { class: 'depth', rowspan: span }, r.label, talkCount(entriesAt(r.target), r.target));
+  const depthCell = (span) => h('td', { class: 'depth', rowspan: span }, h('span', { title: DEPTH_TITLES[r.target.depth] }, r.label), talkCount(entriesAt(r.target), r.target));
   const markCell = (span) => h('td', { class: 'mark', rowspan: span }, markChip(markOf(r.target)) ?? h('span', { class: 'muted' }, '—'));
   const line = (t, i, count) => h('tr', {
     class: `${i === count - 1 ? 'test-line group-end' : 'test-line'}${on ? ' selected' : ''}`,
@@ -224,7 +224,7 @@ function screenCallRows(s) {
 function callTableBody(s, rows, depths, extra = []) {
   const compared = compareLabel();
   return h('table', { class: 'calls' },
-    h('thead', {}, h('tr', {}, h('th', {}, '호출'), h('th', {}, '전체'), depths.map((d) => h('th', {}, DEPTH_LABELS[d])), compared ? h('th', {}, `${compared} 와 비교`) : null)),
+    h('thead', {}, h('tr', {}, h('th', {}, '호출'), h('th', {}, '전체'), depths.map((d) => h('th', { title: DEPTH_TITLES[d] }, DEPTH_LABELS[d])), compared ? h('th', {}, `${compared} 와 비교`) : null)),
     h('tbody', {}, rows.flatMap((r) => {
       if (!r.call) {
         return h('tr', {},
