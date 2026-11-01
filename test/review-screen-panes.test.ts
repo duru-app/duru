@@ -766,12 +766,13 @@ test('in a browser, a call a trace alone ties to a screen shows under it with th
         await p.click('#screen-list li:has-text("/admin/report")');
         const row = p.locator('#center-body > table.calls tr').filter({ has: p.locator('button.call-name', { hasText: 'POST:/api/v1/auth/sign-in' }) });
         const chip = row.locator('.chip.traced');
-        assert.equal(await chip.textContent(), '기록');
-        assert.match((await chip.getAttribute('title'))!, /테스트 기록에서 이 화면이 보낸 요청: renames from the report$/);
+        assert.equal(await chip.textContent(), '기록 연결');
+        assert.equal(await chip.getAttribute('title'), '테스트 기록으로 이은 화면: renames from the report');
+        assert.equal(await chip.evaluate((el) => getComputedStyle(el).marginLeft), '6px');
         await row.locator('button.call-name').click();
         const info = await p.locator('#center .call-info').innerText();
         assert.match(info, /이 화면에서 보낸 테스트\s+renames from the report report\.spec\.ts:7 · chromium/);
-        assert.match(info, /이 호출을 쓰는 화면 1\s+\/admin\/report#AdminReport\s+기록/);
+        assert.match(info, /이 호출을 쓰는 화면 1\s+\/admin\/report#AdminReport\s+기록 연결/);
       }),
     );
   });

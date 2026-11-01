@@ -507,7 +507,7 @@ config and the bodies of the write requests the tests sent: `sources` names wher
 it, with the test's title, file, line, project and the values it sent. A call a trace shows a page sending from a
 screen its source does not tie it to carries `tracedScreens`, one entry per such screen with the `tests` (title,
 file, line, project) whose run sent it there; `screens` stays what the source reads, and a call sent at app start
-gets none. The review page lists such a call under that screen with a `기록` chip. A POST, PUT, PATCH or DELETE call that a
+gets none. The review page lists such a call under that screen with a `기록 연결` chip. A POST, PUT, PATCH or DELETE call that a
 screen reaches and that no trace sent carries `unrecorded: true`, so an empty `options` can be told apart from a
 request no test has sent yet; the review page marks it `기록 없음` and the screen's `API 호출` heading counts the screen's
 own such calls while the 「공통」 line counts the shared ones. The server match is one of:

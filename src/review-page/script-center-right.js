@@ -254,8 +254,8 @@ function callTableBody(s, rows, depths, extra = []) {
 }
 
 function tracedChip(tests) {
-  const title = `소스로는 이 화면에 잇지 못했고, 테스트 기록에서 이 화면이 보낸 요청: ${[...new Set(tests.map((t) => t.test))].join(', ')}`;
-  return h('span', { class: 'chip traced', title, 'aria-label': title }, '기록');
+  const title = `테스트 기록으로 이은 화면: ${[...new Set(tests.map((t) => t.test))].join(', ')}`;
+  return h('span', { class: 'chip traced', title, 'aria-label': title }, '기록 연결');
 }
 
 const UNRECORDED_TITLE = '어느 테스트 기록에도 이 쓰기 요청이 없습니다. 테스트가 이 요청을 보내면 옵션이 더 나올 수 있습니다';
