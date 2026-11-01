@@ -100,8 +100,8 @@ test('rebuild prints how many calls only a trace ties to a screen, right after t
   try {
     fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
     const lines = execFileSync(process.execPath, [CLI, 'rebuild', path.join(copy, 'config.json')], { encoding: 'utf8' }).split('\n');
-    const at = lines.findIndex((l) => l.startsWith('calls tied to screens only by traces '));
-    assert.equal(lines[at], 'calls tied to screens only by traces 0 | screens they were sent from 0');
+    const at = lines.findIndex((l) => l.startsWith('calls tied to screens only by traces and visit records '));
+    assert.equal(lines[at], 'calls tied to screens only by traces and visit records 0 | screens they were sent from 0');
     assert.match(lines[at - 1], /^options sent in requests \d+ \| calls with them \d+$/);
   } finally {
     fs.rmSync(copy, { recursive: true, force: true });
@@ -112,30 +112,63 @@ test('the README, the agent skill and the decision record say what a call only a
   const read = (rel: string) => fs.readFileSync(path.join(import.meta.dirname, rel), 'utf8');
   const readme = read('../README.md');
   assert.match(readme, /A call a trace shows a page sending from a\s+screen its source does not tie it to carries `tracedScreens`[\s\S]*`screens` stays what the source reads/);
-  assert.match(readme, /`calls tied to screens only by traces N \| screens they were sent from M` — printed by `rebuild` right after it/);
+  assert.match(readme, /`calls tied to screens only by traces and visit records N \| screens they were sent from M` — printed by\s+`rebuild` right after it/);
   assert.match(readme, /a request the test sent itself, without a page, ties to none, and so does one\s+sent while a step moved the address without loading a page/);
-  assert.match(read('../skills/duru/SKILL.md'), /`calls tied to screens only by traces N \| screens they were\s+sent from M` line counts them/);
+  assert.match(read('../skills/duru/SKILL.md'), /`calls tied to screens only by traces and visit records N \| screens\s+they were sent from M` line counts them/);
   assert.match(read('../docs/decisions.md'), /\*\*A request a page sent in a test's trace ties its call to the screen[\s\S]*Chosen for #496 \(2026-10-31\)[\s\S]*Compared:/);
 });
 
-test('rebuild prints how many write calls on screens no trace sent, right after the line for the calls only a trace ties to a screen', () => {
+test('rebuild reads the requests a visit record kept: an option from the body with the record as its source, the call tied to the screen it was sent from, and the call no longer unrecorded, while a record without requests sends nothing', () => {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    const records = path.join(copy, 'out', 'stories', 'records');
+    fs.mkdirSync(records, { recursive: true });
+    const record = 'out/stories/records/2026-10-31-0a1b2c3d.json';
+    fs.writeFileSync(path.join(copy, record), JSON.stringify({
+      steps: [{ url: '/help' }],
+      requests: [
+        { method: 'POST', url: '/api/v1/report/export', body: '{"withHistory":false,"watermark":true}', shown: '/help' },
+        { method: 'POST', url: '/api/v1/report/archive' },
+      ],
+    }));
+    fs.writeFileSync(path.join(records, '2026-10-30-99999999.json'), JSON.stringify({ steps: [{ url: '/home' }] }));
+    const lines = execFileSync(process.execPath, [CLI, 'rebuild', path.join(copy, 'config.json')], { encoding: 'utf8' }).split('\n');
+    assert.ok(lines.includes('options sent in requests 2 | calls with them 1'));
+    assert.ok(lines.includes('calls tied to screens only by traces and visit records 1 | screens they were sent from 1'));
+    assert.ok(lines.includes('write calls on screens no trace or visit record sent 4 | screens with them 6'));
+    const map = JSON.parse(fs.readFileSync(path.join(copy, 'out', 'map.json'), 'utf8'));
+    const call = (id: string) => map.calls.find((c: { id: string }) => c.id === id);
+    const source = { test: record, file: null, line: null, project: null };
+    const exported = call('POST:/api/v1/report/export');
+    assert.deepEqual(exported.options.find((o: { key: string }) => o.key === 'watermark'), { key: 'watermark', values: [true, false], sources: ['request'], sites: [], requests: [{ ...source, values: [true] }] });
+    assert.deepEqual(exported.tracedScreens, [{ screen: '/help#Help', tests: [source] }]);
+    assert.equal(exported.unrecorded, undefined);
+    assert.equal(call('POST:/api/v1/report/archive').unrecorded, undefined);
+    assert.equal(call('POST:/api/v1/report/archive').tracedScreens, undefined);
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+});
+
+test('rebuild prints how many write calls on screens no trace or visit record sent, right after the line for the calls only a trace or a visit record ties to a screen', () => {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
     const lines = execFileSync(process.execPath, [CLI, 'rebuild', path.join(copy, 'config.json')], { encoding: 'utf8' }).split('\n');
-    const at = lines.findIndex((l) => l.startsWith('write calls on screens no trace sent '));
-    assert.match(lines[at], /^write calls on screens no trace sent [1-9]\d* \| screens with them [1-9]\d*$/);
-    assert.match(lines[at - 1], /^calls tied to screens only by traces \d+ \| screens they were sent from \d+$/);
+    const at = lines.findIndex((l) => l.startsWith('write calls on screens no trace or visit record sent '));
+    assert.match(lines[at], /^write calls on screens no trace or visit record sent [1-9]\d* \| screens with them [1-9]\d*$/);
+    assert.match(lines[at - 1], /^calls tied to screens only by traces and visit records \d+ \| screens they were sent from \d+$/);
     const map = JSON.parse(fs.readFileSync(path.join(copy, 'out', 'map.json'), 'utf8'));
     const marked = map.calls.filter((c: { unrecorded?: true }) => c.unrecorded);
-    assert.equal(lines[at], `write calls on screens no trace sent ${marked.length} | screens with them ${new Set(marked.flatMap((c: { screens: string[] }) => c.screens)).size}`);
+    assert.equal(lines[at], `write calls on screens no trace or visit record sent ${marked.length} | screens with them ${new Set(marked.flatMap((c: { screens: string[] }) => c.screens)).size}`);
     assert.ok(marked.every((c: { method: string; screens: string[] }) => c.method !== 'GET' && c.screens.length));
   } finally {
     fs.rmSync(copy, { recursive: true, force: true });
   }
 });
 
-test('on the example app, a write call a trace sent carries no unrecorded mark while the write calls no trace sent keep it', () => {
+test('on the example app, a write call a trace sent carries no unrecorded mark while the write calls no trace or visit record sent keep it', () => {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
@@ -189,7 +222,7 @@ test('on the example app, a write call a trace sent carries no unrecorded mark w
     assert.equal(callOf('POST:/api/v1/report/schedule').unrecorded, true);
     const marked = map.calls.filter((c: { unrecorded?: true }) => c.unrecorded);
     const screens = new Set(marked.flatMap((c: { screens: string[] }) => c.screens)).size;
-    assert.match(stdout, new RegExp(`^write calls on screens no trace sent ${marked.length} \\| screens with them ${screens}$`, 'm'));
+    assert.match(stdout, new RegExp(`^write calls on screens no trace or visit record sent ${marked.length} \\| screens with them ${screens}$`, 'm'));
     assert.equal(marked.length, 5);
   } finally {
     fs.rmSync(copy, { recursive: true, force: true });
@@ -199,17 +232,27 @@ test('on the example app, a write call a trace sent carries no unrecorded mark w
 test('the README, the agent skill and the decision record say what an unrecorded write call is and how it is counted', () => {
   const read = (rel: string) => fs.readFileSync(path.join(import.meta.dirname, rel), 'utf8');
   const readme = read('../README.md');
-  assert.match(readme, /A POST, PUT, PATCH or DELETE call that a\s+screen reaches and that no trace sent carries `unrecorded: true`/);
-  assert.match(readme, /`write calls on screens no trace sent N \| screens with them M` — printed by `rebuild` right after it/);
-  assert.match(readme, /the visit records do not keep requests yet/);
-  assert.match(read('../skills/duru/SKILL.md'), /`write calls on screens no\s+trace sent N \| screens with them M` line counts them/);
+  assert.match(readme, /A POST, PUT, PATCH or DELETE call that a\s+screen reaches and that no trace or visit record sent carries `unrecorded: true`/);
+  assert.match(readme, /`write calls on screens no trace or visit record sent N \| screens with them M` — printed by `rebuild` right after\s+it/);
+  assert.match(readme, /The requests a visit record kept count the same way/);
+  assert.match(read('../skills/duru/SKILL.md'), /`write calls on\s+screens no trace or visit record sent N \| screens with them M` line counts them/);
   assert.match(read('../docs/decisions.md'), /\*\*A write call a screen reaches that no trace sent is marked `unrecorded`[\s\S]*Chosen for #497 \(2026-10-31\)[\s\S]*Compared:/);
+});
+
+test('the README, the agent skill and the decision record say what a visit record keeps in requests and how it counts', () => {
+  const read = (rel: string) => fs.readFileSync(path.join(import.meta.dirname, rel), 'utf8');
+  const readme = read('../README.md');
+  assert.match(readme, /An object may also carry `requests`, the write requests sent while the record was made[\s\S]*A record without\s+`requests` sends nothing/);
+  assert.match(readme, /and that reached the API server, go into its\s+`requests`\. A body that reads as JSON and is at most 1 MB is kept with only its true and false values/);
+  assert.match(readme, /A request whose `Referer` names another address of the app than those the record passed through[\s\S]*is left out/);
+  assert.match(read('../skills/duru/SKILL.md'), /A visit record recorded on the review page keeps the write requests the app sent in\s+`requests`/);
+  assert.match(read('../docs/decisions.md'), /\*\*A visit recorded on the review page keeps the write requests the review server passed to the app[\s\S]*Chosen for #498 \(2026-10-31\)[\s\S]*Compared:/);
 });
 
 test('the README, the agent skill and the decision record say what the line for the options the tests sent in a request means', () => {
   const read = (rel: string) => fs.readFileSync(path.join(import.meta.dirname, rel), 'utf8');
   const readme = read('../README.md');
-  assert.match(readme, /`options sent in requests N \| calls with them M` — printed by `rebuild` after the line of the calls with tests[\s\S]*how many of the map's options came at least partly from the body of a request a test sent/);
+  assert.match(readme, /`options sent in requests N \| calls with them M` — printed by `rebuild` after the line of the calls with tests[\s\S]*how many of the map's options came at least partly from the body of a request a test or a\s+visit record sent/);
   assert.match(readme, /an option a request body sent carries `requests`[\s\S]*the values it sent/);
   assert.match(readme, /The JSON bodies of the\s+POST, PUT, PATCH and DELETE requests in the traces of the result folders `tests` names are read, of failing tests as\s+well as passing ones[\s\S]*a body that is not\s+JSON[\s\S]*is skipped/);
   assert.match(read('../skills/duru/SKILL.md'), /`options sent in requests N \| calls with them M` line says how many options came at least partly from such a body\s+and how many calls carry one of them/);

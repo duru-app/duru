@@ -475,6 +475,90 @@ test('a visit recorded on the page is written into records/ in the stories folde
   );
 });
 
+test('a visit recorded on the page keeps the write requests the app pane passed on after recording started, with only the true and false values of a JSON body and the address its Referer names, and leaves out the ones before, the reads, the bodies that are not JSON, those of another pane, those from an address the record did not pass and those whose address is not inside the app', async () => {
+  await withFakeApi((api) =>
+    withPasswords(ALL_PASSWORDS, () =>
+      withRebuiltFixture(roleSettings(api), (config) =>
+        withServer(config, 'reviewer', async (base) => {
+          const { app } = await (await fetch(`${base}/api/data`)).json();
+          const pane = app.url;
+          const other = app.roles[0].url;
+          const send = (at: string, method: string, url: string, body?: string, referer?: string) =>
+            fetch(`${at}${url}`, { method, body, headers: { ...(referer && { referer }), 'content-type': 'text/plain' } }).then((res) => res.text());
+          await send(pane, 'POST', '/api/v1/documents/search', '{"status":"before"}', `${pane}/home`);
+          const { from } = await (await fetch(`${base}/api/records/start`)).json();
+          assert.ok(Number.isInteger(from));
+          await send(pane, 'POST', '/api/v1/documents/search', '{"status":"done","password":"s3cret","notify":true,"signers":[{"name":"x","required":false}]}', `${pane}/document/list?page=2#top`);
+          await send(pane, 'POST', '/api/v1/documents/search', '{"status":"other tab"}', `${pane}/help`);
+          await send(pane, 'PUT', '/api/v1/documents/8', '{"origin":true}', `${pane}/`);
+          await send(pane, 'GET', '/api/v1/documents');
+          await send(pane, 'POST', '/api/v1/press', 'pressed');
+          await send(pane, 'DELETE', '/api/v1/documents/7', undefined, 'http://evil.example/home');
+          await send(other, 'POST', '/api/v1/documents/search', '{"status":"other"}', `${other}/home`);
+          await new Promise<void>((resolve, reject) => {
+            const target = new URL(pane);
+            const req = http.request({ host: target.hostname, port: target.port, method: 'POST', path: `${pane}/api/v1/press`, headers: { host: target.host } }, (r) => r.resume().on('end', resolve));
+            req.on('error', reject);
+            req.end('{"absolute":true}');
+          });
+          const steps = [{ url: '/home' }, { url: '/document/list?page=2#top' }];
+          const save = (input: object) => fetch(`${base}/api/records`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ steps, ...input }) });
+          const res = await save({ pane, from });
+          assert.equal(res.status, 201);
+          const { record, requests } = await res.json();
+          assert.equal(requests, 4);
+          assert.deepEqual(JSON.parse(fs.readFileSync(path.join(config.configDir, record), 'utf8')), {
+            steps,
+            requests: [
+              { method: 'POST', url: '/api/v1/documents/search', body: '{"notify":true,"signers":[{"required":false}]}', shown: '/document/list?page=2' },
+              { method: 'PUT', url: '/api/v1/documents/8', body: '{"origin":true}' },
+              { method: 'POST', url: '/api/v1/press' },
+              { method: 'DELETE', url: '/api/v1/documents/7' },
+            ],
+          });
+          assert.ok(!fs.readFileSync(path.join(config.configDir, record), 'utf8').includes('s3cret'));
+          const without = await save({});
+          assert.equal(without.status, 201);
+          const unsent = await without.json();
+          assert.equal(unsent.requests, null);
+          assert.deepEqual(JSON.parse(fs.readFileSync(path.join(config.configDir, unsent.record), 'utf8')), { steps });
+          for (const input of [{ pane, from: -1 }, { pane, from: '0' }, { pane: 'http://127.0.0.1:1', from }, { from }]) {
+            assert.equal((await save(input)).status, 400, JSON.stringify(input));
+          }
+          assert.equal(fs.readdirSync(path.join(config.storiesDir, 'records')).length, 2);
+        }),
+      ),
+    ),
+  );
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const res = await fetch(`${base}/api/records/start`);
+      assert.deepEqual([res.status, await res.text()], [404, 'no app is served']);
+    }),
+  );
+});
+
+test('a write request the API server never answered is not kept in the visit record', async () => {
+  const down = http.createServer();
+  await new Promise<void>((resolve) => down.listen(0, '127.0.0.1', resolve));
+  const server = `http://127.0.0.1:${(down.address() as AddressInfo).port}`;
+  down.close();
+  await withPassword('s3cret', () =>
+    withRebuiltFixture(appSettings(server), (config) =>
+      withServer(config, 'reviewer', async (base) => {
+        const { app } = await (await fetch(`${base}/api/data`)).json();
+        const { from } = await (await fetch(`${base}/api/records/start`)).json();
+        const sent = await fetch(`${app.url}/api/v1/documents/search`, { method: 'POST', body: '{"notify":true}', headers: { referer: `${app.url}/home` } });
+        assert.equal(sent.status, 502);
+        const res = await fetch(`${base}/api/records`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ steps: [{ url: '/home' }], pane: app.url, from }) });
+        const { record, requests } = await res.json();
+        assert.equal(requests, 0);
+        assert.deepEqual(JSON.parse(fs.readFileSync(path.join(config.configDir, record), 'utf8')), { steps: [{ url: '/home' }] });
+      }),
+    ),
+  );
+});
+
 test('without signedOutPaths there is no signed-out address', async () => {
   await withFakeApi((api) =>
     withPassword('s3cret', () =>

@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { baselineLine, compareMaps, newUndecided, readBaseline } from './baseline.ts';
 import { baselineTestsLines, compareTests, nodeIds, readBaselineTests } from './baseline-tests.ts';
-import { storeCandidates, storyCandidates } from './candidates.ts';
+import { recordedRequests, storeCandidates, storyCandidates } from './candidates.ts';
 import { casesWithoutTests, picksCalls, rulePicks } from './case-targets.ts';
 import { isPlainObject, loadConfig } from './config.ts';
 import type { CaseKind } from './config.ts';
@@ -310,7 +310,7 @@ if (command === 'tasks') {
     console.error(err.message);
     process.exit(1);
   });
-  const sent = sentTraces(config);
+  const sent = [...sentTraces(config), ...recordedRequests(config)];
   const sentCounts = addRequestOptions(map, sent);
   const tracedCounts = addTracedScreens(map, sent);
   const unrecordedCounts = markUnrecorded(map, sent);
@@ -438,8 +438,8 @@ if (command === 'tasks') {
     console.log(`screens with tests ${covered}/${map.screens.length} | tags pointing outside the map ${unknownTags.length} | tests without a node or story tag ${links.untaggedCount}`);
     console.log(`calls with tests ${map.calls.filter((c: any) => links.nodes[c.id]).length}/${map.calls.length}`);
     console.log(`options sent in requests ${sentCounts.options} | calls with them ${sentCounts.calls}`);
-    console.log(`calls tied to screens only by traces ${tracedCounts.calls} | screens they were sent from ${tracedCounts.screens}`);
-    console.log(`write calls on screens no trace sent ${unrecordedCounts.calls} | screens with them ${unrecordedCounts.screens}`);
+    console.log(`calls tied to screens only by traces and visit records ${tracedCounts.calls} | screens they were sent from ${tracedCounts.screens}`);
+    console.log(`write calls on screens no trace or visit record sent ${unrecordedCounts.calls} | screens with them ${unrecordedCounts.screens}`);
     const pairs = (byScreen: Record<string, unknown[]>) => Object.values(byScreen).reduce((n, tests) => n + tests.length, 0);
     console.log(`links from unit tests to screens by the files they import ${pairs(judged.importers)} | test files not read ${links.importNotices.length}`);
     console.log(`links from browser tests to screens they passed through and calls they sent ${pairs(judged.passed)} | traces not read ${links.traceNotices.length} | browser tests that ran without a trace ${links.untracedCount}`);

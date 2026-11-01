@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { addRequestOptions, bodyOptions } from '../src/request-options.ts';
-import type { RequestSent, SentTrace } from '../src/request-options.ts';
+import { addRequestOptions, bodyOptions, optionBody, traceSent } from '../src/request-options.ts';
+import type { RequestSent } from '../src/request-options.ts';
 
 type Sent = { method?: string; url: string; body: string };
 
@@ -62,8 +62,20 @@ const mapOf = () => ({
   apiFunctions: { send: { endpoints: [{ callId: 'POST:/api/v1/report', method: 'POST', url: '/api/v1/report' }] } },
   calls: [{ id: 'POST:/api/v1/report', method: 'POST', path: '/api/v1/report', server: {}, apiFunctions: [], screens: [], options: [] as Option[] }],
 });
-const sentOf = (trace: string, title: string, project: string | null, line = 1): SentTrace => ({ trace, title, file: 'test/report.spec.ts', line, project, status: 'pass' });
+const sentOf = (trace: string, title: string, project: string | null, line = 1) => traceSent({ trace, title, file: 'test/report.spec.ts', line, project })!;
 const optionsOf = (map: ReturnType<typeof mapOf>) => map.calls.find((c) => c.id === 'POST:/api/v1/report')!.options;
+
+test('optionBody keeps only the true and false values of a body and the names leading to them, so bodyOptions reads the same options from it', () => {
+  const bodies = [
+    '{"password":"s3cret","notify":true,"count":3,"signers":[{"name":"x","required":false},{"name":"y","required":true},"z"],"empty":{},"deep":{"a":{"b":[true,false]}}}',
+    '[{"on":true},{"on":"x"}]',
+    '{"watermark":false}',
+  ];
+  for (const body of bodies) assert.deepEqual(bodyOptions(optionBody(body)!), bodyOptions(body), body);
+  assert.equal(optionBody(bodies[0]), '{"notify":true,"signers":[{"required":false},{"required":true}],"deep":{"a":{"b":[true,false]}}}');
+  for (const none of ['{"password":"s3cret"}', 'true', '"x"', 'not json', '{}']) assert.equal(optionBody(none), undefined, none);
+  assert.equal(optionBody(`${'['.repeat(100000)}true${']'.repeat(100000)}`), undefined, 'a body nested past the stack is dropped, not thrown');
+});
 
 test('a boolean field of a request body is an option named by where it sits, and a field of another type is not', () => {
   assert.deepEqual(bodyOptions('{"notify":true,"count":3,"note":"x","empty":{}}'), [{ key: 'notify', value: true }]);

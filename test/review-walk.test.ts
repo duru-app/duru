@@ -49,6 +49,40 @@ const recordFiles = (storiesDir: string) => {
   return fs.existsSync(folder) ? fs.readdirSync(folder).sort().map((f) => JSON.parse(fs.readFileSync(path.join(folder, f), 'utf8'))) : [];
 };
 
+test('in a browser, a write request the app sends while recording goes into the record with its body and the address the app showed, and a request sent before 「● 기록」 does not', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(appSettings(api), (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            const { app } = await (await fetch(`${base}/api/data`)).json();
+            await fetch(`${app.url}/api/v1/documents/search`, { method: 'POST', body: '{"status":"before"}' });
+            await startNewStory(p);
+            await pickScreen(p, '/home');
+            await p.waitForSelector('#center .compose-step[data-step="0"]');
+            await p.click('#center button.walk-start');
+            const frame = await walkFrame(p, app.url);
+            await goTo(frame, '/help?from=home');
+            await untilWalkSteps(p, 2);
+            await frame.evaluate(() => fetch('/api/v1/documents/search', {
+              method: 'POST',
+              headers: { authorization: `Bearer ${JSON.parse(localStorage.getItem('FAKE_AUTH')!).accessToken}` },
+              body: JSON.stringify({ status: 'done', notify: true }),
+            }));
+            await p.click('#center .walk-bar button.end-walk');
+            await p.waitForSelector('#center .walk-note:has-text("기록 파일")');
+            assert.match((await p.textContent('#center .walk-note'))!, /앱이 보낸 쓰기 요청 1개도 함께 남겼습니다/);
+            assert.deepEqual(recordFiles(config.storiesDir), [{
+              steps: [{ url: '/home' }, { url: '/help?from=home' }],
+              requests: [{ method: 'POST', url: '/api/v1/documents/search', body: '{"notify":true}', shown: '/help?from=home' }],
+            }]);
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
 test('in a browser, 「● 기록」 in a new story fills the center with the app and stacks each screen passed in the app on the left after the steps already there, with the addresses, the values typed and the inputs left out, takes no message from elsewhere, hides the save box while the app is open but shows the verdict and the conditions of the steps so far above them, and 「기록 끝」 writes the record file, draws the path in one row and shows the save box with what was typed in it', { skip: browserMissing }, async () => {
   await withFakeApi((api) =>
     withPassword('s3cret', () =>
