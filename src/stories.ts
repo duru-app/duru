@@ -350,6 +350,19 @@ function withoutLinkNeeds(step: any) {
 
 export type Kept = Map<number, { step: number; linked: boolean }>;
 
+// 새로 넣는 화면의 picks 는 undefined 다.
+export function keptSteps(screens: unknown[], picks: (number | undefined)[]): { screens: unknown[]; kept: Kept } {
+  const kept: Kept = new Map();
+  const next = screens.map((screen, i) => {
+    const pick = picks[i];
+    if (pick === undefined) return screen;
+    const linked = i > 0 && picks[i - 1] === pick - 1;
+    kept.set(pick, { step: i + 1, linked });
+    return linked ? screen : withoutLinkNeeds(screen);
+  });
+  return { screens: next, kept };
+}
+
 export function sourceAfterSteps(source: any, kept: Kept) {
   if (!isSource(source) || !('comment' in source)) return source;
   const added = (source.added as CommentSource['added']).flatMap(({ step, reason }) => (kept.has(step) ? [{ step: kept.get(step)!.step, reason }] : []));
@@ -370,8 +383,7 @@ export function writeStorySteps(dir: string, id: string, { steps, contentHash }:
   const picks: { step?: number; screen: string }[] = steps;
   return rewriteStory(dir, id, (raw) => {
     let last = 0;
-    const kept: Kept = new Map();
-    const screens = picks.map((pick, i) => {
+    const picked = picks.map((pick) => {
       if (pick.step === undefined) return pick.screen;
       if (pick.step > raw.screens.length) throw new Error(`스토리 ${id} 에는 ${pick.step} 번째 단계가 없습니다`);
       const screen = screenOf(raw.screens[pick.step - 1]);
@@ -379,11 +391,9 @@ export function writeStorySteps(dir: string, id: string, { steps, contentHash }:
       if (pick.step === last) throw new Error(`${pick.step} 번째 단계를 두 번 남길 수 없습니다`);
       if (pick.step < last) throw new Error(`남기는 단계는 파일에 있던 차례대로 적어야 하는데, ${pick.step} 번째 단계가 ${last} 번째 단계 뒤에 왔습니다`);
       last = pick.step;
-      const linked = i > 0 && picks[i - 1].step === pick.step - 1;
-      kept.set(pick.step, { step: i + 1, linked });
-      const step = raw.screens[pick.step - 1];
-      return linked ? step : withoutLinkNeeds(step);
+      return raw.screens[pick.step - 1];
     });
+    const { screens, kept } = keptSteps(picked, picks.map((pick) => pick.step));
     const next = { ...raw, screens, ...(raw.source !== undefined && { source: sourceAfterSteps(raw.source, kept) }) };
     const problem = problemOf(next);
     if (problem) throw new Error(problem);

@@ -1349,6 +1349,42 @@ test('accepting a candidate from a comment with a step taken out keeps the value
   });
 });
 
+test('with two candidate files of one screen order, a step is taken out in the one the list shows, the one first seen, whichever comes first by file name', () => {
+  for (const [early, late] of [['2026-10-01-aaaaaaaa.json', '2026-10-01-bbbbbbbb.json'], ['2026-10-01-bbbbbbbb.json', '2026-10-01-aaaaaaaa.json']]) {
+    withStoryCopy((dir: string) => {
+      fs.mkdirSync(path.join(dir, 'candidates'));
+      const old = { screens: HOME_HELP, source: { report: 'results/old.json', tests: ['old'] } };
+      fs.writeFileSync(path.join(dir, 'candidates', early), JSON.stringify({ ...old, name: 'first seen', date: '2026-10-01T01:00:00.000Z' }));
+      fs.writeFileSync(path.join(dir, 'candidates', late), JSON.stringify({ ...old, name: 'seen later', date: '2026-10-01T02:00:00.000Z' }));
+      const [listed] = leftOnlyStored(dir).list;
+      assert.equal(listed.name, 'first seen', early);
+      assert.equal(pickCandidateStep(dir, listed, stepOff(1)).file, path.join('candidates', early), early);
+      assert.deepEqual(leftOnlyStored(dir).list.map((c) => [c.name, c.offSteps]), [['first seen', [1]]], early);
+      assert.equal('offSteps' in readJson(path.join(dir, 'candidates', late)), false, early);
+    });
+  }
+});
+
+test('undoing the acceptance of a candidate with steps taken out gives back that candidate once, with the same steps taken out, and writes no second candidate file', () => {
+  withStoryCopy((dir: string) => {
+    pickCandidateStep(dir, helpOf(dir), stepOff(1));
+    const files = () => fs.readdirSync(path.join(dir, 'candidates')).sort();
+    const before = files();
+    acceptCandidate(dir, helpOf(dir), { id: 'open-help', name: '홈에서 도움말을 연다', author: 'reviewer' });
+    assert.deepEqual(readJson(path.join(dir, 'open-help.json')).screens, ['/home#Home', '/beta/inbox', '/help#Help']);
+    unacceptStory(dir, 'open-help');
+    assert.deepEqual(files(), before);
+    assert.deepEqual(candidatesOf({ storiesDir: dir }).list.map((c) => [c.name, c.screens.length, c.offSteps]), [['open-help', 4, [1]], ['publish-document', 4, undefined]]);
+  });
+});
+
+test('taking a step out of a candidate not stored yet, with a candidates entry that is a file in the stories folder, is refused with why', () => {
+  withStoryCopy((dir: string) => {
+    fs.writeFileSync(path.join(dir, 'candidates'), 'a file');
+    assert.throws(() => pickCandidateStep(dir, helpOf(dir), stepOff(1)), { message: '스토리 폴더 안 candidates 가 파일이라 후보 파일을 쓸 수 없습니다' });
+  });
+});
+
 test('the usage guide says a step of a candidate taken out with ✕ is kept in the candidate file as offSteps and left out of the story accepted from it', () => {
   const readme = fs.readFileSync(path.join(import.meta.dirname, '../README.md'), 'utf8');
   const candidates = readme.slice(readme.indexOf('## Story candidates'));

@@ -8,8 +8,8 @@ import { compare, isPlainObject } from './config.ts';
 import { jsonFiles } from './json-files.ts';
 import { loadMarks, orderKey, recordKind, recordName, targetsOf, writeNewRecord } from './marks.ts';
 import type { SentRequests } from './request-options.ts';
-import { addStory, CANDIDATES, DISCARDED, inputsProblem, RECORDS, isDate, isScreenList, isSource, isText, loadStories, sourceAfterSteps, SOURCE_SHAPES, STEP_FIELDS, stepProblem, writableStoriesFolder } from './stories.ts';
-import type { CommentSource, Kept, StepFields, StepInput } from './stories.ts';
+import { addStory, CANDIDATES, DISCARDED, inputsProblem, keptSteps, RECORDS, isDate, isScreenList, isSource, isText, loadStories, sourceAfterSteps, SOURCE_SHAPES, STEP_FIELDS, stepProblem, writableStoriesFolder } from './stories.ts';
+import type { CommentSource, StepFields, StepInput } from './stories.ts';
 import { checkStories, linksFromOldDuru, staleMapMessage } from './story-paths.ts';
 import { titleWithoutTags } from './verdict.ts';
 
@@ -278,6 +278,17 @@ const shownDiscarded = (discarded: any[]) =>
 const isFolder = (file: string) => fs.existsSync(file) && fs.statSync(file).isDirectory();
 const loadStored = (dir: string) => (isFolder(dir) ? loadFolder(dir, CANDIDATES) : { found: [], notices: [] });
 
+const byFirstSeen = (a: any, b: any) => compare(a.date, b.date) || compare(a.screens.join(' > '), b.screens.join(' > ')) || compare(a.file, b.file);
+
+function firstStored(found: any[]) {
+  const first = new Map<string, any>();
+  for (const entry of [...found].sort(byFirstSeen)) {
+    const key = JSON.stringify(entry.screens);
+    if (!first.has(key)) first.set(key, entry);
+  }
+  return first;
+}
+
 // 쓴 파일은 고치지도 지우지도 않는다.
 export function storeCandidates(dir: string, list: Candidate[], now = new Date()) {
   const folder = path.join(dir, CANDIDATES);
@@ -341,21 +352,10 @@ export function acceptCandidate(dir: string, candidate: Candidate, { id, name, a
   const { source, stepFields } = pickedLines(candidate);
   const offSteps = candidate.offSteps ?? [];
   if (!offSteps.length) return addStory(dir, { id, name, screens: withFields({ screens: candidate.screens, stepFields }), author, source }, now);
-  const steps2 = stepFields;
-  const picked = candidate.screens.map((screen, i) => ({ screen, i })).filter(({ i }) => !offSteps.includes(i + 1));
-  const kept: Kept = new Map();
-  const screens = picked.map(({ screen, i }, at) => {
-    const linked = at > 0 && picked[at - 1].i === i - 1;
-    kept.set(i + 1, { step: at + 1, linked });
-    return screen;
-  });
-  const fields = steps2 && picked.map(({ i }) => {
-    const step = steps2[i];
-    if (kept.get(i + 1)!.linked) return step;
-    const { linkNeeds, ...rest } = step;
-    return rest;
-  });
-  return addStory(dir, { id, name, screens: withFields({ screens, stepFields: fields as StepFields[] | undefined }), author, source: sourceAfterSteps(source, kept) }, now);
+  const steps = withFields({ screens: candidate.screens, stepFields });
+  const picks = candidate.screens.flatMap((_, i) => (offSteps.includes(i + 1) ? [] : [i + 1]));
+  const { screens, kept } = keptSteps(picks.map((step) => steps[step - 1]), picks);
+  return addStory(dir, { id, name, screens, author, source: sourceAfterSteps(source, kept) }, now);
 }
 
 const lineOrder = (a: OffLine, b: OffLine) => a.step - b.step || STEP_FIELDS.indexOf(a.field) - STEP_FIELDS.indexOf(b.field) || a.line - b.line;
@@ -381,13 +381,15 @@ export function pickCandidateStep(dir: string, candidate: Candidate, input: obje
   const offSteps = on ? others : [...others, step as number].sort((a, b) => a - b);
   if (offSteps.length >= candidate.screens.length) throw new Error(`후보 「${candidate.name}」의 마지막 남은 단계는 뺄 수 없습니다`);
   const key = JSON.stringify(candidate.screens);
-  let found = loadStored(dir).found.find((c) => JSON.stringify(c.screens) === key);
+  let found = firstStored(loadStored(dir).found).get(key);
   if (!found) {
+    const folder = path.join(dir, CANDIDATES);
+    if (fs.existsSync(folder) && !isFolder(folder)) throw new Error(`스토리 폴더 안 ${CANDIDATES} 가 파일이라 후보 파일을 쓸 수 없습니다`);
     const kept = storeCandidates(dir, [candidate]);
-    if (kept.reason) throw new Error(kept.reason);
-    found = loadStored(dir).found.find((c) => JSON.stringify(c.screens) === key);
+    found = firstStored(loadStored(dir).found).get(key);
+    if (!found) throw new Error(kept.reason ?? '후보 파일을 쓰지 못했습니다');
   }
-  const file = path.join(dir, found!.file!);
+  const file = path.join(dir, found.file!);
   const { offSteps: _, ...rest } = JSON.parse(fs.readFileSync(file, 'utf8'));
   fs.writeFileSync(file, JSON.stringify({ ...rest, ...(offSteps.length && { offSteps }) }, null, 2) + '\n');
   return { file: found!.file, offSteps };
@@ -398,9 +400,16 @@ export function unacceptStory(dir: string, id: unknown) {
   const story = loadStories(dir).stories.find((s) => s.id === id);
   if (!story) throw new Error(`스토리 ${id} 를 찾지 못했습니다`);
   if (!story.source) throw new Error(`스토리 ${id} 는 후보에서 받은 스토리가 아닙니다`);
-  const stepFields = story.stepFields && ('comment' in story.source ? story.stepFields : inputFields(story.stepFields.map((f) => f.inputs ?? [])));
-  const kept = storeCandidates(dir, [{ key: story.screens.join(' > '), name: story.id, screens: story.screens, source: story.source, ...carried({ stepFields }) }]);
-  if (kept.reason) throw new Error(kept.reason);
+  const source = story.source;
+  const stepFields = story.stepFields && ('comment' in source ? story.stepFields : inputFields(story.stepFields.map((f) => f.inputs ?? [])));
+  // 단계를 빼고 받은 후보는 그대로 돌아오게, 받을 때 뺐던 단계를 뺀 화면 순서가 스토리와 같은 후보 파일이 있으면 새로 쓰지 않는다.
+  const storyScreens = JSON.stringify(story.screens);
+  const back = [...firstStored(loadStored(dir).found).values()].find((c) => sourceKey(c.source) === sourceKey(source)
+    && JSON.stringify(c.screens.filter((_: unknown, i: number) => !(c.offSteps ?? []).includes(i + 1))) === storyScreens);
+  if (!back) {
+    const kept = storeCandidates(dir, [{ key: story.screens.join(' > '), name: story.id, screens: story.screens, source, ...carried({ stepFields }) }]);
+    if (kept.reason) throw new Error(kept.reason);
+  }
   fs.rmSync(path.join(dir, story.file));
   return { id: story.id, screens: story.screens, file: story.file };
 }
@@ -487,7 +496,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   const notices = [...folderNotices, ...recordNotices];
   const { discarded, notices: discardedNotices } = loadDiscarded(config.storiesDir);
   const { found: stored, notices: storedNotices } = loadStored(config.storiesDir);
-  const offByOrder = new Map(stored.filter((c) => c.offSteps).map((c) => [JSON.stringify(c.screens), c.offSteps]));
+  const offByOrder = new Map([...firstStored(stored)].filter(([, c]) => c.offSteps).map(([key, c]) => [key, c.offSteps]));
   const all = [...notices, ...[...discardedNotices, ...storedNotices].map((n) => ({ ...n, file: relative(config.configDir, path.join(config.storiesDir, n.file)) }))];
   const current = discardedNow(discarded);
   const shown = shownDiscarded(current);
@@ -527,8 +536,8 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
     }
   }
   for (const key of fromTraces.keys()) seen.add(key);
-  const byFirstSeen = stored.sort((a, b) => compare(a.date, b.date) || compare(a.screens.join(' > '), b.screens.join(' > ')));
-  for (const { name, screens, source, file, offLines, offSteps, ...rest } of byFirstSeen) {
+  const byFirstSeenStored = stored.sort(byFirstSeen);
+  for (const { name, screens, source, file, offLines, offSteps, ...rest } of byFirstSeenStored) {
     const key = JSON.stringify(screens);
     if (seen.has(key) || taken.has(sourceKey(source))) {
       gone[screens.join(' > ')] ??= name;
