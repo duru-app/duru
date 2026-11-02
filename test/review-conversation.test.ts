@@ -696,7 +696,7 @@ test('in a browser, the bubble of a candidate from a visit record and of one fro
 
         await p.reload();
         await p.waitForSelector('#candidate-list li .part-count');
-        assert.deepEqual(await p.locator('#candidate-list li').evaluateAll((items) => items.map((li) => li.querySelector('.part-count')?.textContent ?? null)), ['코멘트 1', null, '코멘트 1', null]);
+        assert.deepEqual(await p.locator('#candidate-list li').evaluateAll((items) => items.map((li) => li.querySelector('.part-count')?.textContent ?? null)), ['코멘트 1', null, null, '코멘트 1', null, null, null, null, null]);
         await p.locator('#candidate-list li', { hasText: 'open-help' }).locator('.part-count').click();
         await p.waitForSelector('#candidate-list li.selected:has-text("open-help")');
         assert.deepEqual(await p.locator('#right-info .talk .history > li').evaluateAll((list) => list.map((li) => [li.querySelector(':scope > .tag')?.textContent, li.querySelector(':scope > div')?.textContent])), [['후보', 'why the beta inbox?']]);

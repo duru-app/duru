@@ -1673,7 +1673,7 @@ placeholder fits on one line (302px measured). When the window gets too narrow f
 side panes give up the width they were dragged to, each in proportion to what it has above its own floor; the
 dragged widths are kept, so a window made wide again gets them back.
 
-**A Playwright test whose trace passes two screens or more gives a story candidate, and a story accepted from it
+**A Playwright test whose trace passes one screen or more gives a story candidate, and a story accepted from it
 keeps `{ "report", "tests" }` as its source.**
 duru already reads the addresses each test opened from its trace for 「지나간 시험」, so a suite that runs with traces
 on needs no code of its own to write visit records. The source of a visit record candidate, `{ "record", "steps" }`,
@@ -1684,9 +1684,12 @@ shape skip such a story file as breaking the rules. Tests passing the same order
 whose tests all log in first would otherwise list 「로그인 → 홈 → 시험 화면」 once per test. Since the source names
 one report, the tests of a report read later with the same order are not added (reports are read in the order of
 `tests`, and by path within one entry); a run split into shards and kept as several reports names the tests of one
-shard only. A test that passed a single screen gives no candidate,
-since a story of one screen says nothing a screen does not. A candidate is chosen on the review page and in its
-address by a key, the record file for a visit record and the screen order for a trace, as two trace candidates can
+shard only. A test that passed a single screen gives a candidate too. This was once left out, since a story of one
+screen seemed to say nothing the screen does not; once a story could carry conditions, inputs and expected results on
+each step, one screen can be a story, such as a settings-screen test that creates, edits, saves an empty value,
+reloads and deletes on one screen. A test should also not become a candidate or not depending on whether it passed
+the login screen on the way (driver's decision in #529, 2026-11-02). A candidate is chosen on the review page and in
+its address by a key, the record file for a visit record and the screen order for a trace, as two trace candidates can
 come from one report. Since candidates are kept in files, the key is the screen order for both; the entry on
 keeping candidates says why.
 
