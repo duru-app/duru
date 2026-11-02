@@ -690,3 +690,30 @@ test('in a browser, a comment saved on another screen while the first screen\'s 
     ),
   );
 });
+
+test('in a browser, Ctrl+Enter in the comment box saves the comment as 「남기기」 does, while Enter and Shift+Enter start a new line', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await toList(p);
+        await p.click('#screen-list li:has-text("/document/:id")');
+        await p.click('#right-dock textarea');
+        await p.keyboard.type('first');
+        await p.keyboard.press('Shift+Enter');
+        await p.keyboard.type('second');
+        await p.keyboard.press('Enter');
+        await p.keyboard.type('third');
+        assert.equal(await p.inputValue('#right-dock textarea'), 'first\nsecond\nthird');
+        await p.$eval('#right-dock textarea', (field) => field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, repeat: true, bubbles: true, cancelable: true })));
+        await p.waitForTimeout(200);
+        assert.deepEqual(loadMarks(config.marksDir), []);
+
+        await p.keyboard.press('Control+Enter');
+        await p.waitForSelector('#right .history li:has-text("third")');
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => m.note), ['first\nsecond\nthird']);
+        assert.equal(await p.inputValue('#right-dock textarea'), '');
+        assert.equal(await p.getAttribute('#right button.save', 'title'), 'Ctrl+Enter 로도 남깁니다');
+      }),
+    ),
+  );
+});
