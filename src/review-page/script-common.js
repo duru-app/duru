@@ -220,7 +220,7 @@ function setSelected(id, target = { node: id }) {
   state.caseError = null;
   state.selected = id;
   state.target = target;
-  state.draft = null;
+  parkDraft('draft');
   state.error = null;
   state.judgmentError = null;
 }
@@ -241,9 +241,9 @@ function selectStory(id) {
   }
   state.story = id;
   state.candidate = null;
-  state.candidateTalk = null;
+  parkDraft('candidateTalk');
   state.need = null;
-  state.storyDraft = null;
+  parkDraft('storyDraft');
   state.error = null;
   state.caseError = null;
   state.storyError = null;
@@ -254,7 +254,7 @@ function selectStory(id) {
 function selectCandidate(key) {
   if (key !== state.candidate) {
     state.storyOpen.clear();
-    state.candidateTalk = null;
+    parkDraft('candidateTalk');
   }
   state.candidate = key;
   state.need = null;
@@ -269,7 +269,7 @@ function selectNeed(file) {
   if (file !== state.need) Object.assign(state, { needEdit: null, needSaved: null });
   state.need = file;
   state.candidate = null;
-  state.candidateTalk = null;
+  parkDraft('candidateTalk');
   state.error = null;
   state.caseError = null;
   state.storyError = null;
@@ -323,7 +323,7 @@ function selectTarget(t) {
   if (t.node !== state.target?.node) state.callInfoShut = null;
   state.caseError = null;
   state.target = t;
-  state.draft = null;
+  parkDraft('draft');
   state.error = null;
   state.judgmentError = null;
   render();

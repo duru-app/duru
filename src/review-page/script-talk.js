@@ -210,8 +210,9 @@ function talkPanel(target) {
 
 function markForm(target, draftKey, label) {
   const mark = markOf(target);
-  state[draftKey] ??= { status: mark?.current?.status ?? null, note: '' };
+  state[draftKey] ??= takeParked(draftKey, target) ?? { status: mark?.current?.status ?? null, note: '' };
   const draft = state[draftKey];
+  draftTargets.set(draft, target);
   const tags = (draft.tags ?? [target]).map((t) => (t.screens !== undefined && target.screens !== undefined ? target : t));
   const statusOn = onlyTag(tags, target) && target.candidate === undefined && target.screens === undefined;
   const savable = () => draft.note.trim() !== '' || (statusOn && !!draft.status);

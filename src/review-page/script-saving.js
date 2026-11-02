@@ -23,6 +23,7 @@ async function postMark(picked, draftKey, statusOn) {
   const tags = picked.map((t) => (t.screens !== undefined && owner?.screens !== undefined ? owner : t));
   const target = tags.length === 1 ? tags[0] : owner;
   let saved;
+  savingDrafts.add(draft);
   try {
     const res = await fetch('/api/marks', {
       method: 'POST',
@@ -36,6 +37,8 @@ async function postMark(picked, draftKey, statusOn) {
   } catch (err) {
     showSaveError(err.message, target);
     return null;
+  } finally {
+    savingDrafts.delete(draft);
   }
   const here = ownerOf(draftKey);
   const untouched = !!here && keyOf(here) === keyOf(target) && !unsaved(target, state[draftKey]);

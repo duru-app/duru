@@ -172,7 +172,10 @@ function applyPlace() {
       else {
         setCaseKind(kind);
         const node = p.get('node');
-        if (node !== state.caseNode) Object.assign(state, { caseNode: node !== null && kindTargetsOf(kind).nodes[node] ? node : null, caseDraft: null });
+        if (node !== state.caseNode) {
+          parkDraft('caseDraft');
+          state.caseNode = node !== null && kindTargetsOf(kind).nodes[node] ? node : null;
+        }
       }
     }
     if (head === 'screens' && screen !== state.selected && screenOf(screen)) go = () => select(screen);
@@ -198,8 +201,27 @@ window.addEventListener('popstate', () => {
 
 const unsaved = (target, d) => !!d && (d.note.trim() !== '' || (d.status !== null && d.status !== (markOf(target)?.current?.status ?? null)));
 
+const parkedDrafts = new Map();
+const draftTargets = new WeakMap();
+const savingDrafts = new WeakSet();
+const parkKey = (draftKey, target) => `${draftKey}\n${keyOf(target)}`;
+
+function parkDraft(draftKey) {
+  const draft = state[draftKey];
+  const target = draft && draftTargets.get(draft);
+  if (target && !savingDrafts.has(draft) && unsaved(target, draft)) parkedDrafts.set(parkKey(draftKey, target), { target, draft });
+  state[draftKey] = null;
+}
+
+function takeParked(draftKey, target) {
+  const key = parkKey(draftKey, target);
+  const parked = parkedDrafts.get(key);
+  parkedDrafts.delete(key);
+  return parked ? { ...parked.draft, tags: parked.draft.tags && [...parked.draft.tags] } : null;
+}
+
 function hasUnsavedMark() {
-  return unsaved(state.target, state.draft) || unsaved({ story: state.story }, state.storyDraft) || unsaved({ candidate: state.candidate }, state.candidateTalk) || unsaved({ node: state.caseNode }, state.caseDraft) || Boolean(state.composeTalk?.note.trim());
+  return unsaved(state.target, state.draft) || unsaved({ story: state.story }, state.storyDraft) || unsaved({ candidate: state.candidate }, state.candidateTalk) || unsaved({ node: state.caseNode }, state.caseDraft) || Boolean(state.composeTalk?.note.trim()) || [...parkedDrafts.values()].some(({ target, draft }) => unsaved(target, draft));
 }
 
 function showEnded(message) {

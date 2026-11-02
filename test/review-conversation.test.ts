@@ -7,7 +7,7 @@ import type { Locator } from 'playwright-core';
 import { addMark, addReply, loadMarks } from '../src/marks.ts';
 import { startReviewServer } from '../src/review.ts';
 import { taskList } from '../src/tasks.ts';
-import { withRebuiltFixture, signer, withServer, postMark, CASE_KINDS, browserMissing, withPage, reply, openScreenInfo, openLinkGroups, screenBox, chooseScreen, TRACED, postJson, CANDIDATES, HELP_KEY, storiesTab, discardCandidate } from './review-helpers.ts';
+import { withRebuiltFixture, signer, withServer, postMark, CASE_KINDS, browserMissing, withPage, toList, reply, openScreenInfo, openLinkGroups, screenBox, chooseScreen, TRACED, postJson, CANDIDATES, HELP_KEY, storiesTab, discardCandidate } from './review-helpers.ts';
 import type { PageData } from './review-helpers.ts';
 
 test('in a browser, an entry under 「떨어져 나감」 with a comment and an answer shows the comment, not the answer', { skip: browserMissing }, async () => {
@@ -760,4 +760,100 @@ test('in a browser, once a candidate with comments is accepted or discarded, its
         assert.doesNotMatch((await p.textContent('#left'))!, /후보 open/);
       }));
   });
+});
+
+test('in a browser, a comment typed on one screen and not saved is still there after choosing another screen and coming back, the other screen gets an empty form, and 「리뷰 끝」 asks about it while it waits on the other screen', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await toList(p);
+        await p.click('#screen-list li:has-text("/document/:id")');
+        await p.click('#right .statuses button:has-text("테스트 필요")');
+        await p.fill('#right-dock textarea', 'about the document');
+        await p.click('#screen-list li:has-text("/admin/report")');
+        assert.equal(await p.inputValue('#right-dock textarea'), '');
+        assert.deepEqual(await p.locator('#right .statuses button.on').allTextContents(), []);
+
+        const asked: string[] = [];
+        p.once('dialog', (d) => { asked.push(d.message()); d.dismiss(); });
+        await p.click('header button:has-text("리뷰 끝")');
+        await p.waitForTimeout(200);
+        assert.equal(asked.length, 1);
+
+        await p.click('#screen-list li:has-text("/document/:id")');
+        assert.equal(await p.inputValue('#right-dock textarea'), 'about the document');
+        assert.deepEqual(await p.locator('#right .statuses button.on').allTextContents(), ['테스트 필요']);
+      }),
+    ),
+  );
+});
+
+test('in a browser, a comment typed on a story candidate and not saved is still there after opening another candidate and coming back, and each candidate keeps its own', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#candidate-list li:has-text("open-help")');
+        await p.fill('#right-dock textarea', 'about open-help');
+        await p.click('#candidate-list li:has-text("publish-document")');
+        assert.equal(await p.inputValue('#right-dock textarea'), '');
+        await p.fill('#right-dock textarea', 'about publishing');
+
+        await p.click('#candidate-list li:has-text("open-help")');
+        assert.equal(await p.inputValue('#right-dock textarea'), 'about open-help');
+        await p.click('#candidate-list li:has-text("publish-document")');
+        assert.equal(await p.inputValue('#right-dock textarea'), 'about publishing');
+      }),
+    ),
+  );
+});
+
+test('in a browser, a comment whose save is still on its way when the reviewer moves to another screen and back is not put back in the form once the save finishes', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await toList(p);
+        let release = () => {};
+        const held = new Promise<void>((posted) => {
+          void p.route('**/api/marks', async (route) => {
+            await new Promise<void>((r) => { release = r; posted(); });
+            await route.continue();
+          });
+        });
+        await p.click('#screen-list li:has-text("/document/:id")');
+        await p.fill('#right-dock textarea', 'sent once');
+        await p.click('#right button.save');
+        await held;
+        await p.click('#screen-list li:has-text("/admin/report")');
+        await p.click('#screen-list li:has-text("/document/:id")');
+        release();
+        await p.waitForFunction(() => document.querySelector('#right .talk')?.textContent?.includes('sent once'));
+        assert.equal(await p.inputValue('#right-dock textarea'), '');
+      }),
+    ),
+  );
+});
+
+test('in a browser, a note carried to another candidate with its bubble is not also kept on the candidate it came from', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#candidate-list li:has-text("open-help")');
+        await p.fill('#right-dock textarea', 'carried');
+        const row = p.locator('#candidate-list li', { hasText: 'publish-document' });
+        await row.hover();
+        await row.locator('.bubble').click();
+        await p.waitForSelector('#candidate-list li.selected:has-text("publish-document")');
+        assert.equal(await p.inputValue('#right-dock textarea'), 'carried');
+        await p.click('#right-dock button.save');
+        await row.locator('.part-count', { hasText: '코멘트 1' }).waitFor();
+
+        await p.click('#candidate-list li:has-text("open-help")');
+        assert.equal(await p.inputValue('#right-dock textarea'), '');
+      }),
+    ),
+  );
 });

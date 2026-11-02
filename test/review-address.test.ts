@@ -230,7 +230,7 @@ test('in a browser, a page opened or loaded again with a place in its address sh
       })));
 });
 
-test('in a browser, going back to a screen drops a mark that was not saved, as choosing the screen does', { skip: browserMissing }, async () => {
+test('in a browser, going back and forward to a screen keeps a mark that was not saved, as choosing the screen does', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -241,7 +241,7 @@ test('in a browser, going back to a screen drops a mark that was not saved, as c
         await p.goBack();
         await p.goForward();
         assert.match((await p.textContent('#screen-list li.selected'))!, /\/signin/);
-        assert.equal(await p.inputValue('#right-dock textarea'), '');
+        assert.equal(await p.inputValue('#right-dock textarea'), 'not saved');
       })));
 });
 
