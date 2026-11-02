@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { acceptCandidate, addCommentCandidate, discardCandidate, pickCandidateLine, recordedRequests, saveVisitRecord, storeCandidates, storyCandidates, unacceptStory, undiscardCandidate } from '../src/candidates.ts';
+import { acceptCandidate, addCommentCandidate, discardCandidate, pickCandidateLine, pickCandidateStep, recordedRequests, saveVisitRecord, storeCandidates, storyCandidates, unacceptStory, undiscardCandidate } from '../src/candidates.ts';
 import { compare, loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
 import { addMark, addReply } from '../src/marks.ts';
@@ -1253,4 +1253,105 @@ test('a candidate file whose lines switched off are not lines the agent wrote, r
       assert.deepEqual([list, notices.map((n) => n.reason)], [[], [reason]], JSON.stringify(patch));
     }
   });
+});
+
+const stepOff = (step: number) => ({ step, on: false });
+const stepOn = (step: number) => ({ step, on: true });
+const helpOf = (dir: string) => candidatesOf({ storiesDir: dir }).list.find((c) => c.name === 'open-help')!;
+const readJson = (file: string) => JSON.parse(fs.readFileSync(file, 'utf8'));
+
+test('a step taken out of a candidate with ✕ is written into its candidate file as offSteps, the file written first for a candidate not stored yet, read back on the candidate from a visit record, and putting every step back leaves the file as it was stored', () => {
+  withStoryCopy((dir: string) => {
+    assert.equal(helpOf(dir).offSteps, undefined);
+    const picked = pickCandidateStep(dir, helpOf(dir), stepOff(3));
+    assert.match(picked.file, /^candidates\/\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\.json$/);
+    assert.deepEqual(picked.offSteps, [3]);
+    const file = path.join(dir, picked.file);
+    const { offSteps, ...stored } = readJson(file);
+    assert.deepEqual([stored.name, stored.screens, stored.source, offSteps], ['open-help', helpOf(dir).screens, { record: 'example-visits/open-help.json', steps: [1, 5] }, [3]]);
+    assert.deepEqual(helpOf(dir).offSteps, [3]);
+    pickCandidateStep(dir, helpOf(dir), stepOff(1));
+    pickCandidateStep(dir, helpOf(dir), stepOff(1));
+    assert.deepEqual(readJson(file).offSteps, [1, 3]);
+    assert.deepEqual(helpOf(dir).offSteps, [1, 3]);
+    assert.equal(fs.readdirSync(path.join(dir, 'candidates')).length, 1);
+    pickCandidateStep(dir, helpOf(dir), stepOn(3));
+    assert.deepEqual(pickCandidateStep(dir, helpOf(dir), stepOn(1)).offSteps, []);
+    assert.deepEqual(readJson(file), stored);
+    assert.equal(helpOf(dir).offSteps, undefined);
+    assert.deepEqual(candidatesOf({ storiesDir: dir }).notices.map((n) => n.file), ['example-visits/broken-record.json']);
+  });
+});
+
+test('taking a step out of a candidate is refused with why for a step the candidate does not have, an on that is not true or false, and the last step left, and writes nothing', () => {
+  withStoryCopy((dir: string) => {
+    const refusals: [object, string][] = [
+      [stepOff(5), '후보 「open-help」에는 5 번째 단계가 없습니다'],
+      [stepOff(0), '후보 「open-help」에는 0 번째 단계가 없습니다'],
+      [{ step: '2', on: false }, '후보 「open-help」에는 2 번째 단계가 없습니다'],
+      [{ step: 2, on: 'off' }, 'on 은 넣을 단계면 true, 뺄 단계면 false 여야 합니다'],
+    ];
+    for (const [pick, message] of refusals) assert.throws(() => pickCandidateStep(dir, helpOf(dir), pick), { message });
+    assert.equal(fs.existsSync(path.join(dir, 'candidates')), false);
+    for (const step of [1, 2, 3]) pickCandidateStep(dir, helpOf(dir), stepOff(step));
+    const [name] = fs.readdirSync(path.join(dir, 'candidates'));
+    const before = fs.readFileSync(path.join(dir, 'candidates', name), 'utf8');
+    assert.throws(() => pickCandidateStep(dir, helpOf(dir), stepOff(4)), { message: '후보 「open-help」의 마지막 남은 단계는 뺄 수 없습니다' });
+    assert.equal(fs.readFileSync(path.join(dir, 'candidates', name), 'utf8'), before);
+  });
+});
+
+test('a stored candidate whose offSteps are not step numbers of its screens from the smallest, each once, leaving one step or more, is noted with the candidates, and one that fits is listed with them', () => {
+  const OFF_STEPS = 'offSteps 는 받을 때 뺄 단계의 번호를 1 부터 세어 작은 것부터 하나씩 적은 목록이어야 하고, 단계를 하나 이상 남겨야 합니다';
+  for (const offSteps of [[], [2, 1], [1, 1], [3], [1, 2], ['2'], 2]) {
+    withStoryCopy((dir: string) => {
+      fs.mkdirSync(path.join(dir, 'candidates'));
+      fs.writeFileSync(path.join(dir, 'candidates', '2026-10-01-aaaaaaaa.json'), JSON.stringify({ name: 'old', screens: HOME_HELP, source: { report: 'results/old.json', tests: ['old'] }, date: '2026-10-01', offSteps }));
+      const { list, notices } = leftOnlyStored(dir);
+      assert.deepEqual([list, notices.map((n) => n.reason)], [[], [OFF_STEPS]], JSON.stringify(offSteps));
+    });
+  }
+  withStoryCopy((dir: string) => {
+    fs.mkdirSync(path.join(dir, 'candidates'));
+    fs.writeFileSync(path.join(dir, 'candidates', '2026-10-01-aaaaaaaa.json'), JSON.stringify({ name: 'old', screens: HOME_HELP, source: { report: 'results/old.json', tests: ['old'] }, date: '2026-10-01', offSteps: [1] }));
+    const { list, notices } = leftOnlyStored(dir);
+    assert.deepEqual([list.map((c) => c.offSteps), notices], [[[1]], []]);
+  });
+});
+
+test('accepting a candidate with steps taken out writes only the steps left into the story file, with the source of the candidate, and the candidate does not come back, also after the candidates are stored again', () => {
+  withStoryCopy((dir: string) => {
+    pickCandidateStep(dir, helpOf(dir), stepOff(3));
+    acceptCandidate(dir, helpOf(dir), { id: 'open-help', name: '홈에서 도움말을 연다', author: 'reviewer' }, new Date('2026-10-03T01:02:03Z'));
+    const written = readJson(path.join(dir, 'open-help.json'));
+    assert.deepEqual([written.screens, written.source], [['/signin#SignIn', '/home#Home', '/help#Help'], { record: 'example-visits/open-help.json', steps: [1, 5] }]);
+    assert.equal('offSteps' in written, false);
+    assert.deepEqual(loadStories(dir).notices.map((n) => n.file), ['lab-shortcut.json']);
+    assert.deepEqual(candidatesOf({ storiesDir: dir }).list.map((c) => c.name), ['publish-document']);
+    storeCandidates(dir, candidatesOf({ storiesDir: dir }).list);
+    assert.deepEqual(candidatesOf({ storiesDir: dir }).list.map((c) => c.name), ['publish-document']);
+    assert.deepEqual(leftOnlyStored(dir).list.map((c) => c.name), ['publish-document']);
+  });
+});
+
+test('accepting a candidate from a comment with a step taken out keeps the values of the steps left, and the agent\'s reasons and lines on the screens they were on, as a story whose step is taken out does', () => {
+  withOrderComment({ screens: LAB_ORDER, steps: ASKED_STEPS }, ({ cfg, comment, post }) => {
+    post({});
+    const listed = () => storyCandidates(cfg, map, MAP_FILE).list;
+    pickCandidateStep(cfg.storiesDir, listed()[0], stepOff(2));
+    assert.deepEqual(listed()[0].offSteps, [2]);
+    acceptCandidate(cfg.storiesDir, listed()[0], { id: 'lab', name: '로그인해 실험을 연다', author: 'hit' });
+    const story = readJson(path.join(cfg.storiesDir, 'lab.json'));
+    assert.deepEqual(story.screens, [{ screen: '/signin#SignIn', inputs: [EMAIL_INPUT] }, { screen: '/lab#Lab', needs: ['실험 메뉴가 켜져 있다'], expects: ['실험 목록이 보인다'] }]);
+    assert.deepEqual(story.source, { comment, added: [], written: [{ step: 2, needs: ['실험 메뉴가 켜져 있다'] }] });
+    assert.deepEqual(loadStories(cfg.storiesDir).notices, []);
+    assert.deepEqual(listed(), []);
+  });
+});
+
+test('the usage guide says a step of a candidate taken out with ✕ is kept in the candidate file as offSteps and left out of the story accepted from it', () => {
+  const readme = fs.readFileSync(path.join(import.meta.dirname, '../README.md'), 'utf8');
+  const candidates = readme.slice(readme.indexOf('## Story candidates'));
+  assert.match(candidates, /✕/);
+  assert.match(candidates, /`offSteps`/);
 });

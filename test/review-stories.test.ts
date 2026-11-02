@@ -392,6 +392,95 @@ test('in a browser, a box keeps the focus and its state when the page draws the 
   );
 });
 
+function helpCandidateFile(storiesDir: string) {
+  const dir = path.join(storiesDir, 'candidates');
+  if (!fs.existsSync(dir)) return null;
+  const name = fs.readdirSync(dir).find((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')).screens.join(' > ') === HELP_KEY);
+  return name ? path.join(dir, name) : null;
+}
+const offStepsIn = (storiesDir: string) => {
+  const file = helpCandidateFile(storiesDir);
+  return file ? JSON.parse(fs.readFileSync(file, 'utf8')).offSteps : undefined;
+};
+const stepStates = (p: Page) => p.evaluate(() => [...document.querySelectorAll('#center .story-path .step')].map((step) => {
+  const off = step.querySelector('button.step-off') as HTMLButtonElement | null;
+  const name = step.querySelector('.name') as HTMLElement;
+  return [off?.getAttribute('aria-pressed') ?? null, getComputedStyle(name).textDecorationLine.includes('line-through'), off?.disabled ?? null];
+}));
+
+async function openHelpCandidate(p: Page) {
+  await p.waitForSelector('#screen-list li');
+  await p.click(storiesTab);
+  await p.click('#candidate-list li:has-text("open-help")');
+  await p.waitForSelector('#center button.step-off');
+}
+
+test('in a browser, each step of a candidate has a ✕ that strikes the step through without opening its screen and puts it back on a second press, what is taken out stays after a reload, the last step left cannot be taken out, and accepting writes only the steps left into the story file', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await openHelpCandidate(p);
+        assert.deepEqual(await p.locator('#center .story-path .step button.step-off').evaluateAll((buttons) => buttons.map((b) => [b.textContent, b.getAttribute('name'), b.getAttribute('aria-label'), b.getAttribute('title')])),
+          [1, 2, 3, 4].map((n) => ['✕', `step-off-${n}`, '단계 빼기', '받을 때 이 단계를 스토리에서 뺍니다']));
+        assert.deepEqual(await stepStates(p), [['false', false, false], ['false', false, false], ['false', false, false], ['false', false, false]]);
+
+        await p.click('#center button[name="step-off-3"]');
+        await untilSet(() => offStepsIn(config.storiesDir)?.length === 1, 'the step taken out in the candidate file');
+        assert.deepEqual(offStepsIn(config.storiesDir), [3]);
+        assert.equal(await p.textContent('#center h3'), 'open-help');
+        assert.deepEqual(await stepStates(p), [['false', false, false], ['false', false, false], ['true', true, false], ['false', false, false]]);
+        assert.equal(await p.getAttribute('#center button[name="step-off-3"]', 'title'), '이 단계를 다시 넣습니다');
+        await p.click('#center button[name="step-off-3"]');
+        await untilSet(() => offStepsIn(config.storiesDir) === undefined, 'the step put back in the candidate file');
+        assert.deepEqual((await stepStates(p))[2], ['false', false, false]);
+
+        for (const n of [1, 2, 3]) await p.click(`#center button[name="step-off-${n}"]`);
+        await untilSet(() => offStepsIn(config.storiesDir)?.length === 3, 'three steps taken out');
+        await p.waitForFunction(() => !document.querySelector('#center button.accept')!.matches(':disabled'));
+        assert.deepEqual(await stepStates(p), [['true', true, false], ['true', true, false], ['true', true, false], ['false', false, true]]);
+        assert.equal(await p.getAttribute('#center button[name="step-off-4"]', 'title'), '마지막 남은 단계는 뺄 수 없습니다');
+
+        await p.reload();
+        await p.waitForSelector('#center button.step-off');
+        assert.equal(await p.textContent('#center h3'), 'open-help');
+        assert.deepEqual(await stepStates(p), [['true', true, false], ['true', true, false], ['true', true, false], ['false', false, true]]);
+
+        await p.click('#center button[name="step-off-2"]');
+        await p.click('#center button.accept');
+        await p.waitForSelector('#story-list li.selected:has-text("open-help")');
+        const saved = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'open-help.json'), 'utf8'));
+        assert.deepEqual([saved.screens, saved.source], [['/home#Home', '/help#Help'], { record: HELP_RECORD, steps: [1, 5] }]);
+        assert.deepEqual(await p.locator('#candidate-list li .name > span:first-child').allTextContents(), ['publish-document']);
+        assert.equal(await p.locator('#center button.step-off').count(), 0);
+        assert.deepEqual(errors, []);
+      }),
+    ),
+  );
+});
+
+test('in a browser, a ✕ keeps the focus and its state when the page draws the candidate again, after its save or after another step is taken out elsewhere', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await openHelpCandidate(p);
+        const focused = () => p.evaluate(() => [document.activeElement!.getAttribute('name'), document.activeElement!.getAttribute('aria-pressed')]);
+        await p.focus('#center button[name="step-off-2"]');
+        await p.keyboard.press('Space');
+        await untilSet(() => offStepsIn(config.storiesDir)?.length === 1, 'the step taken out with the keyboard');
+        await p.waitForFunction(() => !document.querySelector('#center button.accept')!.matches(':disabled'));
+        assert.deepEqual(await focused(), ['step-off-2', 'true']);
+
+        assert.equal((await postJson(base, '/api/candidates/steps', { key: HELP_KEY, step: 3, on: false })).status, 200);
+        await p.waitForFunction(() => document.querySelector('#center button[name="step-off-3"]')!.getAttribute('aria-pressed') === 'true');
+        assert.deepEqual(await focused(), ['step-off-2', 'true']);
+        await p.keyboard.press('Enter');
+        assert.deepEqual(await focused(), ['step-off-2', 'false']);
+        await untilSet(() => JSON.stringify(offStepsIn(config.storiesDir)) === '[3]', 'the step put back with the keyboard');
+      }),
+    ),
+  );
+});
+
 const chipsIn = (p: Page, list: string) => p.locator(`${list} li`).evaluateAll((items) => items.map((li) => [...li.querySelectorAll('.chip')].map((c) => c.textContent)));
 
 test('in a browser, the story list has a group of candidates, a chosen candidate shows its path like a story with the record steps behind each screen, and accepting it writes a story file under the name of the record, or under an ID and a name changed in a window, and moves it to the story list', { skip: browserMissing }, async () => {

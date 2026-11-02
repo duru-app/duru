@@ -99,7 +99,9 @@ const linkWritten = (fields, pick = null) => (fields?.linkNeeds?.length ? h('div
 
 const hasWritten = (fields) => Boolean(fields?.needs?.length || fields?.inputs?.length || fields?.expects?.length);
 
-function stepItem(step, i, recordSteps, story, fields, reason, pick = null) {
+function stepItem(step, i, recordSteps, story, fields, reason, pick = null, off = null) {
+  const out = off ? off.getAttribute('aria-pressed') === 'true' : false;
+  const stepClass = (kind) => `step ${kind}${wraps}${out ? ' step-out' : ''}`;
   const records = recordSteps ? h('span', { class: 'records muted', title: '방문 기록에서 이 화면에 머문 단계' }, stepsText(recordSteps)) : null;
   const slot = (name) => (story ? slotRow(name, stepTarget(story, i, step.screen), SLOT_WORDS.step) : name);
   // 적힌 글을 선택하려고 클릭해도 화면이 열리지 않게 이벤트 전파를 막는다.
@@ -110,21 +112,23 @@ function stepItem(step, i, recordSteps, story, fields, reason, pick = null) {
   const wraps = below.length ? ' has-written' : '';
   const why = reason ? h('div', { class: 'agent-reason' }, h('b', {}, '이유'), ' ', reason) : null;
   if (!step.onMap) {
-    return h('div', { class: `step off-map${wraps}`, 'data-step': i },
+    return h('div', { class: stepClass('off-map'), 'data-step': i },
       h('span', { class: 'no' }, i + 1),
       slot(h('span', { class: 'name slot-text' }, h('div', { class: 'muted mono' }, step.screen, reason ? [' ', agentChip('step')] : null), why)),
       records,
       h('span', { class: 'chip l-off-map' }, '맵에 없는 화면'),
       button,
-      below);
+      below,
+      off);
   }
   const s = screenOf(step.screen);
-  return h('div', { class: `step on-map${wraps}`, 'data-step': i, title: '화면 목록에서 이 화면을 엽니다', onclick: () => openScreen(s.id) },
+  return h('div', { class: stepClass('on-map'), 'data-step': i, title: '화면 목록에서 이 화면을 엽니다', onclick: () => openScreen(s.id) },
     h('span', { class: 'no' }, i + 1),
     slot(h('span', { class: 'name slot-text' }, screenHead(s, reason ? agentChip('step') : null), why, stepTests(s.id))),
     records,
     button,
-    below);
+    below,
+    off);
 }
 
 function depthCounts(tests, empty) {

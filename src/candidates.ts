@@ -8,8 +8,8 @@ import { compare, isPlainObject } from './config.ts';
 import { jsonFiles } from './json-files.ts';
 import { loadMarks, orderKey, recordKind, recordName, targetsOf, writeNewRecord } from './marks.ts';
 import type { SentRequests } from './request-options.ts';
-import { addStory, CANDIDATES, DISCARDED, inputsProblem, RECORDS, isDate, isScreenList, isSource, isText, loadStories, SOURCE_SHAPES, STEP_FIELDS, stepProblem, writableStoriesFolder } from './stories.ts';
-import type { CommentSource, StepFields, StepInput } from './stories.ts';
+import { addStory, CANDIDATES, DISCARDED, inputsProblem, RECORDS, isDate, isScreenList, isSource, isText, loadStories, sourceAfterSteps, SOURCE_SHAPES, STEP_FIELDS, stepProblem, writableStoriesFolder } from './stories.ts';
+import type { CommentSource, Kept, StepFields, StepInput } from './stories.ts';
 import { checkStories, linksFromOldDuru, staleMapMessage } from './story-paths.ts';
 import { titleWithoutTags } from './verdict.ts';
 
@@ -122,6 +122,7 @@ export interface Candidate {
   skipped?: number;
   file?: string;
   lines?: AgentLine[];
+  offSteps?: number[];
 }
 
 const inputFields = (inputs: StepInput[][] = []) => (inputs.some((i) => i.length) ? inputs.map((i) => (i.length ? { inputs: i } : {})) : undefined);
@@ -209,6 +210,12 @@ function storedProblemOf(c: any) {
       const problem = stepProblem({ ...f, screen: c.screens[i] }, where, i === 0);
       if (problem) return problem;
     }
+  }
+  if (c.offSteps !== undefined) {
+    const off = c.offSteps;
+    const fits = Array.isArray(off) && off.length > 0 && off.length < c.screens.length
+      && off.every((s: unknown, i: number) => Number.isInteger(s) && (s as number) >= 1 && (s as number) <= c.screens.length && (i === 0 || (off[i - 1] as number) < (s as number)));
+    if (!fits) return 'offSteps 는 받을 때 뺄 단계의 번호를 1 부터 세어 작은 것부터 하나씩 적은 목록이어야 하고, 단계를 하나 이상 남겨야 합니다';
   }
   return c.offLines === undefined ? null : offLinesProblem(c.offLines, c.source);
 }
@@ -332,7 +339,23 @@ function pickedLines({ source, stepFields, lines }: Candidate) {
 
 export function acceptCandidate(dir: string, candidate: Candidate, { id, name, author }: { id: unknown; name: unknown; author: unknown }, now = new Date()) {
   const { source, stepFields } = pickedLines(candidate);
-  return addStory(dir, { id, name, screens: withFields({ screens: candidate.screens, stepFields }), author, source }, now);
+  const offSteps = candidate.offSteps ?? [];
+  if (!offSteps.length) return addStory(dir, { id, name, screens: withFields({ screens: candidate.screens, stepFields }), author, source }, now);
+  const steps2 = stepFields;
+  const picked = candidate.screens.map((screen, i) => ({ screen, i })).filter(({ i }) => !offSteps.includes(i + 1));
+  const kept: Kept = new Map();
+  const screens = picked.map(({ screen, i }, at) => {
+    const linked = at > 0 && picked[at - 1].i === i - 1;
+    kept.set(i + 1, { step: at + 1, linked });
+    return screen;
+  });
+  const fields = steps2 && picked.map(({ i }) => {
+    const step = steps2[i];
+    if (kept.get(i + 1)!.linked) return step;
+    const { linkNeeds, ...rest } = step;
+    return rest;
+  });
+  return addStory(dir, { id, name, screens: withFields({ screens, stepFields: fields as StepFields[] | undefined }), author, source: sourceAfterSteps(source, kept) }, now);
 }
 
 const lineOrder = (a: OffLine, b: OffLine) => a.step - b.step || STEP_FIELDS.indexOf(a.field) - STEP_FIELDS.indexOf(b.field) || a.line - b.line;
@@ -348,6 +371,26 @@ export function pickCandidateLine(dir: string, candidate: Candidate, { step, fie
   const offLines = (on ? others : [...others, { step: picked.step, field: picked.field, line: picked.line }]).sort(lineOrder);
   fs.writeFileSync(file, JSON.stringify({ ...rest, ...(offLines.length && { offLines }) }, null, 2) + '\n');
   return { file: candidate.file, offLines };
+}
+
+export function pickCandidateStep(dir: string, candidate: Candidate, input: object) {
+  const { step, on } = input as Record<string, unknown>;
+  if (!Number.isInteger(step) || (step as number) < 1 || (step as number) > candidate.screens.length) throw new Error(`후보 「${candidate.name}」에는 ${step} 번째 단계가 없습니다`);
+  if (typeof on !== 'boolean') throw new Error('on 은 넣을 단계면 true, 뺄 단계면 false 여야 합니다');
+  const others = (candidate.offSteps ?? []).filter((s) => s !== step);
+  const offSteps = on ? others : [...others, step as number].sort((a, b) => a - b);
+  if (offSteps.length >= candidate.screens.length) throw new Error(`후보 「${candidate.name}」의 마지막 남은 단계는 뺄 수 없습니다`);
+  const key = JSON.stringify(candidate.screens);
+  let found = loadStored(dir).found.find((c) => JSON.stringify(c.screens) === key);
+  if (!found) {
+    const kept = storeCandidates(dir, [candidate]);
+    if (kept.reason) throw new Error(kept.reason);
+    found = loadStored(dir).found.find((c) => JSON.stringify(c.screens) === key);
+  }
+  const file = path.join(dir, found!.file!);
+  const { offSteps: _, ...rest } = JSON.parse(fs.readFileSync(file, 'utf8'));
+  fs.writeFileSync(file, JSON.stringify({ ...rest, ...(offSteps.length && { offSteps }) }, null, 2) + '\n');
+  return { file: found!.file, offSteps };
 }
 
 export function unacceptStory(dir: string, id: unknown) {
@@ -444,6 +487,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   const notices = [...folderNotices, ...recordNotices];
   const { discarded, notices: discardedNotices } = loadDiscarded(config.storiesDir);
   const { found: stored, notices: storedNotices } = loadStored(config.storiesDir);
+  const offByOrder = new Map(stored.filter((c) => c.offSteps).map((c) => [JSON.stringify(c.screens), c.offSteps]));
   const all = [...notices, ...[...discardedNotices, ...storedNotices].map((n) => ({ ...n, file: relative(config.configDir, path.join(config.storiesDir, n.file)) }))];
   const current = discardedNow(discarded);
   const shown = shownDiscarded(current);
@@ -465,7 +509,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
       continue;
     }
     seen.add(key);
-    list.push(candidate);
+    list.push({ ...candidate, ...(offByOrder.has(key) && { offSteps: offByOrder.get(key) }) });
   }
   // 출처에는 보고 파일을 하나만 적으므로, 같은 화면 순서라도 다른 보고의 시험은 붙이지 않는다.
   const fromTraces = new Map<string, TestsSource>();
@@ -479,12 +523,12 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
     } else if (screens.length > 0) {
       const candidate = { key: screens.join(' > '), name: titleWithoutTags(title), screens, source: { report, tests: [title] }, ...carried({ stepFields: inputFields(inputs), skipped }) };
       fromTraces.set(key, candidate.source);
-      list.push(candidate);
+      list.push({ ...candidate, ...(offByOrder.has(key) && { offSteps: offByOrder.get(key) }) });
     }
   }
   for (const key of fromTraces.keys()) seen.add(key);
   const byFirstSeen = stored.sort((a, b) => compare(a.date, b.date) || compare(a.screens.join(' > '), b.screens.join(' > ')));
-  for (const { name, screens, source, file, offLines, ...rest } of byFirstSeen) {
+  for (const { name, screens, source, file, offLines, offSteps, ...rest } of byFirstSeen) {
     const key = JSON.stringify(screens);
     if (seen.has(key) || taken.has(sourceKey(source))) {
       gone[screens.join(' > ')] ??= name;
@@ -492,7 +536,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
     }
     seen.add(key);
     const picks = 'comment' in source && { file, lines: agentLines(source, rest.stepFields, offLines) };
-    list.push({ key: screens.join(' > '), name, screens, source, ...carried(rest), ...picks });
+    list.push({ key: screens.join(' > '), name, screens, source, ...carried(rest), ...picks, ...(offSteps && { offSteps }) });
   }
   return { list: checkStories(map, list), discarded: shown, gone, notices: all };
 }

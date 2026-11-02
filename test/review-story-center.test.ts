@@ -443,6 +443,38 @@ test('a line an agent wrote on a candidate is switched off and on again through 
   );
 });
 
+test('a step of a candidate is taken out and put back through the page in the candidate file, and a pick is refused with why for a step the candidate does not have, the last step left, an on that is not true or false, or a candidate not listed', async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const pick = (body: object) => postJson(base, '/api/candidates/steps', { key: HELP_KEY, step: 3, on: false, ...body });
+      const res = await pick({});
+      assert.equal(res.status, 200);
+      const { file, offSteps } = await res.json();
+      assert.deepEqual(offSteps, [3]);
+      const stored = path.join(config.storiesDir, file);
+      assert.deepEqual(JSON.parse(fs.readFileSync(stored, 'utf8')).offSteps, [3]);
+      const data: PageData = await (await fetch(`${base}/api/data`)).json();
+      assert.deepEqual(data.candidates.list.find((c) => c.key === HELP_KEY)!.offSteps, [3]);
+
+      for (const step of [1, 2]) assert.equal((await pick({ step })).status, 200);
+      const before = fs.readFileSync(stored, 'utf8');
+      const refusals: [object, number, string][] = [
+        [{ step: 5 }, 400, '후보 「open-help」에는 5 번째 단계가 없습니다'],
+        [{ step: 4 }, 400, '후보 「open-help」의 마지막 남은 단계는 뺄 수 없습니다'],
+        [{ on: 'off' }, 400, 'on 은 넣을 단계면 true, 뺄 단계면 false 여야 합니다'],
+        [{ key: 'nowhere' }, 404, '후보 nowhere 가 없습니다'],
+      ];
+      for (const [body, status, text] of refusals) {
+        const refused = await pick(body);
+        assert.deepEqual([refused.status, await refused.text()], [status, text]);
+      }
+      assert.equal(fs.readFileSync(stored, 'utf8'), before);
+      for (const step of [1, 2, 3]) assert.equal((await pick({ step, on: true })).status, 200);
+      assert.equal('offSteps' in JSON.parse(fs.readFileSync(stored, 'utf8')), false);
+    }),
+  );
+});
+
 test('a story name and memo edited through the page are written into its file', async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', async (base) => {

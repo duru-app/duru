@@ -13,7 +13,7 @@ import { baselineLabel, compareMaps, readBaseline } from './baseline.ts';
 import { compareTests, isRegressedStatus, nodeIds, passedInFolder, readBaselineTests, wholeFines } from './baseline-tests.ts';
 import type { BaselineTests, TestComparison } from './baseline-tests.ts';
 import { screenRoutes } from './address-match.ts';
-import { acceptCandidate, addCommentCandidate, candidatePlace, discardCandidate, checkVisitSteps, pickCandidateLine, saveVisitRecord, storyCandidates, unacceptStory, undiscardCandidate } from './candidates.ts';
+import { acceptCandidate, addCommentCandidate, candidatePlace, discardCandidate, checkVisitSteps, pickCandidateLine, pickCandidateStep, saveVisitRecord, storyCandidates, unacceptStory, undiscardCandidate } from './candidates.ts';
 import { answerProposal, casesWithoutTests, caseTargets, commandCaseRule, exclusionOf, pickedKinds, ProposalChanged } from './case-targets.ts';
 import { compare, isPlainObject } from './config.ts';
 import type { CaseKind } from './config.ts';
@@ -72,7 +72,7 @@ export const PAGE_PARTS = [
 ];
 const BODY_LIMIT = 64 * 1024;
 const STORIES_SETTLE_MS = 100;
-const STORY_POSTS = ['/api/candidates/add', '/api/candidates/accept', '/api/candidates/discard', '/api/candidates/lines', '/api/candidates/undiscard', '/api/stories/edit', '/api/stories/fields', '/api/stories/steps', '/api/stories/unaccept', '/api/stories/check', '/api/stories/add', '/api/needs/add', '/api/needs/edit', '/api/records'];
+const STORY_POSTS = ['/api/candidates/add', '/api/candidates/accept', '/api/candidates/discard', '/api/candidates/lines', '/api/candidates/steps', '/api/candidates/undiscard', '/api/stories/edit', '/api/stories/fields', '/api/stories/steps', '/api/stories/unaccept', '/api/stories/check', '/api/stories/add', '/api/needs/add', '/api/needs/edit', '/api/records'];
 
 function gitUserName(cwd: string) {
   try {
@@ -710,6 +710,13 @@ export async function startReviewServer(config: any, { port = 0, author = review
         if (req.url === '/api/candidates/lines') {
           try {
             return send(res, 200, 'application/json', JSON.stringify(pickCandidateLine(config.storiesDir, candidate, input)));
+          } catch (err: any) {
+            return send(res, 400, 'text/plain', err.message);
+          }
+        }
+        if (req.url === '/api/candidates/steps') {
+          try {
+            return send(res, 200, 'application/json', JSON.stringify(pickCandidateStep(config.storiesDir, candidate, input)));
           } catch (err: any) {
             return send(res, 400, 'text/plain', err.message);
           }

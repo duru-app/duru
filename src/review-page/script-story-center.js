@@ -1,10 +1,10 @@
 const stepPick = (pick, i) => pick && ((field, row) => pick(i + 1, field, row));
 
-const storyPath = (st, stepRanges, story, added = [], pick = null) => [
+const storyPath = (st, stepRanges, story, added = [], pick = null, off = null) => [
   h('h2', {}, `화면 순서 ${st.steps.length}`),
   h('div', { class: 'story-path' }, st.steps.flatMap((step, i) => [
     i > 0 ? linkItem(st.links[i - 1], story, i - 1, st.stepFields?.[i], undefined, stepPick(pick, i)) : null,
-    stepItem(step, i, stepRanges?.[i], story, st.stepFields?.[i], added.find((a) => a.step === i + 1)?.reason, stepPick(pick, i)),
+    stepItem(step, i, stepRanges?.[i], story, st.stepFields?.[i], added.find((a) => a.step === i + 1)?.reason, stepPick(pick, i), off ? off(i) : null),
   ])),
 ];
 
@@ -26,6 +26,44 @@ function pickLine(c, l, on) {
     redrawStory();
   };
   lineWrites = lineWrites.then(save, save);
+}
+
+const unsavedSteps = new Map();
+let stepWrites = Promise.resolve();
+const stepKey = (c, n) => `${c.key}\n${n}`;
+const stepOut = (c, n) => unsavedSteps.get(stepKey(c, n)) ?? (c.offSteps ?? []).includes(n);
+const stepOutCount = (c) => c.steps.filter((_, i) => stepOut(c, i + 1)).length;
+
+function pickStep(c, n, on) {
+  const key = stepKey(c, n);
+  unsavedSteps.set(key, !on);
+  redrawStory();
+  const save = async () => {
+    await writeStories('/api/candidates/steps', { key: c.key, step: n, on });
+    if (unsavedSteps.get(key) === !on) unsavedSteps.delete(key);
+    redrawStory();
+  };
+  stepWrites = stepWrites.then(save, save);
+}
+
+function stepOff(c, i) {
+  const n = i + 1;
+  const out = stepOut(c, n);
+  const last = !out && stepOutCount(c) === c.steps.length - 1;
+  return h('button', {
+    type: 'button',
+    class: 'step-off',
+    name: `step-off-${n}`,
+    'aria-label': '단계 빼기',
+    'aria-pressed': String(out),
+    disabled: last,
+    title: out ? '이 단계를 다시 넣습니다' : last ? '마지막 남은 단계는 뺄 수 없습니다' : '받을 때 이 단계를 스토리에서 뺍니다',
+    onclick: (e) => {
+      e.stopPropagation();
+      pickStep(c, n, out);
+    },
+    onkeydown: (e) => e.stopPropagation(),
+  }, '✕');
 }
 
 function linePicker(c) {
@@ -165,7 +203,7 @@ function renderStoryCenter() {
       sourceView(c.source, '후보가 나온'),
       needsFold(c, `candidate\n${c.key}`),
       c.skipped ? h('div', { class: 'muted skipped-inputs', title: '기록에는 있었지만 이 후보의 단계에 입력값으로 옮기지 못한 입력' }, `옮기지 못한 입력 ${c.skipped}개`) : null,
-      ...storyPath(c, c.stepRanges, undefined, byAgent(c) ? c.source.added : [], linePicker(c))]);
+      ...storyPath(c, c.stepRanges, undefined, byAgent(c) ? c.source.added : [], linePicker(c), (i) => stepOff(c, i))]);
   }
   const st = storyOf();
   if (!st && state.story) return fill(center, h('h3', {}, state.story), h('p', { class: 'muted', title: '스토리 파일을 읽지 못했거나 맵이 오래되어 경로를 맞춰 보지 못했습니다' }, '경로 판정 없음'), storyErrorLine());
@@ -380,6 +418,7 @@ const storyIdProblem = (id) => (state.data.stories.list.some((st) => st.id === i
 
 async function acceptAs(c, id, name) {
   await lineWrites;
+  await stepWrites;
   if (!(await writeStories('/api/candidates/accept', { key: c.key, id, name }))) return false;
   state.candidate = null;
   state.candidateTalk = null;

@@ -348,9 +348,9 @@ function withoutLinkNeeds(step: any) {
   return Object.keys(rest).length === 1 ? rest.screen : rest;
 }
 
-type Kept = Map<number, { step: number; linked: boolean }>;
+export type Kept = Map<number, { step: number; linked: boolean }>;
 
-function sourceAfterSteps(source: any, kept: Kept) {
+export function sourceAfterSteps(source: any, kept: Kept) {
   if (!isSource(source) || !('comment' in source)) return source;
   const added = (source.added as CommentSource['added']).flatMap(({ step, reason }) => (kept.has(step) ? [{ step: kept.get(step)!.step, reason }] : []));
   const written = (source.written as CommentSource['written']).flatMap(({ step, ...fields }) => {
