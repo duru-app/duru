@@ -163,6 +163,7 @@ function renderStoryCenter() {
       h('div', { class: 'title-row' }, h('h3', {}, c.name), byAgent(c) ? agentChip('candidate') : null, walkChip(c), ...reachChips(c), candidateActions(c)),
       storyErrorLine(),
       sourceView(c.source, '후보가 나온'),
+      foundOrder(c),
       needsFold(c, `candidate\n${c.key}`),
       c.skipped ? h('div', { class: 'muted skipped-inputs', title: '기록에는 있었지만 이 후보의 단계에 입력값으로 옮기지 못한 입력' }, `옮기지 못한 입력 ${c.skipped}개`) : null,
       ...storyPath(c, c.stepRanges, undefined, byAgent(c) ? c.source.added : [], linePicker(c))]);
@@ -537,6 +538,17 @@ function reachChips(st) {
     st.links.some((l) => l.ways.length && l.unknownLinks) ? h('span', { class: 'muted skipped' }, '주소 못 읽은 링크 빼고 판정') : null,
   ];
 }
+
+const foundOrder = (c) => {
+  const ruled = c.skippedByRule;
+  if (!ruled) return null;
+  const dropped = new Set(ruled.steps);
+  return h('details', { class: 'found-order', open: state.foundOrderOpen, ontoggle: (e) => { state.foundOrderOpen = e.currentTarget.open; } },
+    h('summary', {}, `원래 순서 ${ruled.found.length}`),
+    h('ol', {}, ruled.found.map((screen, i) => h('li', { class: dropped.has(i + 1) ? 'skipped' : null },
+      h('span', { class: 'found-screen mono' }, screen),
+      dropped.has(i + 1) ? h('span', { class: 'chip skip-reason', title: '설정의 candidateSkipScreens 에 적힌 화면이라 후보에서 뺐습니다' }, '설정 규칙') : null))));
+};
 
 const needsFold = (st, key) => h('details', { class: 'story-needs', open: state.storyNeedsOpen, ontoggle: (e) => { state.storyNeedsOpen = e.currentTarget.open; } },
   h('summary', {}, h('span', { class: 'title' }, `사전 조건 ${st.reach.length}`)),

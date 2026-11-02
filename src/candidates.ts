@@ -120,6 +120,7 @@ export interface Candidate {
   stepRanges?: [number, number][];
   stepFields?: StepFields[];
   skipped?: number;
+  skippedByRule?: { found: string[]; steps: number[] };
   file?: string;
   lines?: AgentLine[];
 }
@@ -146,6 +147,78 @@ export function loadVisitRecords(sources: string[], configDir: string) {
 }
 
 const sameBox = (a: StepInput, b: StepInput) => JSON.stringify(a.box) === JSON.stringify(b.box);
+
+export type SkipRule = { screen: string; where: 'start' | 'end' | 'any' };
+
+// 한 번 뺀 순서를 다시 넣어도 그대로 남도록, 뺄 것이 없어질 때까지 되풀이한다. `any` 로 화면을 빼서 맨 앞이나
+// 맨 끝에 새로 놓인 `start`·`end` 화면도 함께 빠지므로, 이미 규칙을 거친 순서를 다시 넣어도 후보가 늘지 않는다.
+export function skipByRules(screens: string[], rules: SkipRule[]): { kept: number[] } {
+  const named = (where: SkipRule['where']) => new Set(rules.filter((r) => r.where === where).map((r) => r.screen));
+  const starts = named('start');
+  const ends = named('end');
+  const anywheres = named('any');
+  let kept = screens.map((_, i) => i);
+  for (;;) {
+    const dropped = new Set<number>();
+    let head = 0;
+    while (head < kept.length && starts.has(screens[kept[head]])) dropped.add(head++);
+    let tail = kept.length - 1;
+    while (tail >= 0 && ends.has(screens[kept[tail]])) dropped.add(tail--);
+    kept.forEach((screen, at) => { if (anywheres.has(screens[screen])) dropped.add(at); });
+    if (!dropped.size) return { kept };
+    kept = kept.filter((_, at) => !dropped.has(at));
+  }
+}
+
+const sameValue = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+const joinedFields = (fields: StepFields[]): StepFields => {
+  const joined: Record<string, unknown[]> = {};
+  for (const key of STEP_FIELDS) {
+    const values = fields.flatMap((f) => (f[key as keyof StepFields] as unknown[] | undefined) ?? []);
+    const kept = key === 'inputs'
+      ? values.reduce<unknown[]>((out, input) => {
+        const at = out.findIndex((i) => sameBox(i as StepInput, input as StepInput));
+        if (at >= 0) out[at] = input;
+        else out.push(input);
+        return out;
+      }, [])
+      : values.filter((value, at) => values.findIndex((other) => sameValue(other, value)) === at);
+    if (kept.length) joined[key] = kept;
+  }
+  return joined as StepFields;
+};
+
+// 뺀 화면이 있을 때, 파일에 남길 발견한 차례의 칸. skippedByRule 은 후보를 베껴도 같은 객체라 함께 따라간다.
+const foundStepFields = new WeakMap<object, StepFields[]>();
+
+// candidateSkipScreens 가 뺀 화면을 뺀 후보. 뺀 화면이 없으면 받은 후보를 그대로 주고, 화면이 하나도 안 남으면 null 이다.
+function ruled(candidate: Candidate, rules: SkipRule[]): Candidate | null {
+  if (!rules.length) return candidate;
+  const { kept } = skipByRules(candidate.screens, rules);
+  if (kept.length === candidate.screens.length) return candidate;
+  if (!kept.length) return null;
+  const dropped = candidate.screens.flatMap((_, i) => (kept.includes(i) ? [] : [i + 1]));
+  const groups: number[][] = [];
+  for (const i of kept) {
+    const group = groups.at(-1);
+    if (group && candidate.screens[group.at(-1)!] === candidate.screens[i]) group.push(i);
+    else groups.push([i]);
+  }
+  const screens = groups.map((g) => candidate.screens[g[0]]);
+  const stepRanges = candidate.stepRanges && groups.map((g) => [candidate.stepRanges![g[0]][0], candidate.stepRanges![g.at(-1)!][1]] as [number, number]);
+  const stepFields = candidate.stepFields && groups.map((g) => joinedFields(g.map((i) => candidate.stepFields![i] ?? {})));
+  const skippedByRule = { found: candidate.screens, steps: dropped };
+  if (candidate.stepFields) foundStepFields.set(skippedByRule, candidate.stepFields);
+  return {
+    ...candidate,
+    key: screens.join(' > '),
+    screens,
+    ...(stepRanges && { stepRanges }),
+    ...(stepFields && { stepFields }),
+    skippedByRule,
+  };
+}
 
 function candidateOf({ record, name, addresses, stepCount }: VisitRecord, screenAt: (url: string) => string | null): Candidate {
   const screens: string[] = [];
@@ -279,12 +352,15 @@ export function storeCandidates(dir: string, list: Candidate[], now = new Date()
   const stored = new Set(loadStored(dir).found.map((c) => JSON.stringify(c.screens)));
   const date = now.toISOString();
   let written = 0;
-  for (const { name, screens, source, ...rest } of list) {
-    const key = JSON.stringify(screens);
+  for (const candidate of list) {
+    const { name, source } = candidate;
+    const byRule = candidate.skippedByRule;
+    const found = byRule ? { screens: byRule.found, stepFields: foundStepFields.get(byRule) } : { screens: candidate.screens, stepFields: candidate.stepFields };
+    const key = JSON.stringify(found.screens);
     if (stored.has(key)) continue;
     stored.add(key);
     try {
-      writeNewRecord(path.join(folder, `${date.slice(0, 10)}-${crypto.randomUUID().slice(0, 8)}.json`), { name, screens, source, date, ...carried(rest) });
+      writeNewRecord(path.join(folder, `${date.slice(0, 10)}-${crypto.randomUUID().slice(0, 8)}.json`), { name, screens: found.screens, source, date, ...carried({ stepFields: found.stepFields, skipped: candidate.skipped }) });
     } catch (err: any) {
       return { written, reason: `후보 파일을 쓰지 못했습니다: ${err.message}` };
     }
@@ -451,6 +527,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
     return { list: [], discarded: shown, notices: all, stale: records.length || traced.length || stored.length ? staleMapMessage(mapFile, '후보') : undefined };
   }
   const screenAt = screenFinder(map);
+  const rules: SkipRule[] = config.candidateSkipScreens ?? [];
   const stories = loadStories(config.storiesDir).stories;
   const seen = new Set([...stories, ...current].map((s) => JSON.stringify(s.screens)));
   // 받은 뒤 화면 순서를 고친 스토리도 그 출처의 후보를 다시 올리지 않는다.
@@ -458,7 +535,8 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   const list: Candidate[] = [];
   const gone: Record<string, string> = {};
   for (const record of records) {
-    const candidate = candidateOf(record, screenAt);
+    const candidate = ruled(candidateOf(record, screenAt), rules);
+    if (!candidate) continue;
     const key = JSON.stringify(candidate.screens);
     if (seen.has(key) || taken.has(sourceKey(candidate.source))) {
       gone[candidate.key] ??= candidate.name;
@@ -470,29 +548,34 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   // 출처에는 보고 파일을 하나만 적으므로, 같은 화면 순서라도 다른 보고의 시험은 붙이지 않는다.
   const fromTraces = new Map<string, TestsSource>();
   for (const { report, title, screens, inputs, skipped } of traced) {
-    const key = JSON.stringify(screens);
+    const base = { key: screens.join(' > '), name: titleWithoutTags(title), screens, source: { report, tests: [title] }, ...carried({ stepFields: inputFields(inputs), skipped }) } as Candidate;
+    const candidate = ruled(base, rules);
+    const shownScreens = candidate?.screens ?? [];
+    const key = JSON.stringify(shownScreens);
     const source = fromTraces.get(key);
     if (source) {
       if (source.report === report && !source.tests.includes(title)) source.tests.push(title);
-    } else if (screens.length > 0 && seen.has(key)) {
-      gone[screens.join(' > ')] ??= titleWithoutTags(title);
-    } else if (screens.length > 0) {
-      const candidate = { key: screens.join(' > '), name: titleWithoutTags(title), screens, source: { report, tests: [title] }, ...carried({ stepFields: inputFields(inputs), skipped }) };
-      fromTraces.set(key, candidate.source);
+    } else if (shownScreens.length > 0 && seen.has(key)) {
+      gone[shownScreens.join(' > ')] ??= titleWithoutTags(title);
+    } else if (candidate && shownScreens.length > 0) {
+      fromTraces.set(key, candidate.source as TestsSource);
       list.push(candidate);
     }
   }
   for (const key of fromTraces.keys()) seen.add(key);
   const byFirstSeen = stored.sort((a, b) => compare(a.date, b.date) || compare(a.screens.join(' > '), b.screens.join(' > ')));
   for (const { name, screens, source, file, offLines, ...rest } of byFirstSeen) {
-    const key = JSON.stringify(screens);
-    if (seen.has(key) || taken.has(sourceKey(source))) {
-      gone[screens.join(' > ')] ??= name;
+    const base = { key: screens.join(' > '), name, screens, source, ...carried(rest) } as Candidate;
+    const candidate = 'comment' in source ? base : ruled(base, rules);
+    if (!candidate) continue;
+    const key = JSON.stringify(candidate.screens);
+    if (seen.has(key) || taken.has(sourceKey(candidate.source))) {
+      gone[candidate.key] ??= name;
       continue;
     }
     seen.add(key);
-    const picks = 'comment' in source && { file, lines: agentLines(source, rest.stepFields, offLines) };
-    list.push({ key: screens.join(' > '), name, screens, source, ...carried(rest), ...picks });
+    const picks = 'comment' in candidate.source && { file, lines: agentLines(candidate.source, rest.stepFields, offLines) };
+    list.push({ ...candidate, ...picks });
   }
   return { list: checkStories(map, list), discarded: shown, gone, notices: all };
 }
