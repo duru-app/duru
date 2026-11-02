@@ -218,7 +218,7 @@ test('in a browser, the @ list closes when the caret leaves the @ word and keeps
         await field.pressSequentially('check @AP');
         await field.press('Home');
         assert.equal(await picker.isHidden(), true);
-        await field.press('Enter');
+        await field.press('Shift+Enter');
         assert.deepEqual(await tags(), ['화면 전체']);
         await field.press('End');
         assert.equal(await picker.isHidden(), true);

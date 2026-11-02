@@ -1456,7 +1456,9 @@ records a status, a note, the author and the date. The status buttons are 「테
 `missing` by an older duru shows and counts as 「테스트 필요」. A mark left with text and no
 status is a comment: it shows in the conversation with no status, keeps the current status as it was, and in the task list
 follows the open mark it was written after. Pressing a picked status again lets it go, so a comment can be left on
-a target that already has one. Each mark and each judgment
+a target that already has one. In the comment box Enter saves the mark as 「남기기」 does and Shift+Enter starts a new
+line. An Enter pressed while the list of tags typed after `@` is shown, or one that ends a Korean syllable, does not
+save. Each mark and each judgment
 is its own new file, `<marksDir>/<node>/<date>-<author>-<short ID>.json`, so marks made on two machines merge in
 git without a conflict and the newest is the current state. A mark on a screen or call, or on a depth, option,
 case or part of one, also keeps `codeHash`, the screen's or call's hash on the map when it was saved; a judgment keeps

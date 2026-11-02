@@ -146,9 +146,10 @@ function pickerKey(e, picker, field) {
   if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && items.length) {
     e.preventDefault();
     move((i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length);
-  } else if (e.key === 'Enter' && items.length) {
+  } else if (e.key === 'Enter') {
     e.preventDefault();
-    picker.takeOn();
+    if (items.length) picker.takeOn();
+    else picker.hidden = true;
   } else if (e.key === 'Escape') {
     e.preventDefault();
     picker.hidden = true;

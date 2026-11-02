@@ -215,7 +215,7 @@ function markForm(target, draftKey, label) {
   const tags = (draft.tags ?? [target]).map((t) => (t.screens !== undefined && target.screens !== undefined ? target : t));
   const statusOn = onlyTag(tags, target) && target.candidate === undefined && target.screens === undefined;
   const savable = () => draft.note.trim() !== '' || (statusOn && !!draft.status);
-  const save = h('button', { class: 'save', disabled: !savable(), onclick: () => {
+  const save = h('button', { class: 'save', title: 'Enter 로 남기고, Shift+Enter 로 줄을 바꿉니다', disabled: !savable(), onclick: () => {
     save.disabled = true;
     saveMark(tags, draftKey, statusOn);
   } }, '남기기');
@@ -240,7 +240,13 @@ function markForm(target, draftKey, label) {
       save.disabled = !savable();
       showPicker(picker, field, draft, tags, target);
     },
-    onkeydown: (e) => pickerKey(e, picker, field),
+    onkeydown: (e) => {
+      const listShown = !picker.hidden;
+      pickerKey(e, picker, field);
+      if (e.defaultPrevented || listShown || e.key !== 'Enter' || e.shiftKey || e.isComposing || e.keyCode === 229) return;
+      e.preventDefault();
+      if (!e.repeat && !save.disabled) save.click();
+    },
     onkeyup: () => { if (!picker.hidden && field.selectionStart !== picker.caret) showPicker(picker, field, draft, tags, target); },
     onclick: () => showPicker(picker, field, draft, tags, target),
     onblur: () => { picker.hidden = true; },
