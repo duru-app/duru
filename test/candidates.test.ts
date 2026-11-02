@@ -383,14 +383,27 @@ test('a discarded entry in the stories folder that is a file, or a discarded fol
 const TRACED = { format: 'playwright', path: path.join(FIXTURE, 'results/playwright-traced'), depth: 'ui' };
 const HOME_HELP = ['/home#Home', '/help#Help'];
 const HOME_DRAFTS = ['/home#Home', '/document/:tab#DocumentList'];
+const HOME = '/home#Home';
+const HELP = '/help#Help';
+const DETAIL = '/document/:id#DocumentDetail';
+const OFF_MAP = '/nowhere';
+const FILE_SCREEN = '/tmp/claude-1000/-home-hit0607-duru/b41e2280-9925-40b1-adb4-5e025bb97b02/scratchpad/build/index.html';
+const CALLS_HOME_TESTS = ['reads a document from the server', 'turns the pages of the member list', 'lists the documents', 'renames a document with the wrong method', 'lists the documents and the members @call:GET:/api/v1/document/list'];
+const HELP_TESTS = ['hovers and uses the keyboard on help', 'moves the mouse and turns the wheel on help'];
 const tracedCandidatesOf = (patch: Record<string, unknown> = {}, onMap: object = map, mapFile = path.join(config.outDir, 'map.json')) => {
   const settings = { ...config, visitRecords: [], storiesDir: EXAMPLE_STORIES, tests: [TRACED], ...patch };
   return storyCandidates(settings, onMap, mapFile, linkTests(settings, map).traced);
 };
 
-test('the tests with a trace in the Playwright reports give one candidate per screen order they passed, with steps on the same screen merged, every test that passed that order named in the source with its report, and a test that passed a single screen or whose trace cannot be read left out', () => {
+test('the tests with a trace in the Playwright reports give one candidate per screen order they passed, a test that passed a single screen among them, with steps on the same screen merged, every test that passed that order named in the source with its report, and a test whose trace cannot be read left out', () => {
   const { list, notices } = tracedCandidatesOf();
   assert.deepEqual(list.map((c) => ({ name: c.name, screens: c.screens, source: c.source, stepRanges: c.stepRanges })), [
+    {
+      name: 'reads a document from the server',
+      screens: [HOME],
+      source: { report: 'results/playwright-traced/calls.json', tests: CALLS_HOME_TESTS },
+      stepRanges: undefined,
+    },
     {
       name: 'opens home and then help',
       screens: HOME_HELP,
@@ -398,6 +411,12 @@ test('the tests with a trace in the Playwright reports give one candidate per sc
         report: 'results/playwright-traced/visits.json',
         tests: ['opens home and then help', 'follows a link while waiting for the new address', 'uses the mouse right after the address changes', 'clicks a button that appears after the address changes'],
       },
+      stepRanges: undefined,
+    },
+    {
+      name: 'checks the path of a document',
+      screens: [DETAIL],
+      source: { report: 'results/playwright-traced/visits.json', tests: ['checks the path of a document'] },
       stepRanges: undefined,
     },
     {
@@ -409,20 +428,64 @@ test('the tests with a trace in the Playwright reports give one candidate per sc
       },
       stepRanges: undefined,
     },
+    {
+      name: 'wanders off the map',
+      screens: [OFF_MAP],
+      source: { report: 'results/playwright-traced/visits.json', tests: ['wanders off the map'] },
+      stepRanges: undefined,
+    },
+    {
+      name: 'hovers and uses the keyboard on help',
+      screens: [HELP],
+      source: { report: 'results/playwright-traced/visits.json', tests: HELP_TESTS },
+      stepRanges: undefined,
+    },
+    {
+      name: 'opens the app from a file',
+      screens: [FILE_SCREEN],
+      source: { report: 'results/playwright-traced/visits.json', tests: ['opens the app from a file'] },
+      stepRanges: undefined,
+    },
   ]);
   assert.deepEqual(notices, []);
+});
+
+test('two tests of one report that passed the same single screen give one candidate naming both titles, while a single screen that is already a story or a discarded candidate is not offered, and a trace that opened no screen gives nothing', () => {
+  withStoryCopy((dir: string) => {
+    const traced = [
+      { report: 'results/playwright/e2e.json', title: 'saves an empty name', screens: [HELP] },
+      { report: 'results/playwright/e2e.json', title: 'saves an empty name again', screens: [HELP] },
+      { report: 'results/playwright/e2e.json', title: 'saves another report', screens: ['/admin/report#AdminReport'] },
+      { report: 'results/playwright/e2e.json', title: 'calls the server without opening a page', screens: [] },
+    ];
+    const listed = (storiesDir: string) => storyCandidates({ ...config, visitRecords: [], storiesDir }, map, path.join(config.outDir, 'map.json'), traced);
+    const first = listed(dir);
+    assert.deepEqual(first.list.map((c) => [c.name, c.screens, c.source]), [
+      ['saves an empty name', [HELP], { report: 'results/playwright/e2e.json', tests: ['saves an empty name', 'saves an empty name again'] }],
+    ]);
+    assert.deepEqual(first.gone, { '/admin/report#AdminReport': 'saves another report' });
+    discardCandidate(dir, first.list[0], { reason: '도움말만 연다', author: 'reviewer' });
+    const after = listed(dir);
+    assert.deepEqual(after.list, []);
+    assert.deepEqual(after.gone, { '/admin/report#AdminReport': 'saves another report', '/help#Help': 'saves an empty name' });
+  });
 });
 
 test('candidates from the visit records come first and keep their own source, and a trace whose screen order a record already gave is not a second candidate', () => {
   assert.deepEqual(tracedCandidatesOf({ visitRecords: [EXAMPLE_VISITS] }).list.map((c) => [c.name, c.source]), [
     ['open-help', { record: 'example-visits/open-help.json', steps: [1, 5] }],
     ['publish-document', { record: 'example-visits/publish-document.json', steps: [1, 7] }],
+    ['reads a document from the server', { report: 'results/playwright-traced/calls.json', tests: CALLS_HOME_TESTS }],
     ['opens home and then help', { report: 'results/playwright-traced/visits.json', tests: ['opens home and then help', 'follows a link while waiting for the new address', 'uses the mouse right after the address changes', 'clicks a button that appears after the address changes'] }],
+    ['checks the path of a document', { report: 'results/playwright-traced/visits.json', tests: ['checks the path of a document'] }],
     ['moves to the drafts without loading a page', { report: 'results/playwright-traced/visits.json', tests: ['moves to the drafts without loading a page', 'checks a text that appears after the address changes', 'types into a field and submits with the keyboard'] }],
+    ['wanders off the map', { report: 'results/playwright-traced/visits.json', tests: ['wanders off the map'] }],
+    ['hovers and uses the keyboard on help', { report: 'results/playwright-traced/visits.json', tests: HELP_TESTS }],
+    ['opens the app from a file', { report: 'results/playwright-traced/visits.json', tests: ['opens the app from a file'] }],
   ]);
   withFolder(recordsIn({ 'help.json': ['/home', '/help'] }), (dir: string) => {
     const { list } = tracedCandidatesOf({ visitRecords: [dir], storiesDir: path.join(dir, 'stories') });
-    assert.deepEqual(list.map((c) => c.screens), [HOME_HELP, HOME_DRAFTS]);
+    assert.deepEqual(list.map((c) => c.screens), [HOME_HELP, [HOME], [DETAIL], HOME_DRAFTS, [OFF_MAP], [HELP], [FILE_SCREEN]]);
     assert.equal(list[0].name, 'help');
   });
 });
@@ -431,7 +494,15 @@ test('of two reports with tests that passed the same screen order, the candidate
   withFolder({}, (dir: string) => {
     for (const copy of ['b', 'a']) fs.cpSync(TRACED.path, path.join(dir, copy), { recursive: true });
     const { list } = tracedCandidatesOf({ configDir: dir, tests: [{ ...TRACED, path: dir }], storiesDir: path.join(dir, 'stories') });
-    assert.deepEqual(list.map((c) => [c.screens, (c.source as { report: string }).report]), [[HOME_HELP, 'a/visits.json'], [HOME_DRAFTS, 'a/visits.json']]);
+    assert.deepEqual(list.map((c) => [c.screens, (c.source as { report: string }).report]), [
+      [[HOME], 'a/calls.json'],
+      [HOME_HELP, 'a/visits.json'],
+      [[DETAIL], 'a/visits.json'],
+      [HOME_DRAFTS, 'a/visits.json'],
+      [[OFF_MAP], 'a/visits.json'],
+      [[HELP], 'a/visits.json'],
+      [[FILE_SCREEN], 'a/visits.json'],
+    ]);
   });
 });
 
@@ -442,7 +513,7 @@ test('a candidate from a test whose title carries tags is named by the title wit
     const report = fs.readFileSync(file, 'utf8').replace('"title": "opens home and then help"', '"title": "opens home and then help @screen:/home#Home @depth:ui @role:ADMIN"');
     fs.writeFileSync(file, report);
     const { list } = tracedCandidatesOf({ configDir: dir, tests: [{ ...TRACED, path: dir }], storiesDir: path.join(dir, 'stories') });
-    assert.deepEqual(list.map((c) => c.name), ['opens home and then help', 'moves to the drafts without loading a page']);
+    assert.deepEqual(list.map((c) => c.name), ['reads a document from the server', 'opens home and then help', 'checks the path of a document', 'moves to the drafts without loading a page', 'wanders off the map', 'hovers and uses the keyboard on help', 'opens the app from a file']);
   });
   const traced = [
     { report: 'results/junit/TEST-Doc.xml', title: 'DocTest › 문서를 연다 @screen:/home#Home', screens: HOME_HELP },
@@ -489,26 +560,45 @@ test('only a test that passed in a run that passed gives a candidate: a failed t
     fs.writeFileSync(file, JSON.stringify(report));
     const { list } = tracedCandidatesOf({ configDir: dir, tests: [{ ...TRACED, path: dir }], storiesDir: path.join(dir, 'stories') });
     assert.deepEqual(list.map((c) => [c.screens, (c.source as { tests: string[] }).tests]), [
+      [[HOME], CALLS_HOME_TESTS],
+      [[DETAIL], ['checks the path of a document']],
       [HOME_DRAFTS, ['moves to the drafts without loading a page', 'checks a text that appears after the address changes']],
+      [[OFF_MAP], ['wanders off the map']],
       [HOME_HELP, ['follows a link while waiting for the new address', 'uses the mouse right after the address changes', 'clicks a button that appears after the address changes']],
+      [[HELP], HELP_TESTS],
+      [[FILE_SCREEN], ['opens the app from a file']],
     ]);
   });
 });
 
 test('a trace candidate accepted becomes a story file with the report and the test titles as its source that reads back as a story, and one discarded or with the screen order of a story is not offered again', () => {
   withStoryCopy((dir: string) => {
-    const [help, drafts] = tracedCandidatesOf({ storiesDir: dir }).list;
+    const listed = tracedCandidatesOf({ storiesDir: dir }).list;
+    const help = listed.find((c) => c.name === 'opens home and then help')!;
+    const drafts = listed.find((c) => c.name === 'moves to the drafts without loading a page')!;
     acceptCandidate(dir, drafts, { id: 'open-drafts', name: '홈에서 초안을 연다', author: 'reviewer' }, new Date('2026-10-03T01:02:03Z'));
     const source = { report: 'results/playwright-traced/visits.json', tests: ['moves to the drafts without loading a page', 'checks a text that appears after the address changes', 'types into a field and submits with the keyboard'] };
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'open-drafts.json'), 'utf8')).source, source);
     const read = loadStories(dir);
     assert.deepEqual(read.notices.map((n) => n.file), ['lab-shortcut.json']);
     assert.deepEqual(read.stories.find((s) => s.id === 'open-drafts')!.source, source);
-    assert.deepEqual(tracedCandidatesOf({ storiesDir: dir }).list.map((c) => c.screens), [HOME_HELP]);
+    assert.deepEqual(tracedCandidatesOf({ storiesDir: dir }).list.map((c) => c.screens), [[HOME], HOME_HELP, [DETAIL], [OFF_MAP], [HELP], [FILE_SCREEN]]);
 
     const discarded = discardCandidate(dir, help, { reason: '도움말 링크만 누른다', author: 'reviewer' });
     assert.deepEqual(discarded.source, help.source);
-    assert.deepEqual(tracedCandidatesOf({ storiesDir: dir }).list, []);
+    assert.deepEqual(tracedCandidatesOf({ storiesDir: dir }).list.map((c) => c.screens), [[HOME], [DETAIL], [OFF_MAP], [HELP], [FILE_SCREEN]]);
+  });
+});
+
+test('accepting a single-screen trace candidate writes a story of that one screen, which reads back as a story with no new notice and is no longer a candidate', () => {
+  withStoryCopy((dir: string) => {
+    const help = tracedCandidatesOf({ storiesDir: dir }).list.find((c) => c.name === 'hovers and uses the keyboard on help')!;
+    acceptCandidate(dir, help, { id: 'hover-help', name: '토움말에서 마우스와 키보드를 쓴다', author: 'reviewer' }, new Date('2026-11-02T01:02:03Z'));
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'hover-help.json'), 'utf8')).screens, [HELP]);
+    const read = loadStories(dir);
+    assert.deepEqual(read.notices.map((n) => n.file), ['lab-shortcut.json']);
+    assert.deepEqual(read.stories.find((s) => s.id === 'hover-help')!.screens, [HELP]);
+    assert.equal(tracedCandidatesOf({ storiesDir: dir }).list.some((c) => c.name === 'hovers and uses the keyboard on help'), false);
   });
 });
 
@@ -535,27 +625,38 @@ test('every candidate is keyed by its screen order joined with " > ", whether it
   assert.deepEqual(tracedCandidatesOf({ visitRecords: [EXAMPLE_VISITS] }).list.map((c) => c.key), [
     '/signin#SignIn > /home#Home > /beta/inbox > /help#Help',
     '/home#Home > /document/:tab#DocumentList > /document/:id#DocumentDetail > /help#Help',
+    HOME,
     '/home#Home > /help#Help',
+    DETAIL,
     '/home#Home > /document/:tab#DocumentList',
+    OFF_MAP,
+    HELP,
+    FILE_SCREEN,
   ]);
 });
 
 test('storing the candidates writes one new file per screen order into the candidates folder of the stories folder, with the name, screens, source and the date it was first seen, and writes nothing for an order already stored', () => {
   withStoryCopy((dir: string) => {
     const { list } = tracedCandidatesOf({ visitRecords: [EXAMPLE_VISITS], storiesDir: dir });
-    assert.deepEqual(storeCandidates(dir, list, new Date('2026-10-13T01:02:03Z')), { written: 4 });
+    assert.deepEqual(storeCandidates(dir, list, new Date('2026-10-13T01:02:03Z')), { written: 9 });
     const stored = storedIn(dir);
     assert.ok(stored.every((s) => /^2026-10-13-[0-9a-f]{8}\.json$/.test(s.file)));
     const date = '2026-10-13T01:02:03.000Z';
+    const sourceOf = (name: string) => list.find((c) => c.name === name)!.source;
     assert.deepEqual(stored.map(({ file, ...s }) => s).sort((a, b) => a.name.localeCompare(b.name)), [
-      { name: 'moves to the drafts without loading a page', screens: HOME_DRAFTS, source: list[3].source, date },
+      { name: 'checks the path of a document', screens: [DETAIL], source: sourceOf('checks the path of a document'), date },
+      { name: 'hovers and uses the keyboard on help', screens: [HELP], source: sourceOf('hovers and uses the keyboard on help'), date },
+      { name: 'moves to the drafts without loading a page', screens: HOME_DRAFTS, source: sourceOf('moves to the drafts without loading a page'), date },
       { name: 'open-help', screens: list[0].screens, source: { record: 'example-visits/open-help.json', steps: [1, 5] }, date },
-      { name: 'opens home and then help', screens: HOME_HELP, source: list[2].source, date },
+      { name: 'opens home and then help', screens: HOME_HELP, source: sourceOf('opens home and then help'), date },
+      { name: 'opens the app from a file', screens: [FILE_SCREEN], source: sourceOf('opens the app from a file'), date },
       { name: 'publish-document', screens: list[1].screens, source: { record: 'example-visits/publish-document.json', steps: [1, 7] }, date },
+      { name: 'reads a document from the server', screens: [HOME], source: sourceOf('reads a document from the server'), date },
+      { name: 'wanders off the map', screens: [OFF_MAP], source: sourceOf('wanders off the map'), date },
     ]);
     const again = tracedCandidatesOf({ visitRecords: [EXAMPLE_VISITS], storiesDir: dir }).list;
     assert.deepEqual(storeCandidates(dir, again, new Date('2026-10-14T00:00:00Z')), { written: 0 });
-    assert.equal(storedIn(dir).length, 4);
+    assert.equal(storedIn(dir).length, 9);
     assert.deepEqual(loadStories(dir).notices.map((n) => n.file), ['lab-shortcut.json']);
   });
 });
@@ -578,8 +679,13 @@ test('when a visit record or trace gives the screen order of a stored candidate,
     fs.writeFileSync(path.join(dir, 'candidates', '2026-10-01-aaaaaaaa.json'), JSON.stringify(old));
     fs.writeFileSync(path.join(dir, 'candidates', '2026-10-02-bbbbbbbb.json'), JSON.stringify({ ...old, name: 'from another computer' }));
     assert.deepEqual(tracedCandidatesOf({ storiesDir: dir }).list.map((c) => [c.name, (c.source as { report: string }).report]), [
+      ['reads a document from the server', 'results/playwright-traced/calls.json'],
       ['opens home and then help', 'results/playwright-traced/visits.json'],
+      ['checks the path of a document', 'results/playwright-traced/visits.json'],
       ['moves to the drafts without loading a page', 'results/playwright-traced/visits.json'],
+      ['wanders off the map', 'results/playwright-traced/visits.json'],
+      ['hovers and uses the keyboard on help', 'results/playwright-traced/visits.json'],
+      ['opens the app from a file', 'results/playwright-traced/visits.json'],
     ]);
     assert.deepEqual(leftOnlyStored(dir).list.map((c) => c.name), ['an older title']);
   });
@@ -594,10 +700,10 @@ test('a stored candidate accepted or discarded leaves the list and does not come
     acceptCandidate(dir, help, { id: 'open-help', name: '홈에서 도움말을 연다', author: 'reviewer' });
     discardCandidate(dir, publish, { reason: '도움말만 연다', author: 'reviewer' });
     const left = tracedCandidatesOf({ visitRecords: [EXAMPLE_VISITS], storiesDir: dir }).list;
-    assert.deepEqual(left.map((c) => c.screens), [HOME_HELP, HOME_DRAFTS]);
+    assert.deepEqual(left.map((c) => c.screens), [[HOME], HOME_HELP, [DETAIL], HOME_DRAFTS, [OFF_MAP], [HELP], [FILE_SCREEN]]);
     assert.deepEqual(storeCandidates(dir, left), { written: 0 });
-    assert.deepEqual(leftOnlyStored(dir).list.map((c) => c.screens), [HOME_DRAFTS, HOME_HELP]);
-    assert.equal(storedIn(dir).length, 4);
+    assert.deepEqual(leftOnlyStored(dir).list.map((c) => c.screens), [[DETAIL], [HELP], [HOME], HOME_DRAFTS, HOME_HELP, [OFF_MAP], [FILE_SCREEN]]);
+    assert.equal(storedIn(dir).length, 9);
   });
 });
 
@@ -644,7 +750,7 @@ test('a stored candidate file that cannot be read, or a candidates entry that is
     fs.writeFileSync(path.join(dir, 'candidates', 'broken.json'), '{');
     fs.writeFileSync(path.join(dir, 'candidates', 'no-source.json'), JSON.stringify({ name: 'x', screens: HOME_HELP, date: '2026-10-01' }));
     const { list, notices } = tracedCandidatesOf({ storiesDir: dir });
-    assert.equal(list.length, 2);
+    assert.equal(list.length, 7);
     assert.deepEqual(notices.map((n) => n.file), ['broken.json', 'no-source.json'].map((f) => path.relative(FIXTURE, path.join(dir, 'candidates', f))));
     assert.match(notices[0].reason, /^JSON 으로 읽지 못했습니다: /);
     assert.match(notices[1].reason, /^source 는 /);

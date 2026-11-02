@@ -191,7 +191,7 @@ test('the candidates from traces come from the screen orders rebuild wrote into 
     fs.rmSync(path.join(copy, 'results/playwright-traced'), { recursive: true });
     await withServer(config, 'reviewer', async (base) => {
       const { candidates }: PageData = await (await fetch(`${base}/api/data`)).json();
-      assert.deepEqual(candidates.list.map((c) => c.key), [...visits, '/home#Home > /help#Help', drafts]);
+      assert.deepEqual(candidates.list.map((c) => c.key), [...visits, '/home#Home', '/home#Home > /help#Help', '/document/:id#DocumentDetail', drafts, '/nowhere', '/help#Help', '/tmp/claude-1000/-home-hit0607-duru/b41e2280-9925-40b1-adb4-5e025bb97b02/scratchpad/build/index.html']);
       assert.deepEqual(candidates.notices, [{ file: 'example-visits/broken-record.json', reason: '2 번째 단계의 url 을 읽지 못했습니다' }]);
       assert.equal((await postJson(base, '/api/candidates/accept', { key: '/home#Home > /help#Help', id: 'home-help', name: 'x' })).status, 201);
     });
@@ -201,9 +201,9 @@ test('the candidates from traces come from the screen orders rebuild wrote into 
     fs.writeFileSync(testsFile, JSON.stringify(older));
     await withServer(config, 'reviewer', async (base) => {
       const { candidates }: PageData = await (await fetch(`${base}/api/data`)).json();
-      assert.deepEqual(candidates.list.map((c) => c.key), [...visits, drafts]);
+      assert.deepEqual(candidates.list.map((c) => c.key), [...visits, '/document/:id#DocumentDetail', '/help#Help', '/home#Home', drafts, '/nowhere', '/tmp/claude-1000/-home-hit0607-duru/b41e2280-9925-40b1-adb4-5e025bb97b02/scratchpad/build/index.html']);
       assert.equal((await postJson(base, '/api/candidates/accept', { key: drafts, id: 'drafts', name: 'x' })).status, 201);
-      assert.deepEqual((await (await fetch(`${base}/api/data`)).json() as PageData).candidates.list.map((c) => c.key), visits);
+      assert.deepEqual((await (await fetch(`${base}/api/data`)).json() as PageData).candidates.list.map((c) => c.key), [...visits, '/document/:id#DocumentDetail', '/help#Help', '/home#Home', '/nowhere', '/tmp/claude-1000/-home-hit0607-duru/b41e2280-9925-40b1-adb4-5e025bb97b02/scratchpad/build/index.html']);
     });
   });
 });
@@ -468,21 +468,21 @@ test('in a browser, a candidate discarded in another tab and read again while th
         await p.fill(why, '중복');
         await p.click(`${asked} button.discard`);
         await p.waitForSelector('#candidate-list li:has-text("publish-document")', { state: 'detached' });
-        assert.equal(await p.textContent('#candidate-list li.selected .name > span:first-child'), 'opens home and then help');
+        assert.equal(await p.textContent('#candidate-list li.selected .name > span:first-child'), 'reads a document from the server');
       }),
     ),
   );
 });
 
-test('in a browser, the tests with a trace that passed two screens or more are candidates beside the visit records, one per screen order with the report and every test title of that order as the source and its order in the address, and accepting or discarding one keeps it from coming back', { skip: browserMissing }, async () => {
+test('in a browser, the tests with a trace are candidates beside the visit records, one per screen order with the report and every test title of that order as the source and its order in the address, and accepting or discarding one keeps it from coming back', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ ...CANDIDATES, ...TRACED }, (config, copy) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.click(storiesTab);
-        assert.match((await p.textContent('#left'))!, /후보 4/);
-        assert.deepEqual(await p.locator('#candidate-list li .name > span:first-child').allTextContents(), ['open-help', 'publish-document', 'opens home and then help', 'moves to the drafts without loading a page']);
-        assert.deepEqual(await p.locator('#candidate-list li .name > .mono').allTextContents(), [HELP_RECORD, 'example-visits/publish-document.json', 'results/playwright-traced/visits.json', 'results/playwright-traced/visits.json']);
+        assert.match((await p.textContent('#left'))!, /후보 9/);
+        assert.deepEqual(await p.locator('#candidate-list li .name > span:first-child').allTextContents(), ['open-help', 'publish-document', 'reads a document from the server', 'opens home and then help', 'checks the path of a document', 'moves to the drafts without loading a page', 'wanders off the map', 'hovers and uses the keyboard on help', 'opens the app from a file']);
+        assert.deepEqual(await p.locator('#candidate-list li .name > .mono').allTextContents(), [HELP_RECORD, 'example-visits/publish-document.json', 'results/playwright-traced/calls.json', 'results/playwright-traced/visits.json', 'results/playwright-traced/visits.json', 'results/playwright-traced/visits.json', 'results/playwright-traced/visits.json', 'results/playwright-traced/visits.json', 'results/playwright-traced/visits.json']);
 
         await p.click('#candidate-list li:has-text("opens home and then help")');
         assert.equal(await p.textContent('#center h3'), 'opens home and then help');
@@ -508,7 +508,7 @@ test('in a browser, the tests with a trace that passed two screens or more are c
         rebuild(copy);
         await p.reload();
         await p.waitForSelector('#candidate-list li');
-        assert.deepEqual(await p.locator('#candidate-list li .name > span:first-child').allTextContents(), ['open-help', 'publish-document']);
+        assert.deepEqual(await p.locator('#candidate-list li .name > span:first-child').allTextContents(), ['open-help', 'publish-document', 'reads a document from the server', 'checks the path of a document', 'wanders off the map', 'hovers and uses the keyboard on help', 'opens the app from a file']);
       }),
     ),
   );

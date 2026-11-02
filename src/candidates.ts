@@ -474,9 +474,9 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
     const source = fromTraces.get(key);
     if (source) {
       if (source.report === report && !source.tests.includes(title)) source.tests.push(title);
-    } else if (screens.length > 1 && seen.has(key)) {
+    } else if (screens.length > 0 && seen.has(key)) {
       gone[screens.join(' > ')] ??= titleWithoutTags(title);
-    } else if (screens.length > 1) {
+    } else if (screens.length > 0) {
       const candidate = { key: screens.join(' > '), name: titleWithoutTags(title), screens, source: { report, tests: [title] }, ...carried({ stepFields: inputFields(inputs), skipped }) };
       fromTraces.set(key, candidate.source);
       list.push(candidate);
