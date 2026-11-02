@@ -184,7 +184,7 @@ function moveTalkToStory(id) {
   state.view = 'story';
   state.composing = false;
   state.candidate = null;
-  state.candidateTalk = null;
+  parkDraft('candidateTalk');
   state.need = null;
   state.error = null;
   state.caseError = null;
@@ -192,7 +192,7 @@ function moveTalkToStory(id) {
   state.judgmentError = null;
   if (state.story === id) return;
   state.storyOpen.clear();
-  state.storyDraft = null;
+  parkDraft('storyDraft');
   state.story = id;
 }
 
@@ -200,11 +200,11 @@ function tagPart(target) {
   state.talkScope = 'here';
   if (target.story !== undefined) {
     moveTalkToStory(target.story);
-    state.storyDraft ??= { status: markOf({ story: target.story })?.current?.status ?? null, note: '' };
+    state.storyDraft ??= takeParked('storyDraft', { story: target.story }) ?? { status: markOf({ story: target.story })?.current?.status ?? null, note: '' };
     addTag(state.storyDraft, target, { story: target.story });
   } else {
     moveTalkTo(target.node);
-    state.draft ??= { status: markOf(state.target)?.current?.status ?? null, note: '' };
+    state.draft ??= takeParked('draft', state.target) ?? { status: markOf(state.target)?.current?.status ?? null, note: '' };
     addTag(state.draft, target, state.target);
   }
   render();
@@ -224,6 +224,7 @@ function talkOnCandidate(key, history) {
   state.talkScope = 'here';
   if (key !== state.candidate) {
     const note = state.candidateTalk?.note;
+    if (note) state.candidateTalk = null;
     selectCandidate(key);
     if (note) {
       state.candidateTalk = { status: null, note };

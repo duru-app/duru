@@ -60,7 +60,8 @@ function heldLine(kind, id) {
 
 function setCaseKind(kind) {
   if (kind === state.caseKind) return;
-  Object.assign(state, { caseKind: kind, caseNode: null, caseDraft: null, caseFilter: null, caseBulkError: null, reviewError: null });
+  parkDraft('caseDraft');
+  Object.assign(state, { caseKind: kind, caseNode: null, caseFilter: null, caseBulkError: null, reviewError: null });
   state.casePicked.clear();
   state.reviewPicked.clear();
 }
@@ -88,7 +89,8 @@ function selectCaseKind(kind) {
 
 function selectCaseNode(id) {
   if (state.bulkBusy || id === state.caseNode) return;
-  Object.assign(state, { caseNode: id, caseDraft: null, error: null });
+  parkDraft('caseDraft');
+  Object.assign(state, { caseNode: id, error: null });
   render();
 }
 

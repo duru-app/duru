@@ -15,7 +15,7 @@ function startCompose() {
   state.compose ??= newCompose();
   state.composing = true;
   state.candidate = null;
-  state.candidateTalk = null;
+  parkDraft('candidateTalk');
   state.need = null;
   state.storyError = null;
   setView('story');
