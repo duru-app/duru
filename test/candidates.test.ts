@@ -1256,6 +1256,8 @@ test('a candidate file whose lines switched off are not lines the agent wrote, r
 });
 
 const stepOff = (step: number) => ({ step, on: false });
+const SIGNIN_SCREEN = '/signin#SignIn';
+const HOME_HELP_DRAFTS = ['/home#Home', '/help#Help', '/document/:tab#DocumentList'];
 const stepOn = (step: number) => ({ step, on: true });
 const helpOf = (dir: string) => candidatesOf({ storiesDir: dir }).list.find((c) => c.name === 'open-help')!;
 const readJson = (file: string) => JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -1382,6 +1384,42 @@ test('taking a step out of a candidate not stored yet, with a candidates entry t
   withStoryCopy((dir: string) => {
     fs.writeFileSync(path.join(dir, 'candidates'), 'a file');
     assert.throws(() => pickCandidateStep(dir, helpOf(dir), stepOff(1)), { message: '스토리 폴더 안 candidates 가 파일이라 후보 파일을 쓸 수 없습니다' });
+  });
+});
+
+test('a candidate from a trace accepted with a step taken out leaves the list, also once another test of that report passes the same order, and undoing the acceptance gives it back once with the step still taken out', () => {
+  withFolder({}, (dir: string) => {
+    const report = 'results/playwright/e2e.json';
+    const settings = { ...config, visitRecords: [], storiesDir: dir };
+    const first = [{ report, title: 'opens help from home', screens: [SIGNIN_SCREEN, '/home#Home', '/help#Help'] }];
+    const grown = [...first, { report, title: 'opens help again', screens: [SIGNIN_SCREEN, '/home#Home', '/help#Help'] }];
+    const listed = (traced: typeof first) => storyCandidates(settings, map, MAP_FILE, traced).list;
+    storeCandidates(dir, listed(first));
+    pickCandidateStep(dir, listed(first)[0], stepOff(1));
+    acceptCandidate(dir, listed(first)[0], { id: 'help', name: '홈에서 도움말을 연다', author: 'reviewer' });
+    assert.deepEqual(listed(first), []);
+    assert.deepEqual(listed(grown), []);
+    assert.deepEqual(listed([...grown].reverse()), []);
+    storeCandidates(dir, listed(grown));
+    unacceptStory(dir, 'help');
+    assert.deepEqual(listed(grown).map((c) => [c.screens.length, c.offSteps]), [[3, [1]]]);
+    assert.equal(fs.readdirSync(path.join(dir, 'candidates')).length, 1);
+  });
+});
+
+test('a step is taken out in the candidate file the list shows when an earlier file of that order belongs to a candidate already accepted', () => {
+  withStoryCopy((dir: string) => {
+    fs.mkdirSync(path.join(dir, 'candidates'));
+    const accepted = path.join(dir, 'candidates', '2026-10-01-aaaaaaaa.json');
+    const other = path.join(dir, 'candidates', '2026-10-02-bbbbbbbb.json');
+    fs.writeFileSync(accepted, JSON.stringify({ name: 'accepted', screens: HOME_HELP_DRAFTS, source: { report: 'results/a.json', tests: ['accepted'] }, date: '2026-10-01', offSteps: [1] }));
+    fs.writeFileSync(other, JSON.stringify({ name: 'other', screens: HOME_HELP_DRAFTS, source: { report: 'results/b.json', tests: ['other'] }, date: '2026-10-02' }));
+    const listed = () => leftOnlyStored(dir).list;
+    acceptCandidate(dir, listed()[0], { id: 'accepted', name: 'accepted', author: 'reviewer' });
+    assert.deepEqual(listed().map((c) => [c.name, c.offSteps]), [['other', undefined]]);
+    assert.equal(pickCandidateStep(dir, listed()[0], stepOff(2)).file, path.join('candidates', '2026-10-02-bbbbbbbb.json'));
+    assert.deepEqual(listed().map((c) => [c.name, c.offSteps]), [['other', [2]]]);
+    assert.deepEqual(readJson(accepted).offSteps, [1]);
   });
 });
 
