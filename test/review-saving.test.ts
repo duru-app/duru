@@ -690,3 +690,52 @@ test('in a browser, a comment saved on another screen while the first screen\'s 
     ),
   );
 });
+
+test('in a browser, Enter in the comment box saves the comment as 「남기기」 does, while Shift+Enter starts a new line and a held Enter does not save again', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await toList(p);
+        await p.click('#screen-list li:has-text("/document/:id")');
+        await p.click('#right-dock textarea');
+        await p.keyboard.type('first');
+        await p.keyboard.press('Shift+Enter');
+        await p.keyboard.type('second');
+        await p.keyboard.press('Shift+Enter');
+        await p.keyboard.type('third');
+        assert.equal(await p.inputValue('#right-dock textarea'), 'first\nsecond\nthird');
+        await p.$eval('#right-dock textarea', (field) => field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true, cancelable: true })));
+        await p.waitForTimeout(200);
+        assert.deepEqual(loadMarks(config.marksDir), []);
+
+        await p.keyboard.press('Enter');
+        await p.waitForSelector('#right .history li:has-text("third")');
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => m.note), ['first\nsecond\nthird']);
+        assert.equal(await p.inputValue('#right-dock textarea'), '');
+        assert.equal(await p.getAttribute('#right button.save', 'title'), 'Enter 로 남기고, Shift+Enter 로 줄을 바꿉니다');
+      }),
+    ),
+  );
+});
+
+test('in a browser, Enter in the comment box closes the list of tags after @ when nothing in it matches, without a new line or a save, and the next Enter saves', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await toList(p);
+        await p.click('#screen-list li:has-text("/document/:id")');
+        await p.click('#right-dock textarea');
+        await p.keyboard.type('check @zzzz');
+        assert.equal(await p.locator('#right-dock .tag-pick').isHidden(), false);
+        await p.keyboard.press('Enter');
+        await p.waitForTimeout(200);
+        assert.deepEqual(loadMarks(config.marksDir), []);
+        assert.equal(await p.inputValue('#right-dock textarea'), 'check @zzzz');
+        assert.equal(await p.locator('#right-dock .tag-pick').isHidden(), true);
+        await p.keyboard.press('Enter');
+        await p.waitForSelector('#right .history li:has-text("check @zzzz")');
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => m.note), ['check @zzzz']);
+      }),
+    ),
+  );
+});
