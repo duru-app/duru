@@ -1,6 +1,6 @@
 ---
 name: duru
-description: Run a duru review of a web client's screens and write the tests the reviewer asks for. Use only when the user asks for a duru review; do not use it for other code reviews or test work.
+description: Run duru on a web client — build its map of screens and calls, read what the map and the task list say, tag and write tests against the map, and serve the review page where a reviewer marks what needs more tests. Use whenever the work touches a client duru maps — writing or tagging its tests, a QA or release check that judges what is tested on the map, rebuilding the map after the client changed — and whenever the user asks for a duru review. Not for code reviews or test work on a client duru does not map.
 ---
 
 # duru review
