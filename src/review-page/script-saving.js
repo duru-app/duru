@@ -16,8 +16,9 @@ const ownerOf = (draftKey) => (draftKey === 'storyDraft' ? { story: state.story 
 const saveMark = (tags, draftKey, statusOn) => trackOwnSave(() => postMark(tags, draftKey, statusOn));
 
 async function postMark(picked, draftKey, statusOn) {
-  state.error = null;
   const draft = state[draftKey];
+  if (!draft) return null;
+  state.error = null;
   const owner = ownerOf(draftKey);
   const tags = picked.map((t) => (t.screens !== undefined && owner?.screens !== undefined ? owner : t));
   const target = tags.length === 1 ? tags[0] : owner;

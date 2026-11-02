@@ -631,3 +631,62 @@ test('in a browser, the line for the calls duru did not read names each API func
     );
   });
 });
+
+test('in a browser, pressing 「남기기」 twice while the save is still on its way saves the comment once and shows no error', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await toList(p);
+        await p.click('#screen-list li:has-text("/document/:id")');
+        await p.fill('#right-dock textarea', 'only once');
+        let release!: () => void;
+        const held = new Promise<void>((resolve) => { release = resolve; });
+        let posts = 0;
+        await p.route('**/api/marks', async (route) => {
+          if (route.request().method() === 'POST' && posts++ === 0) await held;
+          await route.continue();
+        });
+        await p.evaluate(() => {
+          const save = document.querySelector<HTMLButtonElement>('#right button.save')!;
+          save.click();
+          save.click();
+        });
+        release();
+        await p.waitForSelector('#right .talk:has-text("only once")');
+        await p.waitForFunction(() => document.querySelector<HTMLTextAreaElement>('#right-dock textarea')?.value === '');
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => m.note), ['only once']);
+        assert.equal(await p.locator('#right .error').count(), 0);
+        assert.deepEqual(errors, []);
+      }),
+    ),
+  );
+});
+
+test('in a browser, a comment saved on another screen while the first screen\'s save is still on its way is saved too', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await toList(p);
+        let release!: () => void;
+        const held = new Promise<void>((resolve) => { release = resolve; });
+        let posts = 0;
+        await p.route('**/api/marks', async (route) => {
+          if (route.request().method() === 'POST' && posts++ === 0) await held;
+          await route.continue();
+        });
+        await p.click('#screen-list li:has-text("/document/:id")');
+        await p.fill('#right-dock textarea', 'on the document');
+        const firstSaved = p.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/api/marks') && !!r.request().postData()?.includes('on the document'));
+        await p.click('#right button.save');
+        await p.click('#screen-list li:has-text("/admin/report")');
+        await p.fill('#right-dock textarea', 'on the report');
+        await p.click('#right button.save');
+        await p.waitForSelector('#right .talk:has-text("on the report")');
+        release();
+        await firstSaved;
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => m.note).sort(), ['on the document', 'on the report']);
+        assert.deepEqual(errors, []);
+      }),
+    ),
+  );
+});
