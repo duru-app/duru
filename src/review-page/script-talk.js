@@ -215,7 +215,10 @@ function markForm(target, draftKey, label) {
   const tags = (draft.tags ?? [target]).map((t) => (t.screens !== undefined && target.screens !== undefined ? target : t));
   const statusOn = onlyTag(tags, target) && target.candidate === undefined && target.screens === undefined;
   const savable = () => draft.note.trim() !== '' || (statusOn && !!draft.status);
-  const save = h('button', { class: 'save', disabled: !savable(), onclick: () => saveMark(tags, draftKey, statusOn) }, '남기기');
+  const save = h('button', { class: 'save', disabled: !savable(), onclick: () => {
+    save.disabled = true;
+    saveMark(tags, draftKey, statusOn);
+  } }, '남기기');
   const statuses = Object.entries(MARK_STATUS).map(([k, text]) => {
     const button = h('button', { class: statusOn && draft.status === k ? 'on' : '', disabled: !statusOn, title: statusOn ? null : target.candidate !== undefined ? '후보에는 상태를 매기지 않습니다. 스토리로 받은 뒤에 매깁니다' : target.screens !== undefined ? '화면 순서에는 상태를 매기지 않습니다' : '상태는 꼬리표가 화면 · 호출 · 깊이 · 스토리 하나뿐일 때만 매깁니다', onclick: () => {
       draft.status = draft.status === k ? null : k;
