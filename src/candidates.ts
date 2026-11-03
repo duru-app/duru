@@ -499,8 +499,12 @@ export function pickCandidateStep(dir: string, candidate: Candidate, input: obje
   const at = path.join(dir, file);
   const { offSteps: before = [], ...rest } = JSON.parse(fs.readFileSync(at, 'utf8'));
   const groups = shownGroups(rest.screens, rulesFor(candidate.source, rules));
+  const pressed = groups[(step as number) - 1].map((i) => i + 1);
+  const notPressed = before.filter((s: number) => !pressed.includes(s));
+  const kept = on ? notPressed : [...notPressed, ...pressed];
+  const hidesAll = groups.every((g) => g.every((i) => kept.includes(i + 1)));
   const cutByRule = before.filter((s: number) => !groups.flat().includes(s - 1));
-  const written = [...cutByRule, ...offSteps.flatMap((s) => groups[s - 1].map((i) => i + 1))].sort((a, b) => a - b);
+  const written = (hidesAll ? [...cutByRule, ...offSteps.flatMap((s) => groups[s - 1].map((i) => i + 1))] : kept).sort((a: number, b: number) => a - b);
   fs.writeFileSync(at, JSON.stringify({ ...rest, ...(written.length && { offSteps: written }) }, null, 2) + '\n');
   return { file, offSteps };
 }

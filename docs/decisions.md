@@ -2183,10 +2183,15 @@ candidate file, the shape the issue first named, loses two things: the order the
 a decision back has to work out which file it came from, and the source of the candidate, which names the record file
 and the steps as they were found. `offSteps` is a list of the steps left out, ascending, never all of them, and
 accepting writes the story from the screens that remain while undoing drops the list and the candidate is one again.
-The key of the candidate stays its found order, as the file keeps that order, so a comment written on a candidate is
-not moved by a step taken out; the list hides a candidate whose found order is a story only after every step of its
+A step taken out does not change the key of the candidate, as the file keeps the found order, so a comment written on
+a candidate is not moved by it; the list hides a candidate whose found order is a story only after every step of its
 order is in that story. A candidate whose order has no file yet gets one on the first X, and a file of the same order
 that belongs to a candidate which became a story is left alone (driver's decision in #531, 2026-11-02).
+The numbers in `offSteps` count the found order in the file, not the steps on the card, and the list turns them into
+card steps, so a step taken out stays on its screen when a `candidateSkipScreens` rule changes. Storing card steps would
+need no conversion, but a rule change would move it to another screen without a word. An X on a step the rules joined
+from two found steps takes both out, and when the rules leave every step on the card off, the list shows none off, so
+the candidate can still be accepted.
 
 **Undoing an accepted candidate deletes its story file; the discarded candidates are listed, folded, below the
 candidates.**

@@ -1609,6 +1609,27 @@ test('a ✕ on a step the rules joined from two found steps takes both out of th
   });
 });
 
+test('a ✕ keeps a step taken out earlier that a rule now joins with others, and one pressed when every step left would be off replaces the ones the list no longer shows', () => {
+  withFolder(recordsIn({ 'a.json': ['/signin', '/home', '/signin', '/help'] }), (dir: string) => {
+    const stories = path.join(dir, 'stories');
+    const rules: SkipRule[] = [{ screen: HOME, where: 'any' }];
+    const { file } = pickCandidateStep(stories, shownWith(dir, []).list[0], stepOff(1));
+    assert.deepEqual(shownWith(dir, rules).list[0].offSteps, undefined);
+    pickCandidateStep(stories, shownWith(dir, rules).list[0], stepOff(2), rules);
+    assert.deepEqual(readJson(path.join(stories, file)).offSteps, [1, 4]);
+  });
+  withFolder(recordsIn({ 'a.json': ['/signin', '/home', '/help'] }), (dir: string) => {
+    const stories = path.join(dir, 'stories');
+    const rules: SkipRule[] = [{ screen: HELP, where: 'any' }];
+    const { file } = pickCandidateStep(stories, shownWith(dir, []).list[0], stepOff(1));
+    pickCandidateStep(stories, shownWith(dir, []).list[0], stepOff(2));
+    assert.deepEqual(shownWith(dir, rules).list[0].offSteps, undefined);
+    pickCandidateStep(stories, shownWith(dir, rules).list[0], stepOff(2), rules);
+    assert.deepEqual(readJson(path.join(stories, file)).offSteps, [2]);
+    assert.deepEqual(shownWith(dir, rules).list[0].offSteps, [2]);
+  });
+});
+
 test('a rule that takes out every step a ✕ left leaves the candidate with no step taken out, and a ✕ made while a rule cuts the step stays in the file after another ✕', () => {
   withFolder(recordsIn({ 'a.json': ['/signin', '/home', '/help'] }), (dir: string) => {
     const stories = path.join(dir, 'stories');

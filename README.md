@@ -1074,8 +1074,8 @@ built before links carried their conditions must be rebuilt first. A wrong call 
 
 On the review page each step of a candidate has a ✕. Pressing it strikes the step through, and pressing it again puts
 the step back; the last step left cannot be taken out. The steps taken out are kept in the candidate file as
-`offSteps`, `[<step>, …]` numbered from 1, so they stay after a reload, and accepting writes only the steps left into
-the story file. The story keeps the source of the candidate, so the candidate is not offered again.
+`offSteps`, `[<step>, …]` numbered from 1 in the order the file holds, which `candidateSkipScreens` can make longer
+than the card, so they stay after a reload, and accepting writes only the steps left into the story file. The story keeps the source of the candidate, so the candidate is not offered again.
 
 ## Review page
 
