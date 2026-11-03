@@ -544,11 +544,10 @@ async function unacceptChosen() {
   const st = storyOf();
   if (!st) return;
   if (hasStoryFields(st) && !confirm(`받기를 되돌리면 스토리 파일 ${st.file} 을 지우므로, 이 스토리에 적은 조건 · 입력값 · 기대 결과도 함께 사라집니다. 그래도 되돌릴까요?`)) return;
-  if (!(await writeStories('/api/stories/unaccept', { id: st.id }))) return;
-  const key = st.screens.join(' > ');
+  const written = await writeStories('/api/stories/unaccept', { id: st.id });
+  if (!written) return;
   Object.assign(state, { story: null, storyDraft: null, storyEdit: null, stepsEdit: null, candidateTalk: null });
-  const stepsLeft = (c) => c.screens.filter((_, i) => !(c.offSteps ?? []).includes(i + 1)).filter((s, i, left) => s !== left[i - 1]);
-  state.candidate = state.data.candidates.list.find((c) => stepsLeft(c).join(' > ') === key)?.key ?? null;
+  state.candidate = state.data.candidates.list.find((c) => c.key === written.key)?.key ?? null;
   render();
 }
 

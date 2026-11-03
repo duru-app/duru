@@ -242,7 +242,7 @@ test('undoing an accepted candidate removes its story file, after which the cand
   withStoryCopy((dir: string) => {
     const help = candidatesOf({ storiesDir: dir }).list.find((c) => c.name === 'open-help')!;
     acceptCandidate(dir, help, { id: 'open-help', name: '홈에서 도움말을 연다', author: 'reviewer' });
-    assert.deepEqual(unacceptStory(dir, 'open-help'), { id: 'open-help', screens: help.screens, file: 'open-help.json' });
+    assert.deepEqual(unacceptStory(dir, 'open-help'), { id: 'open-help', screens: help.screens, file: 'open-help.json', key: help.screens.join(' > ') });
     assert.equal(fs.existsSync(path.join(dir, 'open-help.json')), false);
     assert.deepEqual(candidatesOf({ storiesDir: dir }).list.map((c) => c.name), ['open-help', 'publish-document']);
     const before = fs.readdirSync(dir, { recursive: true }).sort();
@@ -1593,6 +1593,65 @@ test('steps of one screen a ✕ leaves side by side become one step of the story
     assert.deepEqual(story.screens, [HOME]);
     assert.deepEqual(story.stepFields?.[0].expects, ['홈이 보인다', '홈이 또 보인다']);
     assert.deepEqual(loadStories(cfg.storiesDir).notices, []);
+  });
+});
+
+const acceptWithOff = (cfg: typeof config, step: number) => {
+  pickCandidateStep(cfg.storiesDir, storyCandidates(cfg, map, MAP_FILE).list[0], stepOff(step));
+  acceptCandidate(cfg.storiesDir, storyCandidates(cfg, map, MAP_FILE).list[0], { id: 'joined', name: '합친 단계', author: 'hit' });
+  const [story] = loadStories(cfg.storiesDir).stories;
+  assert.deepEqual(loadStories(cfg.storiesDir).notices, []);
+  return story;
+};
+
+test('steps a ✕ joins keep the link needs of the link into the first of them, and the step after them keeps its own because the link into it is still there', () => {
+  const screens = [DRAFTS, { screen: HOME, linkNeeds: ['초안에서 홈으로'] }, HELP, { screen: HOME, linkNeeds: ['도움말에서 홈으로'] }, { screen: SIGNIN, linkNeeds: ['홈에서 로그인으로'] }];
+  withOrderComment({ screens: [DRAFTS, HOME, HELP, HOME, SIGNIN] }, ({ cfg, post }) => {
+    post({ screens });
+    const story = acceptWithOff(cfg, 3);
+    assert.deepEqual(story.screens, [DRAFTS, HOME, SIGNIN]);
+    assert.deepEqual(story.stepFields?.map((f) => f.linkNeeds), [undefined, ['초안에서 홈으로'], ['홈에서 로그인으로']]);
+    assert.deepEqual((story.source as { written: object[] }).written, [{ step: 2, linkNeeds: ['초안에서 홈으로'] }, { step: 3, linkNeeds: ['홈에서 로그인으로'] }]);
+  });
+});
+
+test('the lines an agent wrote on steps a ✕ joins are recorded in the source as the story holds them, one line once and the last value of a box', () => {
+  const box = (value: string) => ({ ...EMAIL_INPUT, value });
+  const screens = [{ screen: HOME, expects: ['같은 줄'], inputs: [box('처음')] }, HELP, { screen: HOME, expects: ['같은 줄'], inputs: [box('나중')] }];
+  withOrderComment({ screens: [HOME, HELP, HOME] }, ({ cfg, post }) => {
+    post({ screens });
+    const story = acceptWithOff(cfg, 2);
+    assert.deepEqual(story.stepFields?.[0], { inputs: [box('나중')], expects: ['같은 줄'] });
+    assert.deepEqual((story.source as { written: object[] }).written, [{ step: 1, inputs: [box('나중')], expects: ['같은 줄'] }]);
+  });
+});
+
+test('a step a ✕ joins counts as put in by the agent only when the agent put in all of it, with each reason kept', () => {
+  const agentOnly = [HOME, { screen: HELP, reason: '첫 이유' }, { screen: DRAFTS, reason: '가운데 이유' }, { screen: HELP, reason: '둘째 이유' }, SIGNIN];
+  withOrderComment({ screens: [HOME, SIGNIN] }, ({ cfg, post }) => {
+    post({ screens: agentOnly });
+    const story = acceptWithOff(cfg, 3);
+    assert.deepEqual((story.source as { added: object[] }).added, [{ step: 2, reason: '첫 이유 / 둘째 이유' }]);
+  });
+  const reviewers = [HOME, { screen: HELP, reason: '첫 이유' }, { screen: HOME, reason: '둘째 이유' }, SIGNIN];
+  withOrderComment({ screens: [HOME, SIGNIN] }, ({ cfg, post }) => {
+    post({ screens: reviewers });
+    const story = acceptWithOff(cfg, 2);
+    assert.deepEqual((story.source as { added: object[] }).added, []);
+  });
+});
+
+test('undoing a story answers with the key of the candidate that comes back, even when another candidate leaves the same screens', () => {
+  withFolder(recordsIn({ 'a.json': ['/home', '/help', '/signin'], 'b.json': ['/home', '/signin'] }), (dir: string) => {
+    const stories = path.join(dir, 'stories');
+    const listed = () => shownWith(dir, []).list;
+    const whole = () => listed().find((c) => c.screens.length === 3)!;
+    const short = () => listed().find((c) => c.screens.length === 2)!;
+    pickCandidateStep(stories, whole(), stepOff(2));
+    acceptCandidate(stories, short(), { id: 'b', name: '짧은 길', author: 'reviewer' });
+    assert.equal(unacceptStory(stories, 'b').key, short().key);
+    acceptCandidate(stories, whole(), { id: 'a', name: '긴 길', author: 'reviewer' });
+    assert.equal(unacceptStory(stories, 'a').key, whole().key);
   });
 });
 

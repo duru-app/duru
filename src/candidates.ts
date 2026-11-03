@@ -8,7 +8,7 @@ import { compare, isPlainObject } from './config.ts';
 import { jsonFiles } from './json-files.ts';
 import { loadMarks, orderKey, recordKind, recordName, targetsOf, writeNewRecord } from './marks.ts';
 import type { SentRequests } from './request-options.ts';
-import { addStory, CANDIDATES, DISCARDED, inputsProblem, keptSteps, RECORDS, isDate, isScreenList, isSource, isText, loadStories, sourceAfterSteps, SOURCE_SHAPES, STEP_FIELDS, stepProblem, writableStoriesFolder } from './stories.ts';
+import { addStory, CANDIDATES, DISCARDED, inputsProblem, joinedFields, keptSteps, RECORDS, isDate, isScreenList, isSource, isText, loadStories, sameBox, sourceAfterSteps, SOURCE_SHAPES, STEP_FIELDS, stepProblem, writableStoriesFolder } from './stories.ts';
 import type { CommentSource, StepFields, StepInput } from './stories.ts';
 import { checkStories, linksFromOldDuru, staleMapMessage } from './story-paths.ts';
 import { titleWithoutTags } from './verdict.ts';
@@ -147,7 +147,6 @@ export function loadVisitRecords(sources: string[], configDir: string) {
   return { records, notices };
 }
 
-const sameBox = (a: StepInput, b: StepInput) => JSON.stringify(a.box) === JSON.stringify(b.box);
 
 export type SkipRule = { screen: string; where: 'start' | 'end' | 'any' };
 
@@ -171,36 +170,21 @@ export function skipByRules(screens: string[], rules: SkipRule[]): { kept: numbe
   }
 }
 
-const sameValue = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-
-const joinedFields = (fields: StepFields[]): StepFields => {
-  const joined: Record<string, unknown[]> = {};
-  for (const key of STEP_FIELDS) {
-    const values = fields.flatMap((f) => (f[key as keyof StepFields] as unknown[] | undefined) ?? []);
-    const kept = key === 'inputs'
-      ? values.reduce<unknown[]>((out, input) => {
-        const at = out.findIndex((i) => sameBox(i as StepInput, input as StepInput));
-        if (at >= 0) out[at] = input;
-        else out.push(input);
-        return out;
-      }, [])
-      : values.filter((value, at) => values.findIndex((other) => sameValue(other, value)) === at);
-    if (kept.length) joined[key] = kept;
-  }
-  return joined as StepFields;
-};
-
-// 규칙을 거친 뒤 보이는 단계마다, 찾은 순서의 어느 자리들이 모였는지.
-function shownGroups(screens: string[], rules: SkipRule[]) {
-  const { kept } = skipByRules(screens, rules);
-  if (kept.length === screens.length) return kept.map((i) => [i]);
+// 단계를 빼고 같은 화면이 나란히 남으면 한 단계다.
+function sameScreenRuns(screens: string[], left: number[]) {
   const groups: number[][] = [];
-  for (const i of kept) {
+  for (const i of left) {
     const group = groups.at(-1);
     if (group && screens[group.at(-1)!] === screens[i]) group.push(i);
     else groups.push([i]);
   }
   return groups;
+}
+
+// 규칙을 거친 뒤 보이는 단계마다, 찾은 순서로 몇 번째 것들이 모였는지.
+function shownGroups(screens: string[], rules: SkipRule[]) {
+  const { kept } = skipByRules(screens, rules);
+  return kept.length === screens.length ? kept.map((i) => [i]) : sameScreenRuns(screens, kept);
 }
 
 const shownOrder = (screens: string[], rules: SkipRule[]) => shownGroups(screens, rules).map((g) => screens[g[0]]);
@@ -446,31 +430,25 @@ function pickedLines({ source, stepFields, lines }: Candidate) {
   return { source: { ...source, written }, stepFields: picked };
 }
 
-// 같은 화면이 나란히 남으면 한 단계다.
-const stepsLeft = (screens: string[], offSteps: number[]) => {
-  const groups: number[][] = [];
-  for (let step = 1; step <= screens.length; step++) {
-    if (offSteps.includes(step)) continue;
-    const group = groups.at(-1);
-    if (group && screens[group.at(-1)! - 1] === screens[step - 1]) group.push(step);
-    else groups.push([step]);
-  }
-  return groups;
-};
+const stepsLeft = (screens: string[], offSteps: number[]) => sameScreenRuns(screens, screens.flatMap((_, i) => (offSteps.includes(i + 1) ? [] : [i])));
 
 export function acceptCandidate(dir: string, candidate: Candidate, { id, name, author }: { id: unknown; name: unknown; author: unknown }, now = new Date()) {
   const { source, stepFields } = pickedLines(candidate);
   const offSteps = candidate.offSteps ?? [];
   if (!offSteps.length) return addStory(dir, { id, name, screens: withFields({ screens: candidate.screens, stepFields }), author, source }, now);
-  const steps = withFields({ screens: candidate.screens, stepFields });
   const groups = stepsLeft(candidate.screens, offSteps);
-  const joined = groups.map((g) => {
-    if (g.length === 1) return steps[g[0] - 1];
-    const fields = joinedFields(g.map((step) => (typeof steps[step - 1] === 'string' ? {} : steps[step - 1] as StepFields)));
-    return Object.keys(fields).length ? { screen: candidate.screens[g[0] - 1], ...fields } : candidate.screens[g[0] - 1];
+  const fieldsAt = (i: number): StepFields => stepFields?.[i] ?? {};
+  // 뒤 칸의 linkNeeds 는 빠진 단계에서 들어오던 링크의 조건이다.
+  const withoutLink = (i: number) => {
+    const { linkNeeds: _, ...rest } = fieldsAt(i);
+    return rest;
+  };
+  const steps = withFields({
+    screens: groups.map((g) => candidate.screens[g[0]]),
+    stepFields: groups.map((g) => (g.length === 1 ? fieldsAt(g[0]) : joinedFields([fieldsAt(g[0]), ...g.slice(1).map(withoutLink)]))),
   });
-  const { screens, kept } = keptSteps(joined, groups.map((g) => g[0]));
-  for (const g of groups) for (const step of g.slice(1)) kept.set(step, kept.get(g[0])!);
+  const { screens, kept } = keptSteps(steps, groups.map((g) => g[0] + 1), groups.map((g) => g.at(-1)! + 1));
+  for (const g of groups) for (const i of g.slice(1)) kept.set(i + 1, { step: kept.get(g[0] + 1)!.step, linked: false });
   return addStory(dir, { id, name, screens, author, source: sourceAfterSteps(source, kept) }, now);
 }
 
@@ -541,14 +519,14 @@ export function unacceptStory(dir: string, id: unknown, rules: SkipRule[] = []) 
     const applied = rulesFor(c.source, rules);
     const off = shownOffSteps(c.screens, c.offSteps, applied) ?? [];
     const shown = shownOrder(c.screens, applied);
-    return JSON.stringify(stepsLeft(shown, off).map((g) => shown[g[0] - 1])) === storyScreens;
+    return JSON.stringify(stepsLeft(shown, off).map((g) => shown[g[0]])) === storyScreens;
   });
   if (!back) {
     const kept = storeCandidates(dir, [{ key: story.screens.join(' > '), name: story.id, screens: story.screens, source, ...carried({ stepFields }) }]);
     if (kept.reason) throw new Error(kept.reason);
   }
   fs.rmSync(path.join(dir, story.file));
-  return { id: story.id, screens: story.screens, file: story.file };
+  return { id: story.id, screens: story.screens, file: story.file, key: shownOrder(back?.screens ?? story.screens, rulesFor(source, rules)).join(' > ') };
 }
 
 export function discardCandidate(dir: string, candidate: Candidate, { reason, author }: { reason: unknown; author: unknown }, now = new Date()) {
