@@ -2160,6 +2160,19 @@ Alternatives compared:
   key of that candidate would change once its fresh twin is gone, so a copied address, or anything else that names
   it by key, would stop finding it.
 
+**A step taken out of a story candidate is kept as `offSteps` beside the order the candidate was found in, not by
+changing the order.**
+The card on the review page offers an X on each step before the candidate is accepted, and the step has to be gone
+from the story and from the list, and back again if the reviewer changes their mind. Writing a shorter order into the
+candidate file, the shape the issue first named, loses two things: the order the records and traces gave, so changing
+a decision back has to work out which file it came from, and the source of the candidate, which names the record file
+and the steps as they were found. `offSteps` is a list of the steps left out, ascending, never all of them, and
+accepting writes the story from the screens that remain while undoing drops the list and the candidate is one again.
+The key of the candidate stays its found order, as the file keeps that order, so a comment written on a candidate is
+not moved by a step taken out; the list hides a candidate whose found order is a story only after every step of its
+order is in that story. A candidate whose order has no file yet gets one on the first X, and a file of the same order
+that belongs to a candidate which became a story is left alone (driver's decision in #531, 2026-11-02).
+
 **Undoing an accepted candidate deletes its story file; the discarded candidates are listed, folded, below the
 candidates.**
 #249 asked for a way back from 「스토리로 받기」 and 「버리기」. A story file is already rewritten in place when its name
