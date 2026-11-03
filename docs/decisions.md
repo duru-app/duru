@@ -2192,6 +2192,15 @@ card steps, so a step taken out stays on its screen when a `candidateSkipScreens
 need no conversion, but a rule change would move it to another screen without a word. An X on a step the rules joined
 from two found steps takes both out, and when the rules leave every step on the card off, the list shows none off, so
 the candidate can still be accepted.
+When an X leaves steps of one screen side by side, the story gets them as one step, because a story refuses a screen
+repeated next to itself. Refusing the X or the acceptance was the other way, and it leaves a reviewer who wants home,
+help, home without help holding a candidate that cannot be accepted. The joined step is built as a `candidateSkipScreens`
+join is: each line once and the last value of a box whoever wrote it, so an agent's value on the later step replaces a
+reviewer's on the earlier one. It keeps only the link needs of the link into its first step, since a step taken out
+takes the conditions of the link from it along. In the source it counts as put in by the agent only when all of it was,
+with the reasons joined by ` / `, and the agent's lines are merged among themselves, so a line that a reviewer's later
+value replaced stays in `written` with no row of the story to match, and is not offered as a line to pick. This was
+chosen while fixing the acceptance and has not been put to the driver.
 
 **Undoing an accepted candidate deletes its story file; the discarded candidates are listed, folded, below the
 candidates.**

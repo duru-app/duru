@@ -147,7 +147,6 @@ export function loadVisitRecords(sources: string[], configDir: string) {
   return { records, notices };
 }
 
-
 export type SkipRule = { screen: string; where: 'start' | 'end' | 'any' };
 
 // 한 번 뺀 순서를 다시 넣어도 그대로 남도록, 뺄 것이 없어질 때까지 되풀이한다. `any` 로 화면을 빼서 맨 앞이나
@@ -438,7 +437,6 @@ export function acceptCandidate(dir: string, candidate: Candidate, { id, name, a
   if (!offSteps.length) return addStory(dir, { id, name, screens: withFields({ screens: candidate.screens, stepFields }), author, source }, now);
   const groups = stepsLeft(candidate.screens, offSteps);
   const fieldsAt = (i: number): StepFields => stepFields?.[i] ?? {};
-  // 뒤 칸의 linkNeeds 는 빠진 단계에서 들어오던 링크의 조건이다.
   const withoutLink = (i: number) => {
     const { linkNeeds: _, ...rest } = fieldsAt(i);
     return rest;

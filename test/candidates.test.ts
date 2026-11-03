@@ -1615,7 +1615,7 @@ test('steps a ✕ joins keep the link needs of the link into the first of them, 
   });
 });
 
-test('the lines an agent wrote on steps a ✕ joins are recorded in the source as the story holds them, one line once and the last value of a box', () => {
+test('the lines an agent wrote on steps a ✕ joins are merged in the source the way the story merges them, one line once and the last value of a box', () => {
   const box = (value: string) => ({ ...EMAIL_INPUT, value });
   const screens = [{ screen: HOME, expects: ['같은 줄'], inputs: [box('처음')] }, HELP, { screen: HOME, expects: ['같은 줄'], inputs: [box('나중')] }];
   withOrderComment({ screens: [HOME, HELP, HOME] }, ({ cfg, post }) => {
