@@ -15,8 +15,17 @@ const lineName = (l) => `line-${l.step}-${l.field}-${l.line}`;
 const pickKey = (c, l) => `${c.key}\n${lineName(l)}`;
 const lineOn = (c, l) => unsavedPicks.get(pickKey(c, l)) ?? l.on;
 const LINE_PICK_TITLE = '끄면 받을 때 이 줄을 스토리 파일에 넣지 않습니다';
+/** @type {string | null} */
+let acceptingKey = null;
+
+function whileAccepting(c) {
+  if (acceptingKey !== c.key) return false;
+  redrawStory();
+  return true;
+}
 
 function pickLine(c, l, on) {
+  if (whileAccepting(c)) return;
   const key = pickKey(c, l);
   unsavedPicks.set(key, on);
   redrawStory();
@@ -35,6 +44,7 @@ const stepOut = (c, n) => unsavedSteps.get(stepKey(c, n)) ?? (c.offSteps ?? []).
 const stepOutCount = (c) => c.steps.filter((_, i) => stepOut(c, i + 1)).length;
 
 function pickStep(c, n, on) {
+  if (whileAccepting(c)) return;
   const key = stepKey(c, n);
   unsavedSteps.set(key, !on);
   redrawStory();
@@ -417,9 +427,14 @@ async function writeStories(url, body) {
 const storyIdProblem = (id) => (state.data.stories.list.some((st) => st.id === id) ? '같은 ID 의 스토리가 이미 있습니다.' : STORY_ID.test(id) ? null : '영문 소문자, 숫자, -, _ 만 쓸 수 있습니다.');
 
 async function acceptAs(c, id, name) {
-  await lineWrites;
-  await stepWrites;
-  if (!(await writeStories('/api/candidates/accept', { key: c.key, id, name }))) return false;
+  acceptingKey = c.key;
+  try {
+    await lineWrites;
+    await stepWrites;
+    if (!(await writeStories('/api/candidates/accept', { key: c.key, id, name }))) return false;
+  } finally {
+    acceptingKey = null;
+  }
   state.candidate = null;
   state.candidateTalk = null;
   state.story = id;
