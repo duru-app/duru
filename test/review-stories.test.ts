@@ -909,3 +909,31 @@ test('in a browser, a story whose story tests all pass but did not go through it
     );
   }, edits);
 });
+
+test('in a browser, a candidate the candidateSkipScreens rules took a screen out of shows the steps left in its path and, folded under 「원래 순서 N」, the order it was found in with each step taken out struck through beside 「설정 규칙」', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ ...CANDIDATES, candidateSkipScreens: [{ screen: '/signin#SignIn', where: 'start' }] }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#candidate-list li:has-text("open-help")');
+        await p.waitForSelector('#center details.found-order');
+        assert.deepEqual(await p.locator('#center .story-path .step .records').allTextContents(), ['단계 2', '단계 3–4', '단계 5']);
+        assert.equal(await p.textContent('#center details.found-order > summary'), '원래 순서 4');
+        assert.equal(await p.getAttribute('#center details.found-order', 'open'), null);
+        await p.click('#center details.found-order > summary');
+        const rows = await p.evaluate(() => [...document.querySelectorAll('#center details.found-order li')].map((li) => {
+          const screen = li.querySelector('.found-screen')!;
+          return [screen.textContent, getComputedStyle(screen).textDecorationLine.includes('line-through'), li.querySelector('.skip-reason')?.textContent ?? null];
+        }));
+        assert.deepEqual(rows, [['/signin#SignIn', true, '설정 규칙'], ['/home#Home', false, null], ['/beta/inbox', false, null], ['/help#Help', false, null]]);
+        assert.match((await p.getAttribute('#center details.found-order .skip-reason', 'title'))!, /candidateSkipScreens/);
+
+        await p.click('#candidate-list li:has-text("publish-document")');
+        await p.waitForSelector('#center h3:has-text("publish-document")');
+        assert.equal(await p.locator('#center details.found-order').count(), 0);
+        assert.deepEqual(errors, []);
+      }),
+    ),
+  );
+});

@@ -662,7 +662,7 @@ export async function startReviewServer(config: any, { port = 0, author = review
         }
         if (req.url === '/api/stories/edit' || req.url === '/api/stories/unaccept') {
           try {
-            const written = req.url === '/api/stories/edit' ? editStory(config.storiesDir, input.id, input) : unacceptStory(config.storiesDir, input.id);
+            const written = req.url === '/api/stories/edit' ? editStory(config.storiesDir, input.id, input) : unacceptStory(config.storiesDir, input.id, config.candidateSkipScreens);
             return send(res, 200, 'application/json', JSON.stringify(written));
           } catch (err: any) {
             return send(res, 400, 'text/plain', err.message);
@@ -716,7 +716,7 @@ export async function startReviewServer(config: any, { port = 0, author = review
         }
         if (req.url === '/api/candidates/steps') {
           try {
-            return send(res, 200, 'application/json', JSON.stringify(pickCandidateStep(config.storiesDir, candidate, input)));
+            return send(res, 200, 'application/json', JSON.stringify(pickCandidateStep(config.storiesDir, candidate, input, config.candidateSkipScreens)));
           } catch (err: any) {
             return send(res, 400, 'text/plain', err.message);
           }

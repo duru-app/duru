@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { acceptCandidate, addCommentCandidate, discardCandidate, pickCandidateLine, pickCandidateStep, recordedRequests, saveVisitRecord, storeCandidates, storyCandidates, unacceptStory, undiscardCandidate } from '../src/candidates.ts';
+import type { SkipRule } from '../src/candidates.ts';
 import { compare, loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
 import { addMark, addReply } from '../src/marks.ts';
@@ -1255,8 +1256,147 @@ test('a candidate file whose lines switched off are not lines the agent wrote, r
   });
 });
 
+const SIGNIN = '/signin#SignIn';
+const skipStart: SkipRule[] = [{ screen: SIGNIN, where: 'start' }];
+const shownWith = (dir: string, candidateSkipScreens: object[], traced: Parameters<typeof storyCandidates>[3] = []) =>
+  storyCandidates({ ...config, visitRecords: [dir], storiesDir: path.join(dir, 'stories'), candidateSkipScreens }, map, MAP_FILE, traced);
+
+test('candidateSkipScreens defaults to none, and each rule names a screen and where it is taken out of the candidates, start, end or any', () => {
+  assert.deepEqual(config.candidateSkipScreens, []);
+  const rules = [{ screen: SIGNIN, where: 'start' }, { screen: HELP, where: 'end' }, { screen: HOME, where: 'any' }];
+  withFolder({ 'config.json': { srcRoot: 'src', serverEndpoints: [], candidateSkipScreens: rules } }, (dir: string) => {
+    assert.deepEqual(loadConfig(path.join(dir, 'config.json')).candidateSkipScreens, rules);
+  });
+  for (const candidateSkipScreens of [{}, [SIGNIN], [{ screen: SIGNIN }], [{ screen: SIGNIN, where: 'middle' }], [{ screen: '', where: 'any' }], [{ screen: SIGNIN, where: 'any', note: 'x' }]]) {
+    withFolder({ 'config.json': { srcRoot: 'src', serverEndpoints: [], candidateSkipScreens } }, (dir: string) => {
+      assert.throws(() => loadConfig(path.join(dir, 'config.json')), /candidateSkipScreens must be a list of \{ "screen", "where" \}/, JSON.stringify(candidateSkipScreens));
+    });
+  }
+});
+
+test('a rule may name the address of a step that matches no screen, which stays in the candidate as that address; only a rule screen that is neither on the map nor in a found order is reported as missed', () => {
+  withFolder(recordsIn({ 'a.json': ['/home', '/beta/inbox', '/help'] }), (dir: string) => {
+    const { list, missedRules } = shownWith(dir, [{ screen: '/beta/inbox', where: 'any' }, { screen: '/nowhere#Nowhere', where: 'any' }, { screen: HELP, where: 'start' }]);
+    assert.deepEqual(list.map((c) => c.screens), [[HOME, HELP]]);
+    assert.deepEqual(missedRules, ['/nowhere#Nowhere']);
+  });
+  withFolder({}, (dir: string) => {
+    const traced = [{ report: 'r.json', title: 'opens the beta inbox', screens: [HOME, '/beta/inbox', HELP] }];
+    const { list, missedRules } = shownWith(dir, [{ screen: '/beta/inbox', where: 'any' }], traced);
+    assert.deepEqual([list.map((c) => c.screens), missedRules], [[[HOME, HELP]], []]);
+  });
+});
+
+test('a rule takes its screen out of a candidate from a visit record where it says: start the screens at the head of the order that a start rule names, end those at its tail, any wherever it is; steps of one screen left side by side become one step, and the candidate keeps the order it was found in and the steps taken out', () => {
+  withFolder(recordsIn({ 'a.json': ['/signin', '/home', '/signin', '/help'] }), (dir: string) => {
+    const shown = (rules: object[]) => shownWith(dir, rules).list.map((c) => c.screens);
+    assert.deepEqual(shown([]), [[SIGNIN, HOME, SIGNIN, HELP]]);
+    assert.deepEqual(shown(skipStart), [[HOME, SIGNIN, HELP]]);
+    assert.deepEqual(shown([{ screen: SIGNIN, where: 'end' }]), [[SIGNIN, HOME, SIGNIN, HELP]]);
+    assert.deepEqual(shown([{ screen: HELP, where: 'end' }]), [[SIGNIN, HOME, SIGNIN]]);
+    assert.deepEqual(shown([{ screen: SIGNIN, where: 'any' }]), [[HOME, HELP]]);
+    assert.deepEqual(shown([{ screen: HOME, where: 'start' }, ...skipStart]), [[HELP]]);
+    assert.deepEqual(shown([{ screen: HOME, where: 'any' }]), [[SIGNIN, HELP]]);
+
+    const [started] = shownWith(dir, skipStart).list;
+    assert.deepEqual([started.key, started.stepRanges, started.skippedByRule], [`${HOME} > ${SIGNIN} > ${HELP}`, [[2, 2], [3, 3], [4, 4]], { found: [SIGNIN, HOME, SIGNIN, HELP], steps: [1] }]);
+    const [joined] = shownWith(dir, [{ screen: HOME, where: 'any' }]).list;
+    assert.deepEqual([joined.key, joined.stepRanges, joined.skippedByRule], [`${SIGNIN} > ${HELP}`, [[1, 3], [4, 4]], { found: [SIGNIN, HOME, SIGNIN, HELP], steps: [2] }]);
+    assert.equal(shownWith(dir, []).list[0].skippedByRule, undefined);
+  });
+});
+
+test('candidates whose orders are the same once the rules took screens out are one candidate: the first visit record in path order, and the tests of a trace with every title in its source; a candidate the rules take every screen out of is not listed', () => {
+  withFolder(recordsIn({ 'a.json': ['/signin', '/help'], 'b.json': ['/help'], 'c.json': ['/signin'] }), (dir: string) => {
+    assert.deepEqual(shownWith(dir, skipStart).list.map((c) => [c.name, c.screens]), [['a', [HELP]]]);
+  });
+  withFolder({}, (dir: string) => {
+    const report = 'results/playwright/e2e.json';
+    const traced = [
+      { report, title: 'logs in and opens help', screens: [SIGNIN, HELP] },
+      { report, title: 'opens help', screens: [HELP] },
+      { report, title: 'logs in only', screens: [SIGNIN] },
+    ];
+    assert.deepEqual(shownWith(dir, skipStart, traced).list.map((c) => [c.name, c.screens, c.source, c.skippedByRule]), [
+      ['logs in and opens help', [HELP], { report, tests: ['logs in and opens help', 'opens help'] }, { found: [SIGNIN, HELP], steps: [1] }],
+    ]);
+  });
+});
+
+test('the rules apply to stored candidate files each time the list is made, while the file keeps the order it was found in, and storing a candidate the rules changed writes that found order', () => {
+  withStoryCopy((dir: string) => {
+    fs.mkdirSync(path.join(dir, 'candidates'));
+    const file = path.join(dir, 'candidates', '2026-10-01-aaaaaaaa.json');
+    const old = { name: 'old', screens: [SIGNIN, HOME, HELP, '/document/:tab#DocumentList'], source: { report: 'results/old.json', tests: ['old'] }, date: '2026-10-01' };
+    fs.writeFileSync(file, JSON.stringify(old));
+    const listed = (candidateSkipScreens: object[]) => storyCandidates({ ...config, visitRecords: [], storiesDir: dir, candidateSkipScreens }, map, MAP_FILE, []).list.map((c) => [c.name, c.screens, c.skippedByRule]);
+    assert.deepEqual(listed(skipStart), [['old', [HOME, HELP, '/document/:tab#DocumentList'], { found: old.screens, steps: [1] }]]);
+    assert.deepEqual(listed([]), [['old', old.screens, undefined]]);
+    assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), old);
+  });
+  withFolder(recordsIn({ 'a.json': ['/signin', '/home', '/document/draft'] }), (dir: string) => {
+    const stories = path.join(dir, 'stories');
+    assert.deepEqual(storeCandidates(stories, shownWith(dir, skipStart).list), { written: 1 });
+    const [name] = fs.readdirSync(path.join(stories, 'candidates'));
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(stories, 'candidates', name), 'utf8')).screens, [SIGNIN, HOME, '/document/:tab#DocumentList']);
+    assert.deepEqual(storeCandidates(stories, shownWith(dir, skipStart).list), { written: 0 });
+    assert.deepEqual(shownWith(dir, skipStart).list.map((c) => c.screens), [[HOME, '/document/:tab#DocumentList']]);
+  });
+});
+
+test('a candidate whose order once the rules took screens out is a story is not listed, the rules may name an address off the map, and a candidate from a comment keeps every screen', () => {
+  assert.deepEqual(candidatesOf({ candidateSkipScreens: [{ screen: '/beta/inbox', where: 'any' }] }).list.map((c) => c.name), ['publish-document']);
+  assert.deepEqual(candidatesOf({ candidateSkipScreens: [{ screen: '/beta/inbox', where: 'any' }, { screen: HELP, where: 'end' }] }).list.map((c) => c.screens), [[SIGNIN, HOME], [HOME, '/document/:tab#DocumentList', '/document/:id#DocumentDetail']]);
+  withOrderComment({ screens: LAB_ORDER, steps: ASKED_STEPS }, ({ cfg, post }) => {
+    post({});
+    assert.deepEqual(storyCandidates({ ...cfg, candidateSkipScreens: skipStart }, map, MAP_FILE).list.map((c) => [c.screens, c.skippedByRule]), [[LAB_PATH, undefined]]);
+  });
+});
+
+test('the usage guide names candidateSkipScreens with where each rule takes its screen out, and says under story candidates that changing a rule moves a comment on a candidate it changes under 「떨어져 나감」', () => {
+  const readme = fs.readFileSync(path.join(import.meta.dirname, '../README.md'), 'utf8');
+  const at = readme.indexOf('- `candidateSkipScreens` — ');
+  assert.ok(at >= 0);
+  const key = readme.slice(at, readme.indexOf('\n- `', at + 1));
+  for (const word of ['`start`', '`end`', '`any`']) assert.ok(key.includes(word), word);
+  assert.match(readme.slice(readme.indexOf('## Story candidates')), /candidateSkipScreens[^]*떨어져 나감/);
+});
+
+test('the rules reach the same order when they meet an order they already shortened, so a discarded candidate brought back is one candidate and not a second one that nobody walked', () => {
+  const rules = [{ screen: HOME, where: 'any' }, { screen: SIGNIN, where: 'start' }];
+  withFolder(recordsIn({ 'a.json': ['/home', '/signin', '/help'] }), (dir: string) => {
+    const stories = path.join(dir, 'stories');
+    const listed = () => storyCandidates({ ...config, visitRecords: [dir], storiesDir: stories, candidateSkipScreens: rules }, map, MAP_FILE, []).list.map((c) => c.screens);
+    assert.deepEqual(listed(), [[HELP]]);
+    assert.deepEqual(storeCandidates(stories, shownWith(dir, rules).list), { written: 1 });
+    const [shown] = shownWith(dir, rules).list;
+    discardCandidate(stories, shown, { reason: '잠깐 뺀다', author: 'reviewer' }, new Date('2026-10-03T00:00:00Z'));
+    assert.deepEqual(listed(), []);
+    undiscardCandidate(stories, shown.screens, { author: 'reviewer' }, new Date('2026-10-04T00:00:00Z'));
+    assert.deepEqual(listed(), [[HELP]]);
+  });
+});
+
+test('steps that the rules leave side by side become one step that keeps the needs, the link needs and the expects of every step, and inputs of the same box keep the value of the later step', () => {
+  withStoryCopy((dir: string) => {
+    fs.mkdirSync(path.join(dir, 'candidates'));
+    const file = path.join(dir, 'candidates', '2026-10-01-bbbbbbbb.json');
+    const stepFields = [
+      { needs: ['first'], expects: ['one'], inputs: [{ box: { label: '메일' }, value: 'a@b' }] },
+      {},
+      { needs: ['second'], linkNeeds: ['third'], expects: ['two'], inputs: [{ box: { label: '메일' }, value: 'c@d' }] },
+      {},
+    ];
+    fs.writeFileSync(file, JSON.stringify({ name: 'twice', screens: [SIGNIN, HOME, SIGNIN, HELP], stepFields, source: { report: 'results/twice.json', tests: ['twice'] }, date: '2026-10-01' }));
+    const [shown] = storyCandidates({ ...config, visitRecords: [], storiesDir: dir, candidateSkipScreens: [{ screen: HOME, where: 'any' }] }, map, MAP_FILE, []).list;
+    assert.deepEqual([shown.screens, shown.stepFields], [[SIGNIN, HELP], [
+      { needs: ['first', 'second'], linkNeeds: ['third'], inputs: [{ box: { label: '메일' }, value: 'c@d' }], expects: ['one', 'two'] },
+      {},
+    ]]);
+  });
+});
+
 const stepOff = (step: number) => ({ step, on: false });
-const SIGNIN_SCREEN = '/signin#SignIn';
 const HOME_HELP_DRAFTS = ['/home#Home', '/help#Help', '/document/:tab#DocumentList'];
 const stepOn = (step: number) => ({ step, on: true });
 const helpOf = (dir: string) => candidatesOf({ storiesDir: dir }).list.find((c) => c.name === 'open-help')!;
@@ -1391,8 +1531,8 @@ test('a candidate from a trace accepted with a step taken out leaves the list, a
   withFolder({}, (dir: string) => {
     const report = 'results/playwright/e2e.json';
     const settings = { ...config, visitRecords: [], storiesDir: dir };
-    const first = [{ report, title: 'opens help from home', screens: [SIGNIN_SCREEN, '/home#Home', '/help#Help'] }];
-    const grown = [...first, { report, title: 'opens help again', screens: [SIGNIN_SCREEN, '/home#Home', '/help#Help'] }];
+    const first = [{ report, title: 'opens help from home', screens: [SIGNIN, '/home#Home', '/help#Help'] }];
+    const grown = [...first, { report, title: 'opens help again', screens: [SIGNIN, '/home#Home', '/help#Help'] }];
     const listed = (traced: typeof first) => storyCandidates(settings, map, MAP_FILE, traced).list;
     storeCandidates(dir, listed(first));
     pickCandidateStep(dir, listed(first)[0], stepOff(1));
@@ -1428,4 +1568,76 @@ test('the usage guide says a step of a candidate taken out with ✕ is kept in t
   const candidates = readme.slice(readme.indexOf('## Story candidates'));
   assert.match(candidates, /✕/);
   assert.match(candidates, /`offSteps`/);
+});
+
+const DRAFTS = '/document/:tab#DocumentList';
+
+test('with a rule taking a screen out, a ✕ numbers the step the list shows, the candidate file keeps the order it was found in with the found number, the ✕ stays on its screen when the rule goes, and accepting then undoing gives the one candidate back', () => {
+  withFolder(recordsIn({ 'a.json': ['/signin', '/home', '/help', '/document/draft'] }), (dir: string) => {
+    const stories = path.join(dir, 'stories');
+    const listed = (rules: object[] = skipStart) => shownWith(dir, rules).list;
+    const picked = pickCandidateStep(stories, listed()[0], stepOff(2), skipStart);
+    assert.deepEqual(picked.offSteps, [2]);
+    const file = path.join(stories, picked.file);
+    assert.deepEqual([readJson(file).screens, readJson(file).offSteps], [[SIGNIN, HOME, HELP, DRAFTS], [3]]);
+    assert.deepEqual(listed().map((c) => [c.screens, c.offSteps, c.file]), [[[HOME, HELP, DRAFTS], [2], picked.file]]);
+    assert.deepEqual(listed([]).map((c) => [c.screens, c.offSteps]), [[[SIGNIN, HOME, HELP, DRAFTS], [3]]]);
+    assert.deepEqual(storeCandidates(stories, listed()), { written: 0 });
+
+    acceptCandidate(stories, listed()[0], { id: 'a', name: '도움말을 건너뛴다', author: 'reviewer' });
+    assert.deepEqual(readJson(path.join(stories, 'a.json')).screens, [HOME, DRAFTS]);
+    assert.deepEqual(listed(), []);
+    unacceptStory(stories, 'a', skipStart);
+    assert.deepEqual(listed().map((c) => [c.screens, c.offSteps]), [[[HOME, HELP, DRAFTS], [2]]]);
+    assert.equal(fs.readdirSync(path.join(stories, 'candidates')).length, 1);
+
+    pickCandidateStep(stories, listed()[0], stepOn(2), skipStart);
+    assert.equal('offSteps' in readJson(file), false);
+  });
+});
+
+test('a ✕ on a step the rules joined from two found steps takes both out of the candidate file, and the last step the list shows cannot be taken out even when the file holds more', () => {
+  withFolder(recordsIn({ 'a.json': ['/signin', '/home', '/signin', '/help'] }), (dir: string) => {
+    const stories = path.join(dir, 'stories');
+    const rules: SkipRule[] = [{ screen: HOME, where: 'any' }];
+    const listed = () => shownWith(dir, rules).list;
+    assert.deepEqual(listed()[0].screens, [SIGNIN, HELP]);
+    const picked = pickCandidateStep(stories, listed()[0], stepOff(1), rules);
+    assert.deepEqual(readJson(path.join(stories, picked.file)).offSteps, [1, 3]);
+    assert.deepEqual(listed()[0].offSteps, [1]);
+    assert.throws(() => pickCandidateStep(stories, listed()[0], stepOff(2), rules), { message: '후보 「a」의 마지막 남은 단계는 뺄 수 없습니다' });
+  });
+});
+
+test('a rule that takes out every step a ✕ left leaves the candidate with no step taken out, and a ✕ made while a rule cuts the step stays in the file after another ✕', () => {
+  withFolder(recordsIn({ 'a.json': ['/signin', '/home', '/help'] }), (dir: string) => {
+    const stories = path.join(dir, 'stories');
+    const off = pickCandidateStep(stories, shownWith(dir, []).list[0], stepOff(1));
+    pickCandidateStep(stories, shownWith(dir, []).list[0], stepOff(2));
+    assert.deepEqual(readJson(path.join(stories, off.file)).offSteps, [1, 2]);
+
+    const cutHelp = [{ screen: HELP, where: 'any' }];
+    assert.deepEqual(shownWith(dir, cutHelp).list.map((c) => [c.screens, c.offSteps]), [[[SIGNIN, HOME], undefined]]);
+
+    assert.deepEqual(shownWith(dir, skipStart).list.map((c) => [c.screens, c.offSteps]), [[[HOME, HELP], [1]]]);
+    pickCandidateStep(stories, shownWith(dir, skipStart).list[0], stepOn(1), skipStart);
+    assert.deepEqual(readJson(path.join(stories, off.file)).offSteps, [1]);
+  });
+});
+
+test('with a rule, a candidate from a trace accepted with a step taken out leaves the list, also once another test of that report passes an order the rule makes the same', () => {
+  withFolder({}, (dir: string) => {
+    const report = 'results/playwright/e2e.json';
+    const settings = { ...config, visitRecords: [], storiesDir: dir, candidateSkipScreens: skipStart };
+    const first = [{ report, title: 'opens help from home', screens: [SIGNIN, HOME, HELP, DRAFTS] }];
+    const grown = [...first, { report, title: 'opens help, signed in', screens: [HOME, HELP, DRAFTS] }];
+    const listed = (traced: typeof first) => storyCandidates(settings, map, MAP_FILE, traced).list;
+    pickCandidateStep(dir, listed(first)[0], stepOff(2), skipStart);
+    assert.deepEqual(listed(first).map((c) => [c.screens, c.offSteps]), [[[HOME, HELP, DRAFTS], [2]]]);
+    assert.deepEqual(listed(grown).map((c) => [c.screens, c.offSteps]), [[[HOME, HELP, DRAFTS], [2]]]);
+    acceptCandidate(dir, listed(first)[0], { id: 'help', name: '홈에서 고른다', author: 'reviewer' });
+    assert.deepEqual(listed(first), []);
+    assert.deepEqual(listed(grown), []);
+    assert.deepEqual(listed([...grown].reverse()), []);
+  });
 });
