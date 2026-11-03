@@ -446,13 +446,31 @@ function pickedLines({ source, stepFields, lines }: Candidate) {
   return { source: { ...source, written }, stepFields: picked };
 }
 
+// 같은 화면이 나란히 남으면 한 단계다.
+const stepsLeft = (screens: string[], offSteps: number[]) => {
+  const groups: number[][] = [];
+  for (let step = 1; step <= screens.length; step++) {
+    if (offSteps.includes(step)) continue;
+    const group = groups.at(-1);
+    if (group && screens[group.at(-1)! - 1] === screens[step - 1]) group.push(step);
+    else groups.push([step]);
+  }
+  return groups;
+};
+
 export function acceptCandidate(dir: string, candidate: Candidate, { id, name, author }: { id: unknown; name: unknown; author: unknown }, now = new Date()) {
   const { source, stepFields } = pickedLines(candidate);
   const offSteps = candidate.offSteps ?? [];
   if (!offSteps.length) return addStory(dir, { id, name, screens: withFields({ screens: candidate.screens, stepFields }), author, source }, now);
   const steps = withFields({ screens: candidate.screens, stepFields });
-  const picks = candidate.screens.flatMap((_, i) => (offSteps.includes(i + 1) ? [] : [i + 1]));
-  const { screens, kept } = keptSteps(picks.map((step) => steps[step - 1]), picks);
+  const groups = stepsLeft(candidate.screens, offSteps);
+  const joined = groups.map((g) => {
+    if (g.length === 1) return steps[g[0] - 1];
+    const fields = joinedFields(g.map((step) => (typeof steps[step - 1] === 'string' ? {} : steps[step - 1] as StepFields)));
+    return Object.keys(fields).length ? { screen: candidate.screens[g[0] - 1], ...fields } : candidate.screens[g[0] - 1];
+  });
+  const { screens, kept } = keptSteps(joined, groups.map((g) => g[0]));
+  for (const g of groups) for (const step of g.slice(1)) kept.set(step, kept.get(g[0])!);
   return addStory(dir, { id, name, screens, author, source: sourceAfterSteps(source, kept) }, now);
 }
 
@@ -522,7 +540,8 @@ export function unacceptStory(dir: string, id: unknown, rules: SkipRule[] = []) 
     if (!sameSource(c.source, source)) return false;
     const applied = rulesFor(c.source, rules);
     const off = shownOffSteps(c.screens, c.offSteps, applied) ?? [];
-    return JSON.stringify(shownOrder(c.screens, applied).filter((_, i) => !off.includes(i + 1))) === storyScreens;
+    const shown = shownOrder(c.screens, applied);
+    return JSON.stringify(stepsLeft(shown, off).map((g) => shown[g[0] - 1])) === storyScreens;
   });
   if (!back) {
     const kept = storeCandidates(dir, [{ key: story.screens.join(' > '), name: story.id, screens: story.screens, source, ...carried({ stepFields }) }]);

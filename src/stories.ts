@@ -365,12 +365,19 @@ export function keptSteps(screens: unknown[], picks: (number | undefined)[]): { 
 
 export function sourceAfterSteps(source: any, kept: Kept) {
   if (!isSource(source) || !('comment' in source)) return source;
-  const added = (source.added as CommentSource['added']).flatMap(({ step, reason }) => (kept.has(step) ? [{ step: kept.get(step)!.step, reason }] : []));
-  const written = (source.written as CommentSource['written']).flatMap(({ step, ...fields }) => {
+  const added = (source.added as CommentSource['added']).flatMap(({ step, reason }) => (kept.has(step) ? [{ step: kept.get(step)!.step, reason }] : []))
+    .filter((a, i, all) => all.findIndex((b) => b.step === a.step) === i);
+  const byStep = new Map<number, Record<string, unknown[]>>();
+  for (const { step, ...fields } of source.written as CommentSource['written']) {
     const to = kept.get(step);
-    const lines = Object.entries(fields).filter(([k]) => k !== 'linkNeeds' || to?.linked);
-    return to && lines.length ? [{ step: to.step, ...Object.fromEntries(lines) }] : [];
-  });
+    if (!to) continue;
+    for (const [field, lines] of Object.entries(fields)) {
+      if (field === 'linkNeeds' && !to.linked) continue;
+      const at = byStep.get(to.step) ?? {};
+      byStep.set(to.step, { ...at, [field]: [...(at[field] ?? []), ...(lines as unknown[])] });
+    }
+  }
+  const written = [...byStep].map(([step, fields]) => ({ step, ...fields }));
   return { ...source, added, written };
 }
 

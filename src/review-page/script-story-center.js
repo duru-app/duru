@@ -547,7 +547,8 @@ async function unacceptChosen() {
   if (!(await writeStories('/api/stories/unaccept', { id: st.id }))) return;
   const key = st.screens.join(' > ');
   Object.assign(state, { story: null, storyDraft: null, storyEdit: null, stepsEdit: null, candidateTalk: null });
-  state.candidate = state.data.candidates.list.some((c) => c.key === key) ? key : null;
+  const stepsLeft = (c) => c.screens.filter((_, i) => !(c.offSteps ?? []).includes(i + 1)).filter((s, i, left) => s !== left[i - 1]);
+  state.candidate = state.data.candidates.list.find((c) => stepsLeft(c).join(' > ') === key)?.key ?? null;
   render();
 }
 

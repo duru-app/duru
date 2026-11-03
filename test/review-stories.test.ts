@@ -452,6 +452,10 @@ test('in a browser, each step of a candidate has a ✕ that strikes the step thr
         assert.deepEqual([saved.screens, saved.source], [['/home#Home', '/help#Help'], { record: HELP_RECORD, steps: [1, 5] }]);
         assert.deepEqual(await p.locator('#candidate-list li .name > span:first-child').allTextContents(), ['publish-document']);
         assert.equal(await p.locator('#center button.step-off').count(), 0);
+
+        await p.click('#center button.unaccept');
+        await p.waitForSelector('#candidate-list li.selected:has-text("open-help")');
+        assert.equal(await p.textContent('#center h3'), 'open-help');
         assert.deepEqual(errors, []);
       }),
     ),

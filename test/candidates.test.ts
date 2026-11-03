@@ -1572,6 +1572,30 @@ test('the usage guide says a step of a candidate taken out with ✕ is kept in t
 
 const DRAFTS = '/document/:tab#DocumentList';
 
+test('steps of one screen a ✕ leaves side by side become one step of the story, and undoing brings the one candidate back', () => {
+  withFolder(recordsIn({ 'a.json': ['/home', '/help', '/home', '/signin'] }), (dir: string) => {
+    const stories = path.join(dir, 'stories');
+    const listed = () => shownWith(dir, []).list;
+    pickCandidateStep(stories, listed()[0], stepOff(2));
+    acceptCandidate(stories, listed()[0], { id: 'a', name: '홈에서 로그인', author: 'reviewer' });
+    assert.deepEqual(readJson(path.join(stories, 'a.json')).screens, [HOME, SIGNIN]);
+    unacceptStory(stories, 'a');
+    assert.deepEqual(listed().map((c) => [c.screens, c.offSteps]), [[[HOME, HELP, HOME, SIGNIN], [2]]]);
+    assert.equal(fs.readdirSync(path.join(stories, 'candidates')).length, 1);
+  });
+  const screens = [{ screen: HOME, expects: ['홈이 보인다'] }, { screen: HELP }, { screen: HOME, expects: ['홈이 또 보인다'] }];
+  withOrderComment({ screens: [HOME, HELP, HOME] }, ({ cfg, post }) => {
+    post({ screens });
+    const [candidate] = storyCandidates(cfg, map, MAP_FILE).list;
+    pickCandidateStep(cfg.storiesDir, candidate, stepOff(2));
+    acceptCandidate(cfg.storiesDir, storyCandidates(cfg, map, MAP_FILE).list[0], { id: 'b', name: '홈', author: 'hit' });
+    const [story] = loadStories(cfg.storiesDir).stories;
+    assert.deepEqual(story.screens, [HOME]);
+    assert.deepEqual(story.stepFields?.[0].expects, ['홈이 보인다', '홈이 또 보인다']);
+    assert.deepEqual(loadStories(cfg.storiesDir).notices, []);
+  });
+});
+
 test('with a rule taking a screen out, a ✕ numbers the step the list shows, the candidate file keeps the order it was found in with the found number, the ✕ stays on its screen when the rule goes, and accepting then undoing gives the one candidate back', () => {
   withFolder(recordsIn({ 'a.json': ['/signin', '/home', '/help', '/document/draft'] }), (dir: string) => {
     const stories = path.join(dir, 'stories');
