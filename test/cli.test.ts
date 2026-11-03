@@ -851,18 +851,19 @@ test('rebuild counts the story candidates from the visit records and from traces
   }
 });
 
-test('rebuild counts the candidates the candidateSkipScreens rules took a screen out of, prints that count only while there is a rule, and names each rule screen that is not on the map', () => {
+test('rebuild counts the candidates the candidateSkipScreens rules took a screen out of, prints that count only while there is a rule, and names each rule screen that is neither on the map nor an address a candidate went through', () => {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
     const configFile = path.join(copy, 'config.json');
     const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
-    const candidateSkipScreens = [{ screen: '/help#Help', where: 'end' }, { screen: '/nowhere#Nowhere', where: 'any' }];
+    const candidateSkipScreens = [{ screen: '/help#Help', where: 'end' }, { screen: '/nowhere#Nowhere', where: 'any' }, { screen: '/beta/inbox', where: 'any' }];
     fs.writeFileSync(configFile, JSON.stringify({ ...config, storiesDir: 'example-stories', visitRecords: ['example-visits'], candidateSkipScreens }));
     const ruled = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
     assert.match(ruled, /^story candidates 2 \| from traces 0 \| cut by candidateSkipScreens 2 \| newly stored 2 \| files skipped 1$/m);
-    assert.match(ruled, /^ {2}candidateSkipScreens: \/nowhere#Nowhere is not a screen on the map$/m);
+    assert.match(ruled, /^ {2}candidateSkipScreens: \/nowhere#Nowhere is neither a screen on the map nor an address a candidate went through$/m);
     assert.doesNotMatch(ruled, /candidateSkipScreens: \/help#Help/);
+    assert.doesNotMatch(ruled, /candidateSkipScreens: \/beta\/inbox/);
     const stored = fs.readdirSync(path.join(copy, 'example-stories/candidates')).map((f) => JSON.parse(fs.readFileSync(path.join(copy, 'example-stories/candidates', f), 'utf8')).screens.at(-1));
     assert.deepEqual(stored.sort(), ['/help#Help', '/help#Help']);
 
