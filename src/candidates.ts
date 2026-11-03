@@ -380,15 +380,21 @@ export function pickCandidateStep(dir: string, candidate: Candidate, input: obje
   const others = (candidate.offSteps ?? []).filter((s) => s !== step);
   const offSteps = on ? others : [...others, step as number].sort((a, b) => a - b);
   if (offSteps.length >= candidate.screens.length) throw new Error(`후보 「${candidate.name}」의 마지막 남은 단계는 뺄 수 없습니다`);
-  const key = JSON.stringify(candidate.screens);
   let picked = candidate.file;
   if (!picked) {
+    // 같은 화면 순서의 파일이 이미 스토리가 된 후보의 것일 수 있다. 그 파일을 고치면 다른 후보의 기록이 바뀌므로,
+    // 이 후보의 파일을 새로 쓴다.
     const folder = path.join(dir, CANDIDATES);
     if (fs.existsSync(folder) && !isFolder(folder)) throw new Error(`스토리 폴더 안 ${CANDIDATES} 가 파일이라 후보 파일을 쓸 수 없습니다`);
-    const kept = storeCandidates(dir, [candidate]);
-    const found = firstStored(loadStored(dir).found).get(key);
-    if (!found) throw new Error(kept.reason ?? '후보 파일을 쓰지 못했습니다');
-    picked = found.file;
+    const date = new Date().toISOString();
+    const name = `${date.slice(0, 10)}-${crypto.randomUUID().slice(0, 8)}.json`;
+    const { name: candidateName, screens, source, stepFields, skipped } = candidate;
+    try {
+      writeNewRecord(path.join(folder, name), { name: candidateName, screens, source, date, ...carried({ stepFields, skipped }) });
+    } catch (err: any) {
+      throw new Error(`후보 파일을 쓰지 못했습니다: ${err.message}`);
+    }
+    picked = path.join(CANDIDATES, name);
   }
   const file = picked!;
   const at = path.join(dir, file);
