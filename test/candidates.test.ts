@@ -1407,7 +1407,7 @@ test('a candidate from a trace accepted with a step taken out leaves the list, a
   });
 });
 
-test('a step is taken out in the candidate file the list shows when an earlier file of that order belongs to a candidate already accepted', () => {
+test('once a candidate is accepted with a step taken out, another candidate file of that order leaves the list and the accepted file keeps its steps taken out', () => {
   withStoryCopy((dir: string) => {
     fs.mkdirSync(path.join(dir, 'candidates'));
     const accepted = path.join(dir, 'candidates', '2026-10-01-aaaaaaaa.json');
@@ -1416,10 +1416,9 @@ test('a step is taken out in the candidate file the list shows when an earlier f
     fs.writeFileSync(other, JSON.stringify({ name: 'other', screens: HOME_HELP_DRAFTS, source: { report: 'results/b.json', tests: ['other'] }, date: '2026-10-02' }));
     const listed = () => leftOnlyStored(dir).list;
     acceptCandidate(dir, listed()[0], { id: 'accepted', name: 'accepted', author: 'reviewer' });
-    assert.deepEqual(listed().map((c) => [c.name, c.offSteps]), [['other', undefined]]);
-    assert.equal(pickCandidateStep(dir, listed()[0], stepOff(2)).file, path.join('candidates', '2026-10-02-bbbbbbbb.json'));
-    assert.deepEqual(listed().map((c) => [c.name, c.offSteps]), [['other', [2]]]);
+    assert.deepEqual(listed(), []);
     assert.deepEqual(readJson(accepted).offSteps, [1]);
+    assert.equal(readJson(other).offSteps, undefined);
   });
 });
 
@@ -1428,4 +1427,103 @@ test('the usage guide says a step of a candidate taken out with ✕ is kept in t
   const candidates = readme.slice(readme.indexOf('## Story candidates'));
   assert.match(candidates, /✕/);
   assert.match(candidates, /`offSteps`/);
+});
+
+test('a candidate accepted with steps taken out keeps its found order off the list from every source, another visit record, a test of another report or another stored candidate file, until the acceptance is undone', () => {
+  const visits = recordsIn({ 'a.json': ['/signin', '/home', '/help'], 'b.json': ['/signin', '/home', '/help'] });
+  const other = { name: 'from c', screens: [SIGNIN_SCREEN, HOME, HELP], source: { record: 'c.json', steps: [1, 3] }, date: '2099-01-01T00:00:00.000Z' };
+  withFolder(Object.fromEntries(Object.entries(visits).map(([name, body]) => [`visits/${name}`, body])), (dir: string) => {
+    const cfg = { ...config, visitRecords: [path.join(dir, 'visits')], storiesDir: path.join(dir, 'stories') };
+    const traced = [{ report: 'other.json', title: 'signs in and opens help', screens: [SIGNIN_SCREEN, HOME, HELP] }];
+    const listed = () => storyCandidates(cfg, map, MAP_FILE, traced).list;
+    storeCandidates(cfg.storiesDir, listed());
+    pickCandidateStep(cfg.storiesDir, listed()[0], { step: 1, on: false });
+    acceptCandidate(cfg.storiesDir, listed()[0], { id: 'home-help', name: 'home and help', author: 'kim' });
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(cfg.storiesDir, 'home-help.json'), 'utf8')).screens, [HOME, HELP]);
+    fs.writeFileSync(path.join(cfg.storiesDir, 'candidates', '2099-01-01-0000000c.json'), JSON.stringify(other));
+    assert.deepEqual(listed(), []);
+    unacceptStory(cfg.storiesDir, 'home-help');
+    assert.deepEqual(listed().map((c) => [c.screens, c.offSteps]), [[[SIGNIN_SCREEN, HOME, HELP], [1]]]);
+  });
+});
+
+test('a candidate from a visit record whose steps were taken out in the candidate file of a test that walked the same order keeps that order off the list once accepted, the test included', () => {
+  withFolder(Object.fromEntries(Object.entries(recordsIn({ 'r.json': ['/signin', '/home', '/help'] })).map(([name, body]) => [`visits/${name}`, body])), (dir: string) => {
+    const traced = [{ report: 't.json', title: 'signs in and opens help', screens: [SIGNIN_SCREEN, HOME, HELP] }];
+    const storiesDir = path.join(dir, 'stories');
+    storeCandidates(storiesDir, storyCandidates({ ...config, visitRecords: [], storiesDir }, map, MAP_FILE, traced).list);
+    const cfg = { ...config, visitRecords: [path.join(dir, 'visits')], storiesDir };
+    const listed = () => storyCandidates(cfg, map, MAP_FILE, traced).list;
+    assert.deepEqual(listed().map((c) => 'record' in c.source), [true]);
+    pickCandidateStep(storiesDir, listed()[0], stepOff(1));
+    acceptCandidate(storiesDir, listed()[0], { id: 'home-help', name: 'home and help', author: 'kim' });
+    assert.deepEqual(listed(), []);
+    unacceptStory(storiesDir, 'home-help');
+    assert.deepEqual(listed().map((c) => [c.screens, c.offSteps]), [[[SIGNIN_SCREEN, HOME, HELP], [1]]]);
+    assert.equal(fs.readdirSync(path.join(storiesDir, 'candidates')).length, 1);
+  });
+});
+
+test('an order accepted with a step taken out stays off the list when the source it was accepted from is gone, a test of it is retitled, or the story is edited', () => {
+  withFolder(Object.fromEntries(Object.entries(recordsIn({ 'r.json': ['/signin', '/home', '/help'] })).map(([name, body]) => [`visits/${name}`, body])), (dir: string) => {
+    const storiesDir = path.join(dir, 'stories');
+    const walking = (title: string) => [{ report: 't.json', title, screens: [SIGNIN_SCREEN, HOME, HELP] }];
+    const cfg = { ...config, visitRecords: [path.join(dir, 'visits')], storiesDir };
+    const listed = (title = 'signs in and opens help') => storyCandidates(cfg, map, MAP_FILE, walking(title)).list;
+    storeCandidates(storiesDir, storyCandidates({ ...cfg, visitRecords: [] }, map, MAP_FILE, walking('signs in and opens help')).list);
+    pickCandidateStep(storiesDir, listed()[0], stepOff(1));
+    acceptCandidate(storiesDir, listed()[0], { id: 'home-help', name: 'home and help', author: 'kim' });
+    const story = loadStories(storiesDir).stories[0];
+    writeStorySteps(storiesDir, 'home-help', { steps: [{ step: 1, screen: HOME }, { step: 2, screen: HELP }, { screen: '/lab#Lab' }], contentHash: story.contentHash });
+    fs.rmSync(path.join(dir, 'visits/r.json'));
+    assert.deepEqual(listed('opens help after signing in'), []);
+  });
+});
+
+test('pressing ✕ on a candidate leaves it on the list when what is left is the order of a story accepted whole', () => {
+  withFolder(Object.fromEntries(Object.entries(recordsIn({ 'r.json': ['/signin', '/home', '/help'] })).map(([name, body]) => [`visits/${name}`, body])), (dir: string) => {
+    const storiesDir = path.join(dir, 'stories');
+    const cfg = { ...config, visitRecords: [path.join(dir, 'visits')], storiesDir };
+    const title = 'opens help';
+    const whole = storyCandidates({ ...cfg, visitRecords: [] }, map, MAP_FILE, [{ report: 't.json', title, screens: [HOME, HELP] }]).list[0];
+    acceptCandidate(storiesDir, whole, { id: 'home-help', name: 'home and help', author: 'kim' });
+    const listed = () => storyCandidates(cfg, map, MAP_FILE, [{ report: 't.json', title, screens: [SIGNIN_SCREEN, HOME, HELP] }]).list;
+    pickCandidateStep(storiesDir, listed()[0], stepOff(1));
+    assert.deepEqual(listed().map((c) => [c.screens, c.offSteps]), [[[SIGNIN_SCREEN, HOME, HELP], [1]]]);
+  });
+});
+
+test('an agent posting a candidate for an order accepted with a step taken out is refused with why, writing nothing', () => {
+  withOrderComment({ screens: LAB_ORDER }, ({ cfg, post, files }) => {
+    post({});
+    const listed = () => storyCandidates(cfg, map, path.join(config.outDir, 'map.json')).list;
+    pickCandidateStep(cfg.storiesDir, listed()[0], stepOff(2));
+    acceptCandidate(cfg.storiesDir, listed()[0], { id: 'lab', name: 'x', author: 'hit' });
+    const before = files();
+    const { id: other } = addMark(cfg.marksDir, { target: { screens: LAB_ORDER }, note: '다시 채워 줘', author: 'hit' }, new Date('2026-10-22T01:00:00Z'));
+    assert.throws(() => post({ comment: other }), { message: '이미 단계를 빼고 스토리 lab 로 받은 화면 순서입니다. 검토자가 받기를 되돌린 뒤에 올릴 수 있습니다' });
+    assert.deepEqual(files(), before);
+  });
+});
+
+test('undoing an acceptance after the story was edited keeps the edited order as a candidate beside the one found', () => {
+  withFolder(recordsIn({ 'r.json': ['/signin', '/home', '/help'] }), (dir: string) => {
+    const cfg = { ...config, visitRecords: [dir], storiesDir: path.join(dir, 'stories') };
+    const listed = () => storyCandidates(cfg, map, MAP_FILE).list;
+    storeCandidates(cfg.storiesDir, listed());
+    pickCandidateStep(cfg.storiesDir, listed()[0], stepOff(1));
+    acceptCandidate(cfg.storiesDir, listed()[0], { id: 'home-help', name: 'home and help', author: 'kim' });
+    const story = loadStories(cfg.storiesDir).stories[0];
+    writeStorySteps(cfg.storiesDir, 'home-help', { steps: [{ step: 1, screen: HOME }, { step: 2, screen: HELP }, { screen: '/lab#Lab' }], contentHash: story.contentHash });
+    unacceptStory(cfg.storiesDir, 'home-help');
+    assert.deepEqual(listed().map((c) => [c.screens, c.offSteps]), [[[SIGNIN_SCREEN, HOME, HELP], [1]], [[HOME, HELP, '/lab#Lab'], undefined]]);
+  });
+});
+
+test('a candidate file with acceptedAs that is not text is skipped with why', () => {
+  withFolder({ 'candidates/2026-10-02-aaaaaaaa.json': { name: 'x', screens: [HOME, HELP], source: { record: 'r.json', steps: [1, 2] }, date: '2026-10-02T00:00:00.000Z', acceptedAs: 3 } }, (dir: string) => {
+    const { list, notices } = storyCandidates({ ...config, visitRecords: [], storiesDir: dir }, map, MAP_FILE);
+    assert.deepEqual(list, []);
+    assert.match(notices[0].reason, /acceptedAs/);
+  });
 });

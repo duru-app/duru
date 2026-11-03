@@ -2172,6 +2172,17 @@ The key of the candidate stays its found order, as the file keeps that order, so
 not moved by a step taken out; the list hides a candidate whose found order is a story only after every step of its
 order is in that story. A candidate whose order has no file yet gets one on the first X, and a file of the same order
 that belongs to a candidate which became a story is left alone (driver's decision in #531, 2026-11-02).
+Once a candidate is accepted with steps taken out, the order it was found in is not offered again from another
+source either, a visit record, a test of another report or another candidate file, until the acceptance is undone
+(#541). An order accepted whole is already hidden by the story, which has that order; hiding only the accepted source
+would offer the same walk again under another name. Accepting writes the story's ID into the candidate file holding
+the steps taken out, as `acceptedAs`, and the list and the undo read that (driver's decision in #541, 2026-11-03).
+Working out at each listing which file became the story, from the steps left and the sources walking the order now,
+split the candidate in two on undo, brought the order back when a test was retitled and hid a candidate on a mere ✕.
+Writing the found order into the story file was compared too; it would survive deleting the candidate file, but it
+adds a key to a file people and agents read, for a case that needs someone to delete that file by hand.
+Undoing a story whose steps were edited after it was accepted also keeps the edited order as a candidate, beside the
+one found, because dropping it would lose what the reviewer wrote.
 
 **Undoing an accepted candidate deletes its story file; the discarded candidates are listed, folded, below the
 candidates.**

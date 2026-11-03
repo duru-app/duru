@@ -1063,7 +1063,10 @@ built before links carried their conditions must be rebuilt first. A wrong call 
 On the review page each step of a candidate has a ✕. Pressing it strikes the step through, and pressing it again puts
 the step back; the last step left cannot be taken out. The steps taken out are kept in the candidate file as
 `offSteps`, `[<step>, …]` numbered from 1, so they stay after a reload, and accepting writes only the steps left into
-the story file. The story keeps the source of the candidate, so the candidate is not offered again.
+the story file. The story keeps the source of the candidate, so the candidate is not offered again. The candidate file
+gets the story's ID as `acceptedAs`, and while that story exists the order the candidate was found in is not offered
+from any other source either. Undoing the acceptance removes `acceptedAs`, and the candidate comes back with its steps
+taken out.
 
 ## Review page
 
