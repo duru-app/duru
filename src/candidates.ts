@@ -408,11 +408,9 @@ function pickedLines({ source, stepFields, lines }: Candidate) {
 
 export function acceptCandidate(dir: string, candidate: Candidate, { id, name, author }: { id: unknown; name: unknown; author: unknown }, now = new Date()) {
   const { source, stepFields } = pickedLines(candidate);
-  if (candidate.skippedByRule) {
-    const kept = storeCandidates(dir, [candidate], now);
-    if (kept.reason) throw new Error(kept.reason);
-  }
-  return addStory(dir, { id, name, screens: withFields({ screens: candidate.screens, stepFields }), author, source }, now);
+  const story = addStory(dir, { id, name, screens: withFields({ screens: candidate.screens, stepFields }), author, source }, now);
+  if (candidate.skippedByRule && !candidate.file) storeCandidates(dir, [candidate], now);
+  return story;
 }
 
 const lineOrder = (a: OffLine, b: OffLine) => a.step - b.step || STEP_FIELDS.indexOf(a.field) - STEP_FIELDS.indexOf(b.field) || a.line - b.line;
@@ -437,7 +435,7 @@ export function unacceptStory(dir: string, id: unknown, rules: SkipRule[] = []) 
   if (!story.source) throw new Error(`스토리 ${id} 는 후보에서 받은 스토리가 아닙니다`);
   const stepFields = story.stepFields && ('comment' in story.source ? story.stepFields : inputFields(story.stepFields.map((f) => f.inputs ?? [])));
   const storyScreens = JSON.stringify(story.screens);
-  const leavesStory = loadStored(dir).found.some((c) => JSON.stringify(('comment' in c.source ? c : ruled(c, rules))?.screens) === storyScreens);
+  const leavesStory = loadStored(dir).found.some((c) => sameSource(c.source, story.source!) && JSON.stringify(('comment' in c.source ? c : ruled(c, rules))?.screens) === storyScreens);
   if (!leavesStory) {
     const kept = storeCandidates(dir, [{ key: story.screens.join(' > '), name: story.id, screens: story.screens, source: story.source, ...carried({ stepFields }) }]);
     if (kept.reason) throw new Error(kept.reason);
@@ -466,8 +464,9 @@ export function undiscardCandidate(dir: string, screens: unknown, { author }: { 
   const discarded = discardedNow(loadDiscarded(dir).discarded).find((d) => JSON.stringify(d.screens) === key);
   if (!discarded) throw new Error(`버린 후보 ${Array.isArray(screens) ? screens.join(' > ') : screens} 가 없습니다`);
   if (isText(discarded.name) && isSource(discarded.source)) {
-    const byRule = isScreenList(discarded.skippedByRule?.found) ? discarded.skippedByRule : undefined;
-    if (byRule && discarded.foundStepFields?.length === byRule.found.length) foundStepFields.set(byRule, discarded.foundStepFields);
+    const found = discarded.skippedByRule?.found;
+    const byRule = storedProblemOf({ ...discarded, screens: found, stepFields: discarded.foundStepFields }) ? undefined : discarded.skippedByRule;
+    if (byRule && discarded.foundStepFields) foundStepFields.set(byRule, discarded.foundStepFields);
     const kept = storeCandidates(dir, [{ key: discarded.screens.join(' > '), name: discarded.name, screens: discarded.screens, source: discarded.source, ...carried(discarded), ...(byRule && { skippedByRule: byRule }) }]);
     if (kept.reason) throw new Error(kept.reason);
   }
@@ -525,6 +524,11 @@ function recordSources(config: any) {
 
 // 순서를 고치면 코멘트 출처의 단계 번호가 바뀌므로, 코멘트 출처는 코멘트로만 맞춘다.
 const sourceKey = (source: Candidate['source']) => JSON.stringify('comment' in source ? { comment: source.comment } : source);
+
+function sameSource(a: Candidate['source'], b: Candidate['source']) {
+  if ('report' in a && 'report' in b) return a.report === b.report && a.tests.some((title) => b.tests.includes(title));
+  return sourceKey(a) === sourceKey(b);
+}
 
 export function storyCandidates(config: any, map: any, mapFile: string, traced: TracedTest[] = []) {
   const { sources, notices: folderNotices } = recordSources(config);
