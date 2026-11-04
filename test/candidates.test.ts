@@ -1377,6 +1377,44 @@ test('the rules reach the same order when they meet an order they already shorte
   });
 });
 
+test('a candidate accepted whole under a rule and brought back stays the order it was found in, stored or not, whatever source already holds that order', () => {
+  const acceptAndUndo = (dir: string, stories: string) => {
+    const [shown] = shownWith(dir, skipStart).list;
+    acceptCandidate(stories, shown, { id: 'a', name: '도움말을 연다', author: 'reviewer' });
+    unacceptStory(stories, 'a', skipStart);
+    const listed = (rules: object[]) => shownWith(dir, rules).list.map((c) => c.screens);
+    assert.deepEqual(listed(skipStart), [[HOME, HELP]]);
+    assert.deepEqual(listed([]), [[SIGNIN, HOME, HELP]]);
+    assert.equal(fs.readdirSync(path.join(stories, 'candidates')).length, 1);
+  };
+  withFolder(recordsIn({ 'a.json': ['/signin', '/home', '/help'] }), (dir: string) => {
+    const stories = path.join(dir, 'stories');
+    storeCandidates(stories, shownWith(dir, skipStart).list);
+    acceptAndUndo(dir, stories);
+  });
+  withFolder(recordsIn({ 'a.json': ['/signin', '/home', '/help'] }), (dir: string) => {
+    acceptAndUndo(dir, path.join(dir, 'stories'));
+  });
+  withFolder(recordsIn({ 'a.json': ['/signin', '/home', '/help'] }), (dir: string) => {
+    const stories = path.join(dir, 'stories');
+    storeCandidates(stories, [{ key: 'x', name: 't', screens: [SIGNIN, HOME, HELP], source: { report: 'r.json', tests: ['t'] } }]);
+    acceptAndUndo(dir, stories);
+  });
+});
+
+test('a discarded file whose found order is not a list of screens brings back the order it shows', () => {
+  withFolder(recordsIn({ 'a.json': ['/signin', '/home', '/help'] }), (dir: string) => {
+    const stories = path.join(dir, 'stories');
+    const [shown] = shownWith(dir, skipStart).list;
+    const { file } = discardCandidate(stories, shown, { reason: '잠깐 뺀다', author: 'reviewer' }, new Date('2026-10-03T00:00:00Z'));
+    const at = path.join(stories, file);
+    fs.writeFileSync(at, JSON.stringify({ ...JSON.parse(fs.readFileSync(at, 'utf8')), skippedByRule: { found: [], steps: [] } }));
+    undiscardCandidate(stories, shown.screens, { author: 'reviewer' }, new Date('2026-10-04T00:00:00Z'));
+    const written = fs.readdirSync(path.join(stories, 'candidates')).map((f) => JSON.parse(fs.readFileSync(path.join(stories, 'candidates', f), 'utf8')).screens);
+    assert.deepEqual(written, [[HOME, HELP]]);
+  });
+});
+
 test('a candidate discarded and brought back keeps the order it was found in, so removing the rule lists that one candidate and no order nobody walked', () => {
   withFolder(recordsIn({ 'a.json': ['/signin', '/home', '/help'] }), (dir: string) => {
     const stories = path.join(dir, 'stories');

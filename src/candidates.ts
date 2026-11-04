@@ -360,15 +360,6 @@ const loadStored = (dir: string) => (isFolder(dir) ? loadFolder(dir, CANDIDATES)
 
 const byFirstSeen = (a: any, b: any) => compare(a.date, b.date) || compare(a.screens.join(' > '), b.screens.join(' > ')) || compare(a.file, b.file);
 
-function firstStored(found: any[]) {
-  const first = new Map<string, any>();
-  for (const entry of [...found].sort(byFirstSeen)) {
-    const key = JSON.stringify(entry.screens);
-    if (!first.has(key)) first.set(key, entry);
-  }
-  return first;
-}
-
 // 쓴 파일은 고치지도 지우지도 않는다.
 export function storeCandidates(dir: string, list: Candidate[], now = new Date()) {
   const folder = path.join(dir, CANDIDATES);
@@ -435,6 +426,10 @@ const stepsLeft = (screens: string[], offSteps: number[]) => sameScreenRuns(scre
 export function acceptCandidate(dir: string, candidate: Candidate, { id, name, author }: { id: unknown; name: unknown; author: unknown }, now = new Date()) {
   const { source, stepFields } = pickedLines(candidate);
   const offSteps = candidate.offSteps ?? [];
+  if (candidate.skippedByRule) {
+    const kept = storeCandidates(dir, [candidate], now);
+    if (kept.reason) throw new Error(kept.reason);
+  }
   if (!offSteps.length) return addStory(dir, { id, name, screens: withFields({ screens: candidate.screens, stepFields }), author, source }, now);
   const groups = stepsLeft(candidate.screens, offSteps);
   const fieldsAt = (i: number): StepFields => stepFields?.[i] ?? {};
@@ -528,7 +523,8 @@ export function unacceptStory(dir: string, id: unknown, rules: SkipRule[] = []) 
     const shown = shownOrder(c.screens, applied);
     return JSON.stringify(stepsLeft(shown, off).map((g) => shown[g[0]])) === storyScreens;
   };
-  const back = accepted.find(leavesStory) ?? [...firstStored(found).values()].find((c) => sameSource(c.source, source) && leavesStory(c));
+  const byDate = [...found].sort(byFirstSeen);
+  const back = accepted.find(leavesStory) ?? byDate.find((c) => sameSource(c.source, source) && leavesStory(c)) ?? byDate.find((c) => !c.offSteps?.length && leavesStory(c));
   if (!back) {
     const kept = storeCandidates(dir, [{ key: story.screens.join(' > '), name: story.id, screens: story.screens, source, ...carried({ stepFields }) }]);
     if (kept.reason) throw new Error(kept.reason);
@@ -545,8 +541,8 @@ export function discardCandidate(dir: string, candidate: Candidate, { reason, au
   const folder = path.join(dir, DISCARDED);
   if (fs.existsSync(folder) && !fs.statSync(folder).isDirectory()) throw new Error(`스토리 폴더 안 ${DISCARDED} 가 파일이라 버린 후보를 쓸 수 없습니다`);
   const byRule = candidate.skippedByRule;
-  const foundOrder = byRule && { skippedByRule: byRule, foundStepFields: foundStepFields.get(byRule) };
-  const discarded = { name: candidate.name, screens: candidate.screens, reason: reason.trim(), author: author.trim(), date: now.toISOString(), source: candidate.source, ...carried(candidate), ...foundOrder };
+  const beforeRule = byRule && { skippedByRule: byRule, foundStepFields: foundStepFields.get(byRule) };
+  const discarded = { name: candidate.name, screens: candidate.screens, reason: reason.trim(), author: author.trim(), date: now.toISOString(), source: candidate.source, ...carried(candidate), ...beforeRule };
   const file = recordName({ ...discarded, id: crypto.randomUUID() });
   writeNewRecord(path.join(folder, file), discarded);
   return { ...discarded, file: path.join(DISCARDED, file) };
@@ -558,8 +554,8 @@ export function undiscardCandidate(dir: string, screens: unknown, { author }: { 
   const discarded = discardedNow(loadDiscarded(dir).discarded).find((d) => JSON.stringify(d.screens) === key);
   if (!discarded) throw new Error(`버린 후보 ${Array.isArray(screens) ? screens.join(' > ') : screens} 가 없습니다`);
   if (isText(discarded.name) && isSource(discarded.source)) {
-    const byRule = Array.isArray(discarded.skippedByRule?.found) ? discarded.skippedByRule : undefined;
-    if (byRule && discarded.foundStepFields) foundStepFields.set(byRule, discarded.foundStepFields);
+    const byRule = isScreenList(discarded.skippedByRule?.found) ? discarded.skippedByRule : undefined;
+    if (byRule && discarded.foundStepFields?.length === byRule.found.length) foundStepFields.set(byRule, discarded.foundStepFields);
     const kept = storeCandidates(dir, [{ key: discarded.screens.join(' > '), name: discarded.name, screens: discarded.screens, source: discarded.source, ...carried(discarded), ...(byRule && { skippedByRule: byRule }) }]);
     if (kept.reason) throw new Error(kept.reason);
   }
