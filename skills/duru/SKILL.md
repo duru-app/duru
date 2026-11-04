@@ -414,7 +414,15 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    `reason` must be that order with the dropped steps taken out, neighbouring steps of one screen joined into one;
    a screen you put in carries `reason` as above. When two listed candidates become the same order, post one
    candidate naming both in `replaces`; if they typed different values into one box, give the value to keep in that
-   step's `inputs`. You may post several candidates for one such comment. The candidates it replaces leave the list. A comment on a screen order takes no `replaces`.
+   step's `inputs`. You may post several candidates for one such comment. The candidates it replaces leave the list.
+   A comment on a screen order takes no `replaces`.
+   When a comment asks for steps to be taken out of a candidate, take out only the steps nobody needs. Keep a step
+   that means something in the story, such as signing in again under another role. Give every dropped step its
+   `reason`, and set `judged: true` on a step you took out without being asked. For a comment with no target, read
+   the list as it is now from `candidates.list` in `GET <review page address>/api/data`; the `screens` of each item
+   is the order to name in `replaces`. Once the candidate is posted, answer with `duru reply`, saying
+   what you took out. When you took the same screen out of several candidates for the same reason, ask in that reply
+   whether to move it to `candidateSkipScreens`, and add it to the config only after the reviewer agrees.
    A comment can also be on several targets or on none. Its line then has `targets`, a list of targets in the shapes
    above, in place of `target`, and `wheres`, the `where` of each target in the same order (`null` for one that has
    none or is no longer found). Answer it once, covering every target it names. With an empty `targets` the reviewer
