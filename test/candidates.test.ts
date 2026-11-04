@@ -1890,6 +1890,22 @@ test('with a rule, a candidate accepted with a step taken out keeps off the list
   });
 });
 
+test('with a rule, a candidate accepted whole and brought back stays the one file it was found as, so removing the rule lists one candidate and no order nobody walked', () => {
+  withFolder(recordsIn({ 'a.json': ['/signin', '/home', '/help'] }), (dir: string) => {
+    const stories = path.join(dir, 'stories');
+    const listed = (rules: object[] = skipStart) => shownWith(dir, rules).list;
+    storeCandidates(stories, listed());
+    const files = () => fs.readdirSync(path.join(stories, 'candidates'));
+    assert.equal(files().length, 1);
+
+    acceptCandidate(stories, listed()[0], { id: 'a', name: '도움말을 연다', author: 'reviewer' });
+    assert.equal(unacceptStory(stories, 'a', skipStart).key, [HOME, HELP].join(' > '));
+    assert.equal(files().length, 1);
+    assert.deepEqual(listed().map((c) => c.screens), [[HOME, HELP]]);
+    assert.deepEqual(listed([]).map((c) => c.screens), [[SIGNIN, HOME, HELP]]);
+  });
+});
+
 test('a candidate file with acceptedAs that is not text is skipped with why', () => {
   withFolder({ 'candidates/2026-10-02-aaaaaaaa.json': { name: 'x', screens: [HOME, HELP], source: { record: 'r.json', steps: [1, 2] }, date: '2026-10-02T00:00:00.000Z', acceptedAs: 3 } }, (dir: string) => {
     const { list, notices } = storyCandidates({ ...config, visitRecords: [], storiesDir: dir }, map, MAP_FILE);

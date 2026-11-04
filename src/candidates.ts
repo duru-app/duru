@@ -360,6 +360,15 @@ const loadStored = (dir: string) => (isFolder(dir) ? loadFolder(dir, CANDIDATES)
 
 const byFirstSeen = (a: any, b: any) => compare(a.date, b.date) || compare(a.screens.join(' > '), b.screens.join(' > ')) || compare(a.file, b.file);
 
+function firstStored(found: any[]) {
+  const first = new Map<string, any>();
+  for (const entry of [...found].sort(byFirstSeen)) {
+    const key = JSON.stringify(entry.screens);
+    if (!first.has(key)) first.set(key, entry);
+  }
+  return first;
+}
+
 // 쓴 파일은 고치지도 지우지도 않는다.
 export function storeCandidates(dir: string, list: Candidate[], now = new Date()) {
   const folder = path.join(dir, CANDIDATES);
@@ -510,14 +519,16 @@ export function unacceptStory(dir: string, id: unknown, rules: SkipRule[] = []) 
   if (!story.source) throw new Error(`스토리 ${id} 는 후보에서 받은 스토리가 아닙니다`);
   const source = story.source;
   const stepFields = story.stepFields && ('comment' in source ? story.stepFields : inputFields(story.stepFields.map((f) => f.inputs ?? [])));
-  const accepted = loadStored(dir).found.filter((c) => c.acceptedAs === story.id);
+  const found = loadStored(dir).found;
+  const accepted = found.filter((c) => c.acceptedAs === story.id);
   const storyScreens = JSON.stringify(story.screens);
-  const back = accepted.find((c) => {
+  const leavesStory = (c: any) => {
     const applied = rulesFor(c.source, rules);
     const off = shownOffSteps(c.screens, c.offSteps, applied) ?? [];
     const shown = shownOrder(c.screens, applied);
     return JSON.stringify(stepsLeft(shown, off).map((g) => shown[g[0]])) === storyScreens;
-  });
+  };
+  const back = accepted.find(leavesStory) ?? [...firstStored(found).values()].find((c) => sameSource(c.source, source) && leavesStory(c));
   if (!back) {
     const kept = storeCandidates(dir, [{ key: story.screens.join(' > '), name: story.id, screens: story.screens, source, ...carried({ stepFields }) }]);
     if (kept.reason) throw new Error(kept.reason);

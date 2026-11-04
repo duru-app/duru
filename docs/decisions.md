@@ -2212,6 +2212,8 @@ Working out at each listing which file became the story, from the steps left and
 split the candidate in two on undo, brought the order back when a test was retitled and hid a candidate on a mere ✕.
 Writing the found order into the story file was compared too; it would survive deleting the candidate file, but it
 adds a key to a file people and agents read, for a case that needs someone to delete that file by hand.
+A story accepted whole has no `acceptedAs`, so the undo finds its file by the source and the order the rules leave;
+storing the story's order instead would write a file through which nothing ever walked.
 Undoing a story whose steps were edited after it was accepted also keeps the edited order as a candidate, beside the
 one found, because dropping it would lose what the reviewer wrote.
 
