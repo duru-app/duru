@@ -1016,7 +1016,9 @@ follow the limits of reading traces:
   by the part after `#`, or a modal or tab that opens without changing the address, does not show as a step.
 
 On the review page a candidate is accepted, which writes a story file into `storiesDir`, or discarded with a
-reason, which writes a file into `discarded/` in `storiesDir` so the same order does not come back. Undoing an
+reason, which writes a file into `discarded/` in `storiesDir` so the same order does not come back. Accepting a
+candidate that `candidateSkipScreens` shortened also writes its found order into `candidates/` if no file holds that
+order yet, under the candidate's name. Undoing an
 acceptance deletes that story file, and the candidate is listed again; if `candidates/` has no file for its screen
 order yet, one is written first, under the story's ID, so it comes back even once its record is gone. Undoing a
 discard writes another file into `discarded/`, `{ "screens", "kind": "undo", "author", "date" }`, with no reason, and
