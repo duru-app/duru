@@ -1028,8 +1028,8 @@ the discard kept.
 
 `rebuild` keeps each candidate as a file in `candidates/` in `storiesDir`, one for each screen order that has no
 file there yet, holding the name, the screens, the source and the date it was first seen. Files are only added,
-never deleted, and changed only where the review page keeps the lines switched off on a candidate from a comment
-or the steps taken out of a candidate; keep the folder in git with the stories. If a file cannot be written,
+never deleted, and changed only where the review page keeps the lines switched off on a candidate from a comment,
+the steps taken out of a candidate or the story it became; keep the folder in git with the stories. If a file cannot be written,
 `rebuild` stops storing and prints why under the candidate line. The candidates listed are these files together
 with what the records and traces give now, and for a screen order in both, what they give now is shown. So a candidate stays
 after a `rebuild` whose results have no traces, or once its record is gone. An accepted or discarded candidate keeps
