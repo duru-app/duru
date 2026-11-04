@@ -1377,6 +1377,46 @@ test('the rules reach the same order when they meet an order they already shorte
   });
 });
 
+test('a candidate discarded and brought back keeps the order it was found in, so removing the rule lists that one candidate and no order nobody walked', () => {
+  withFolder(recordsIn({ 'a.json': ['/signin', '/home', '/help'] }), (dir: string) => {
+    const stories = path.join(dir, 'stories');
+    const listed = (candidateSkipScreens: object[]) => storyCandidates({ ...config, visitRecords: [dir], storiesDir: stories, candidateSkipScreens }, map, MAP_FILE, []).list.map((c) => c.screens);
+    storeCandidates(stories, shownWith(dir, skipStart).list);
+    const [shown] = shownWith(dir, skipStart).list;
+    discardCandidate(stories, shown, { reason: '잠깐 뺀다', author: 'reviewer' }, new Date('2026-10-03T00:00:00Z'));
+    undiscardCandidate(stories, shown.screens, { author: 'reviewer' }, new Date('2026-10-04T00:00:00Z'));
+    assert.deepEqual(listed(skipStart), [[HOME, HELP]]);
+    assert.deepEqual(listed([]), [[SIGNIN, HOME, HELP]]);
+    assert.equal(fs.readdirSync(path.join(stories, 'candidates')).length, 1);
+  });
+  withFolder(recordsIn({ 'a.json': ['/signin', '/home', '/help'] }), (dir: string) => {
+    const stories = path.join(dir, 'stories');
+    const [shown] = shownWith(dir, skipStart).list;
+    discardCandidate(stories, shown, { reason: '저장 전에 버린다', author: 'reviewer' }, new Date('2026-10-03T00:00:00Z'));
+    undiscardCandidate(stories, shown.screens, { author: 'reviewer' }, new Date('2026-10-04T00:00:00Z'));
+    const [name] = fs.readdirSync(path.join(stories, 'candidates'));
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(stories, 'candidates', name), 'utf8')).screens, [SIGNIN, HOME, HELP]);
+  });
+});
+
+test('stored candidates of one report that the rules make the same are one candidate with every title in its source, and stored candidates of different reports keep only the first titles', () => {
+  const report = 'results/playwright/e2e.json';
+  const listedWith = (files: [string, string[], string, string][]) => {
+    let listed: Candidate[] = [];
+    withStoryCopy((dir: string) => {
+      fs.mkdirSync(path.join(dir, 'candidates'));
+      for (const [date, screens, from, title] of files) {
+        fs.writeFileSync(path.join(dir, 'candidates', `${date}-${title}.json`), JSON.stringify({ name: title, screens, source: { report: from, tests: [title] }, date }));
+      }
+      listed = storyCandidates({ ...config, visitRecords: [], storiesDir: dir, candidateSkipScreens: [{ screen: SIGNIN, where: 'start' }] }, map, MAP_FILE, []).list;
+    });
+    return listed.map((c) => [c.screens, c.source]);
+  };
+  const orders: [string, string[]][] = [['2026-10-01', [HELP]], ['2026-10-02', [SIGNIN, HELP]]];
+  assert.deepEqual(listedWith(orders.map(([date, screens], i) => [date, screens, report, `t${i}`])), [[[HELP], { report, tests: ['t0', 't1'] }]]);
+  assert.deepEqual(listedWith(orders.map(([date, screens], i) => [date, screens, `${report}${i}`, `t${i}`])), [[[HELP], { report: `${report}0`, tests: ['t0'] }]]);
+});
+
 test('steps that the rules leave side by side become one step that keeps the needs, the link needs and the expects of every step, and inputs of the same box keep the value of the later step', () => {
   withStoryCopy((dir: string) => {
     fs.mkdirSync(path.join(dir, 'candidates'));
