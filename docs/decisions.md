@@ -1701,6 +1701,8 @@ already stored. Applying the rules on every listing keeps the found order in the
 shows the candidate as it was found, and the page can show the steps the rules took out beside the order it kept. A
 discarded file keeps that found order too, because it stores the order the reviewer saw: bringing the candidate back
 from only that order would store a second file through which nothing ever walked.
+Accepting a candidate a rule cut stores its found order for the same reason, and undoing writes no file when a stored
+one already leaves the story's order under the rules, whichever source it holds.
 Applying them once, when a candidate is stored, would bake one version of the rules into every file, and a rule added
 later could not reach the candidates that were already stored. The cost is that the key is the order after the rules,
 so changing a rule moves a comment written on a candidate under 「떨어져 나감」: a comment is attached to the screens a
