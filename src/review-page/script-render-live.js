@@ -333,12 +333,12 @@ for (const sash of /** @type {NodeListOf<HTMLElement>} */ (document.querySelecto
   });
 }
 
-const FIELDS = 'input, textarea, select';
+const FIELDS = 'input, textarea, select, button[name]';
 /** @typedef {HTMLInputElement | HTMLTextAreaElement} TextField */
 const fieldKey = (f) => [f.localName, f.type, f.name, f.placeholder, f.getAttribute('aria-label'), f.className, f.closest('[id]')?.id].join('|');
 const fieldsLike = (key) => [.../** @type {NodeListOf<TextField>} */ (document.querySelectorAll(FIELDS))].filter((f) => fieldKey(f) === key);
 
-// 다시 그리면 입력 칸이 새로 만들어지므로, 쓰던 칸과 생김새가 같은 칸으로 초점과 커서를 돌려 둔다. 같은 생김새의 칸 수가 바뀌었으면 어느 칸인지 알 수 없으므로 돌려 두지 않는다.
+// 다시 그린 뒤 쓰던 입력 필드나 name 이 붙은 버튼과 생김새가 같은 것으로 포커스와 커서를 되돌린다. 같은 생김새가 몇 개인지 바뀌었으면 어느 것인지 알 수 없으므로 되돌리지 않는다.
 function fieldPlace() {
   const field = /** @type {TextField} */ (document.activeElement);
   if (!field?.matches?.(FIELDS)) return null;
