@@ -526,6 +526,11 @@
   :is(.story-gaps, .story-needs) { margin: 12px 0; }
   :is(.story-gaps, .story-needs) > summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted); }
   .story-needs > summary + * { margin-top: 8px; }
+  .found-order { margin: 8px 0; }
+  .found-order > summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted); }
+  .found-order ol { margin: 6px 0 0; padding-left: 20px; font-size: 12px; }
+  .found-order li { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+  .found-order li.skipped .found-screen { text-decoration: line-through; color: var(--muted); }
   .story-gaps .lead { margin: 6px 0 0; font-size: 12px; }
   .story-gaps h3 { margin: 10px 0 0; font-size: 13px; }
   .canvas > .mark { position: absolute; }

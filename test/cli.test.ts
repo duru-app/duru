@@ -851,6 +851,30 @@ test('rebuild counts the story candidates from the visit records and from traces
   }
 });
 
+test('rebuild counts the candidates the candidateSkipScreens rules took a screen out of, prints that count only while there is a rule, and names each rule screen that is neither on the map nor an address a candidate went through', () => {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    const configFile = path.join(copy, 'config.json');
+    const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    const candidateSkipScreens = [{ screen: '/help#Help', where: 'end' }, { screen: '/nowhere#Nowhere', where: 'any' }, { screen: '/beta/inbox', where: 'any' }];
+    fs.writeFileSync(configFile, JSON.stringify({ ...config, storiesDir: 'example-stories', visitRecords: ['example-visits'], candidateSkipScreens }));
+    const ruled = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+    assert.match(ruled, /^story candidates 2 \| from traces 0 \| cut by candidateSkipScreens 2 \| newly stored 2 \| files skipped 1$/m);
+    assert.match(ruled, /^ {2}candidateSkipScreens: \/nowhere#Nowhere is neither a screen on the map nor an address a candidate went through$/m);
+    assert.doesNotMatch(ruled, /candidateSkipScreens: \/help#Help/);
+    assert.doesNotMatch(ruled, /candidateSkipScreens: \/beta\/inbox/);
+    const stored = fs.readdirSync(path.join(copy, 'example-stories/candidates')).map((f) => JSON.parse(fs.readFileSync(path.join(copy, 'example-stories/candidates', f), 'utf8')).screens.at(-1));
+    assert.deepEqual(stored.sort(), ['/help#Help', '/help#Help']);
+
+    fs.writeFileSync(configFile, JSON.stringify({ ...config, storiesDir: 'example-stories', visitRecords: ['example-visits'] }));
+    const plain = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+    assert.match(plain, /^story candidates 2 \| from traces 0 \| newly stored 0 \| files skipped 1$/m);
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+});
+
 for (const args of [['nope', 'x.json'], ['extract', 'x.json', 'out.json'], ['rebuild', 'x.json', '--port', '5000'], ['tasks', 'x.json', '--port', '5000'], ['review', 'x.json', '--port', 'abc'], ['reply', 'x.json', 'id'], ['reply', 'x.json', 'id', 'text', '--port', '5000'], ['review', 'x.json', '--server', 'http://127.0.0.1:1/'], ['wait', 'x.json'], ['wait', 'x.json', '--server'], ['wait', 'x.json', '--port', '5000'], ['case', 'x.json', 'ended', '/lab#Lab'], ['undecided', 'x.json', 'ended', 'legacy'], ['undecided', 'x.json', 'ended', '--new', '--new']]) {
   test(`"${args.join(' ')}" prints usage and exits with 2`, () => {
     assert.throws(

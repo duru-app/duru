@@ -312,6 +312,14 @@ export function loadConfig(configPath: string) {
   if (!Array.isArray(visitRecords) || !visitRecords.every(isText)) {
     throw new Error(`visitRecords must be a list of record files or folders, such as ["qa/records"], not ${JSON.stringify(raw.visitRecords)}`);
   }
+  const candidateSkipScreens = raw.candidateSkipScreens ?? [];
+  const isSkipRule = (r: any) => isPlainObject(r) && Object.keys(r).length === 2
+    && Object.keys(r).every((k) => k === 'screen' || k === 'where') && isText(r.screen)
+    && (r.where === 'start' || r.where === 'end' || r.where === 'any');
+  if (!Array.isArray(candidateSkipScreens) || !candidateSkipScreens.every(isSkipRule)) {
+    throw new Error('candidateSkipScreens must be a list of { "screen", "where" }, where is "start", "end" or "any": the screens to take out of the story candidates from visit records and traces, '
+      + `such as [{ "screen": "/signin#SignIn", "where": "start" }], not ${JSON.stringify(raw.candidateSkipScreens)}`);
+  }
   if (raw.author !== undefined && !(typeof raw.author === 'string' && raw.author.trim())) {
     throw new Error(`author must be the name to sign review marks and judgments with, such as "Kim Min", not ${JSON.stringify(raw.author)}`);
   }
@@ -434,6 +442,7 @@ export function loadConfig(configPath: string) {
     judgmentsDir: raw.judgmentsDir ? at(raw.judgmentsDir) : path.join(outDir, 'judgments'),
     storiesDir: raw.storiesDir ? at(raw.storiesDir) : path.join(outDir, 'stories'),
     visitRecords: visitRecords.map(at),
+    candidateSkipScreens: candidateSkipScreens.map((r) => ({ screen: r.screen.trim(), where: r.where })),
     tests,
     app,
   };
