@@ -775,6 +775,8 @@ function replacedCandidates(asked: AskedReplace[], list: Candidate[], kept: stri
     const where = `replaces 의 ${i + 1} 번째 원래 후보 ${orderKey(r.screens)}`;
     const candidate = list.find((c) => isDeepStrictEqual(c.screens, r.screens));
     if (!candidate) throw new Error(`${where} 는 지금 후보 목록에 없습니다`);
+    const taken = candidate.offSteps?.find((step) => !r.dropped.some((d) => d.step === step));
+    if (taken) throw new Error(`${where} 의 ${taken} 번째 단계는 검토자가 ✕ 로 뺐습니다. dropped 에 step 과 reason 으로 적습니다`);
     const groups = stepsLeft(r.screens, r.dropped.map((d) => d.step));
     const left = groups.map((g) => r.screens[g[0]]);
     if (!isDeepStrictEqual(left, kept)) throw new Error(leftProblem(where, left, groups, kept));
@@ -810,7 +812,7 @@ function inputClash(originals: Originals, k: number | undefined, typed: StepFiel
     && inputs.flat().some((other) => sameBox(other, input) && !isDeepStrictEqual(other.value, input.value))) ?? null;
 }
 
-const ownLines =(fields: StepFields, from: StepFields) => Object.fromEntries(Object.entries(fields)
+const ownLines = (fields: StepFields, from: StepFields) => Object.fromEntries(Object.entries(fields)
   .map(([key, lines]) => [key, (lines as unknown[]).filter((line) => !((from[key as LineField] ?? []) as unknown[]).some((o) => isDeepStrictEqual(o, line)))] as const)
   .filter(([, lines]) => lines.length));
 
@@ -868,7 +870,7 @@ export function addCommentCandidate(config: any, map: any, mapFile: string, trac
   const holders = [...loadStored(config.storiesDir).found, ...stories, ...discardedNow(loadDiscarded(config.storiesDir).discarded)];
   if (replacedIn(holders).some((r) => JSON.stringify(r.screens) === key)) throw new Error('이 화면 순서는 다른 후보가 이미 대신한 원래 후보의 순서입니다');
 
-  const added =steps.flatMap((s, i) => (s.reason === undefined ? [] : [{ step: i + 1, reason: s.reason }]));
+  const added = steps.flatMap((s, i) => (s.reason === undefined ? [] : [{ step: i + 1, reason: s.reason }]));
   const keptAt = steps.map((_, i) => (kept.includes(i) ? kept.indexOf(i) : undefined));
   const lines = steps.map(({ fields }, i) => {
     if (!originals) return { fields, own: Object.fromEntries(Object.entries(fields).filter(([k]) => !typed.get(i)?.[k])) };

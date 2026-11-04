@@ -1635,7 +1635,7 @@ test('originals that typed different values into one box are refused until the a
   });
 });
 
-test('an original stays out of the list after candidateSkipScreens changes its order, from a record and from a stored file, while another comment\'s candidate is not hidden by it', () => {
+test('an original stays out of the list after candidateSkipScreens changes its order, from a record and from a stored file', () => {
   withReplaceable(HELP_VISITS, ({ cfg, comment, post }) => {
     const a = [SIGNIN, HOME, HELP];
     post(comment({ candidate: a.join(' > ') }), { name: '홈에서 도움말을 연다', screens: [HOME, HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }] }] });
@@ -1643,6 +1643,28 @@ test('an original stays out of the list after candidateSkipScreens changes its o
     assert.deepEqual(names(), ['b', '홈에서 도움말을 연다']);
     storeCandidates(cfg.storiesDir, storyCandidates(cfg, map, MAP_FILE).list);
     assert.deepEqual(names(), ['b', '홈에서 도움말을 연다']);
+  });
+});
+
+test('replacing one of the candidates answering a comment on a screen order leaves the others from that comment listed', () => {
+  withReplaceable(HELP_VISITS, ({ comment, post, listed }) => {
+    const asked = comment({ screens: [HOME, LAB] });
+    post(asked, { name: '첫째', screens: [HOME, { screen: HELP, reason: '도움말을 거칩니다' }, LAB] });
+    post(asked, { name: '둘째', screens: [HOME, { screen: SIGNIN, reason: '다시 로그인합니다' }, LAB] });
+    post(comment({ candidate: [HOME, HELP, LAB].join(' > ') }), { name: '첫째를 고침', screens: [HELP, LAB], replaces: [{ screens: [HOME, HELP, LAB], dropped: [{ step: 1, reason: '시험 준비입니다' }] }] });
+    assert.deepEqual(listed().list.map((c) => c.name).filter((n) => n !== 'a' && n !== 'b').sort(), ['둘째', '첫째를 고침']);
+  });
+});
+
+test('a candidate that replaces another must drop the steps the reviewer took out of it with ✕', () => {
+  withReplaceable(HELP_VISITS, ({ cfg, comment, post, listed, stored }) => {
+    const a = [SIGNIN, HOME, HELP];
+    pickCandidateStep(cfg.storiesDir, listed().list.find((c) => c.name === 'a')!, { step: 2, on: false });
+    const id = comment({ candidate: a.join(' > ') });
+    assert.throws(() => post(id, { name: '홈부터', screens: [HOME, HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }] }] }),
+      { message: `replaces 의 1 번째 원래 후보 ${a.join(' > ')} 의 2 번째 단계는 검토자가 ✕ 로 뺐습니다. dropped 에 step 과 reason 으로 적습니다` });
+    const posted = post(id, { name: '도움말만', screens: [HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }, { step: 2, reason: '검토자가 뺐습니다' }] }] });
+    assert.deepEqual(stored(posted).screens, [HELP]);
   });
 });
 

@@ -410,7 +410,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    a candidate must name in `replaces` each listed candidate it takes the place of: `{ "screens": [ … ], "dropped":
    [ { "step", "reason", "judged" }, … ] }`, where `screens` is that candidate's order as listed now, `step` is the
    number of a step taken out of that order, from 1, `reason` is one line on why it goes, and `judged: true` marks a
-   step you took out on your own judgment rather than because the reviewer asked. The steps you post without
+   step you took out on your own judgment rather than because the reviewer asked. A step the reviewer took out with ✕
+   must be in `dropped` too. The steps you post without
    `reason` must be that order with the dropped steps taken out, neighbouring steps of one screen joined into one;
    a screen you put in carries `reason` as above. When two listed candidates become the same order, post one
    candidate naming both in `replaces`; if they typed different values into one box, give the value to keep in that
