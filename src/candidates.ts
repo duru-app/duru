@@ -444,7 +444,9 @@ export function discardCandidate(dir: string, candidate: Candidate, { reason, au
   writableStoriesFolder(dir);
   const folder = path.join(dir, DISCARDED);
   if (fs.existsSync(folder) && !fs.statSync(folder).isDirectory()) throw new Error(`스토리 폴더 안 ${DISCARDED} 가 파일이라 버린 후보를 쓸 수 없습니다`);
-  const discarded = { name: candidate.name, screens: candidate.screens, reason: reason.trim(), author: author.trim(), date: now.toISOString(), source: candidate.source, ...carried(candidate) };
+  const byRule = candidate.skippedByRule;
+  const foundOrder = byRule && { skippedByRule: byRule, foundStepFields: foundStepFields.get(byRule) };
+  const discarded = { name: candidate.name, screens: candidate.screens, reason: reason.trim(), author: author.trim(), date: now.toISOString(), source: candidate.source, ...carried(candidate), ...foundOrder };
   const file = recordName({ ...discarded, id: crypto.randomUUID() });
   writeNewRecord(path.join(folder, file), discarded);
   return { ...discarded, file: path.join(DISCARDED, file) };
@@ -456,7 +458,9 @@ export function undiscardCandidate(dir: string, screens: unknown, { author }: { 
   const discarded = discardedNow(loadDiscarded(dir).discarded).find((d) => JSON.stringify(d.screens) === key);
   if (!discarded) throw new Error(`버린 후보 ${Array.isArray(screens) ? screens.join(' > ') : screens} 가 없습니다`);
   if (isText(discarded.name) && isSource(discarded.source)) {
-    const kept = storeCandidates(dir, [{ key: discarded.screens.join(' > '), name: discarded.name, screens: discarded.screens, source: discarded.source, ...carried(discarded) }]);
+    const byRule = Array.isArray(discarded.skippedByRule?.found) ? discarded.skippedByRule : undefined;
+    if (byRule && discarded.foundStepFields) foundStepFields.set(byRule, discarded.foundStepFields);
+    const kept = storeCandidates(dir, [{ key: discarded.screens.join(' > '), name: discarded.name, screens: discarded.screens, source: discarded.source, ...carried(discarded), ...(byRule && { skippedByRule: byRule }) }]);
     if (kept.reason) throw new Error(kept.reason);
   }
   const undone = { screens: discarded.screens, kind: 'undo', author: author.trim(), date: now.toISOString() };
@@ -564,16 +568,23 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   }
   for (const key of fromTraces.keys()) seen.add(key);
   const byFirstSeen = stored.sort((a, b) => compare(a.date, b.date) || compare(a.screens.join(' > '), b.screens.join(' > ')));
+  const storedTests = new Map<string, TestsSource>();
   for (const { name, screens, source, file, offLines, ...rest } of byFirstSeen) {
     const base = { key: screens.join(' > '), name, screens, source, ...carried(rest) } as Candidate;
     const candidate = 'comment' in source ? base : ruled(base, rules);
     if (!candidate) continue;
     const key = JSON.stringify(candidate.screens);
+    const titles = storedTests.get(key);
+    if (titles && 'tests' in source && titles.report === source.report && !taken.has(sourceKey(candidate.source))) {
+      titles.tests.push(...source.tests.filter((title: string) => !titles.tests.includes(title)));
+      continue;
+    }
     if (seen.has(key) || taken.has(sourceKey(candidate.source))) {
       gone[candidate.key] ??= name;
       continue;
     }
     seen.add(key);
+    if ('tests' in source) storedTests.set(key, source);
     const picks = 'comment' in candidate.source && { file, lines: agentLines(candidate.source, rest.stepFields, offLines) };
     list.push({ ...candidate, ...picks });
   }
