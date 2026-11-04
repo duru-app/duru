@@ -408,6 +408,10 @@ function pickedLines({ source, stepFields, lines }: Candidate) {
 
 export function acceptCandidate(dir: string, candidate: Candidate, { id, name, author }: { id: unknown; name: unknown; author: unknown }, now = new Date()) {
   const { source, stepFields } = pickedLines(candidate);
+  if (candidate.skippedByRule) {
+    const kept = storeCandidates(dir, [candidate], now);
+    if (kept.reason) throw new Error(kept.reason);
+  }
   return addStory(dir, { id, name, screens: withFields({ screens: candidate.screens, stepFields }), author, source }, now);
 }
 
@@ -426,14 +430,18 @@ export function pickCandidateLine(dir: string, candidate: Candidate, { step, fie
   return { file: candidate.file, offLines };
 }
 
-export function unacceptStory(dir: string, id: unknown) {
+export function unacceptStory(dir: string, id: unknown, rules: SkipRule[] = []) {
   if (!isFolder(dir)) throw new Error(`스토리 폴더 ${dir} 가 폴더가 아니라 스토리 파일을 지울 수 없습니다`);
   const story = loadStories(dir).stories.find((s) => s.id === id);
   if (!story) throw new Error(`스토리 ${id} 를 찾지 못했습니다`);
   if (!story.source) throw new Error(`스토리 ${id} 는 후보에서 받은 스토리가 아닙니다`);
   const stepFields = story.stepFields && ('comment' in story.source ? story.stepFields : inputFields(story.stepFields.map((f) => f.inputs ?? [])));
-  const kept = storeCandidates(dir, [{ key: story.screens.join(' > '), name: story.id, screens: story.screens, source: story.source, ...carried({ stepFields }) }]);
-  if (kept.reason) throw new Error(kept.reason);
+  const storyScreens = JSON.stringify(story.screens);
+  const leavesStory = loadStored(dir).found.some((c) => JSON.stringify(('comment' in c.source ? c : ruled(c, rules))?.screens) === storyScreens);
+  if (!leavesStory) {
+    const kept = storeCandidates(dir, [{ key: story.screens.join(' > '), name: story.id, screens: story.screens, source: story.source, ...carried({ stepFields }) }]);
+    if (kept.reason) throw new Error(kept.reason);
+  }
   fs.rmSync(path.join(dir, story.file));
   return { id: story.id, screens: story.screens, file: story.file };
 }
@@ -445,8 +453,8 @@ export function discardCandidate(dir: string, candidate: Candidate, { reason, au
   const folder = path.join(dir, DISCARDED);
   if (fs.existsSync(folder) && !fs.statSync(folder).isDirectory()) throw new Error(`스토리 폴더 안 ${DISCARDED} 가 파일이라 버린 후보를 쓸 수 없습니다`);
   const byRule = candidate.skippedByRule;
-  const foundOrder = byRule && { skippedByRule: byRule, foundStepFields: foundStepFields.get(byRule) };
-  const discarded = { name: candidate.name, screens: candidate.screens, reason: reason.trim(), author: author.trim(), date: now.toISOString(), source: candidate.source, ...carried(candidate), ...foundOrder };
+  const beforeRule = byRule && { skippedByRule: byRule, foundStepFields: foundStepFields.get(byRule) };
+  const discarded = { name: candidate.name, screens: candidate.screens, reason: reason.trim(), author: author.trim(), date: now.toISOString(), source: candidate.source, ...carried(candidate), ...beforeRule };
   const file = recordName({ ...discarded, id: crypto.randomUUID() });
   writeNewRecord(path.join(folder, file), discarded);
   return { ...discarded, file: path.join(DISCARDED, file) };
@@ -458,8 +466,8 @@ export function undiscardCandidate(dir: string, screens: unknown, { author }: { 
   const discarded = discardedNow(loadDiscarded(dir).discarded).find((d) => JSON.stringify(d.screens) === key);
   if (!discarded) throw new Error(`버린 후보 ${Array.isArray(screens) ? screens.join(' > ') : screens} 가 없습니다`);
   if (isText(discarded.name) && isSource(discarded.source)) {
-    const byRule = Array.isArray(discarded.skippedByRule?.found) ? discarded.skippedByRule : undefined;
-    if (byRule && discarded.foundStepFields) foundStepFields.set(byRule, discarded.foundStepFields);
+    const byRule = isScreenList(discarded.skippedByRule?.found) ? discarded.skippedByRule : undefined;
+    if (byRule && discarded.foundStepFields?.length === byRule.found.length) foundStepFields.set(byRule, discarded.foundStepFields);
     const kept = storeCandidates(dir, [{ key: discarded.screens.join(' > '), name: discarded.name, screens: discarded.screens, source: discarded.source, ...carried(discarded), ...(byRule && { skippedByRule: byRule }) }]);
     if (kept.reason) throw new Error(kept.reason);
   }
