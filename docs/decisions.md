@@ -5368,6 +5368,31 @@ Compared:
 - Keeping every request the browser sent: one refused at connect or cut before its body was sent never reached the
   server whole.
 
+**The map comparison script and the verifier's procedure live in this repository; the client they run on and their
+results do not.**
+Chosen by the driver for #546 (2026-11-04). The first version kept both files on one PC because their results name a
+private client. Reading the files showed the name was only in one default path and in the results, so moving those out
+left nothing private in the files. The script is under `scripts/` because whoever prepares a pull request runs it and
+duru's users do not. A PC without the client's config still cannot run the comparison; the script says so and stops.
+Compared:
+- Keeping both files on the PC: another PC or session could not read the procedure, the script got no review, and
+  losing the PC lost them.
+- A private repository: less to change, but the public `CLAUDE.md` would point at files others cannot read, and the
+  script would still get no review here.
+
+**The comparison runs on every pull request that can change the map; a verifier runs on a new feature or a reported
+difference, and any failure on the pull request's side holds the merge until a second run clears it.**
+Chosen by the driver for #546 (2026-11-04). A comparison took 11 to 23 seconds and 10 of the last 25 merges showed a
+difference; a verifier took about 8 minutes and 145,000 tokens, and three on a PRD feature's first pull request has
+not been run yet. The failure rule costs one more run when the network was at fault, and a broken pull request does
+not pass as "could not run".
+Compared:
+- Comparison only, with no verifier: cheaper, but the problem the first verifier found on #536 showed nothing in the
+  comparison.
+- One verifier even on a new feature: cheaper on those pull requests, with fewer chances to catch a problem.
+- Telling the cause of a failure from its error text: a crash caused by the pull request read as "could not run", and
+  rewording a message would change the decision with nothing to notice it.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
