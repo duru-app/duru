@@ -34,12 +34,14 @@ function parseArgs(argv) {
 const git = (...args) => execFileSync('git', ['-C', REPO, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const short = (sha) => sha.slice(0, 8);
 
+function lockedVersions(file) {
+  const { packages } = JSON.parse(fs.readFileSync(file, 'utf8'));
+  return JSON.stringify(Object.entries(packages).filter(([name]) => name).map(([name, { version }]) => [name, version]).sort());
+}
+
 function installedFrom(dir) {
   const hidden = path.join(REPO, 'node_modules/.package-lock.json');
-  if (!fs.existsSync(hidden)) return false;
-  const installed = JSON.parse(fs.readFileSync(hidden, 'utf8')).packages;
-  const wanted = JSON.parse(fs.readFileSync(path.join(dir, 'package-lock.json'), 'utf8')).packages;
-  return Object.entries(wanted).every(([name, { version, optional }]) => !name || installed[name]?.version === version || (optional && !installed[name]));
+  return fs.existsSync(hidden) && lockedVersions(hidden) === lockedVersions(path.join(dir, 'package-lock.json'));
 }
 
 function checkout(sha, dir) {
@@ -50,7 +52,7 @@ function checkout(sha, dir) {
     fs.symlinkSync(path.join(REPO, 'node_modules'), path.join(dir, 'node_modules'));
     return 'shared node_modules';
   }
-  execFileSync('npm', ['ci', '--no-audit', '--no-fund'], { cwd: dir, stdio: 'ignore' });
+  execFileSync('npm', ['ci', '--no-audit', '--no-fund'], { cwd: dir, stdio: 'pipe' });
   return 'own npm ci';
 }
 
@@ -61,14 +63,14 @@ function rebuild(duruDir, config, configFile, outDir, baselineMap) {
   fs.rmSync(outDir, { recursive: true, force: true });
   fs.mkdirSync(outDir, { recursive: true });
   for (const [key, name] of Object.entries(KEPT_FOLDERS)) {
-    const from = path.resolve(configDir, config[key] ?? path.join(config.outDir, name));
+    const from = path.resolve(configDir, config[key] || path.join(config.outDir, name));
     written[key] = path.join(outDir, name);
     if (fs.existsSync(from)) fs.cpSync(from, written[key], { recursive: true });
   }
   fs.writeFileSync(configFile, JSON.stringify(written, null, 2));
   const started = Date.now();
   const run = spawnSync('node', [path.join(duruDir, 'src/cli.ts'), 'rebuild', configFile], { encoding: 'utf8', maxBuffer: 1 << 28 });
-  return { status: run.status, stdout: run.stdout ?? '', stderr: run.stderr ?? '', seconds: Math.round((Date.now() - started) / 1000) };
+  return { status: run.status, signal: run.signal, error: run.error, stdout: run.stdout ?? '', stderr: run.stderr ?? '', seconds: Math.round((Date.now() - started) / 1000) };
 }
 
 // 기준 지도를 준 쪽에만 찍히는 내용은 빼야 두 출력을 견줄 수 있다.
@@ -83,17 +85,26 @@ function comparableOutput(text) {
 const isKeyedList = (v) => Array.isArray(v) && v.length > 0 && v.every((x) => typeof x?.id === 'string') && new Set(v.map((x) => x.id)).size === v.length;
 const patternKey = (k) => (/^[A-Za-z_][A-Za-z0-9_]*$/.test(k) ? k : '{}');
 
+function diffOrder(a, b, at, pattern, out) {
+  const [left, right] = [a, b].map((names) => new Set(names));
+  const before = a.filter((name) => right.has(name));
+  const after = b.filter((name) => left.has(name));
+  const moved = before.findIndex((name, i) => name !== after[i]);
+  if (moved >= 0) out.push({ at: `${at}(order)`, pattern: `${pattern}(order)`, before: before.slice(moved), after: after.slice(moved) });
+}
+
 function diffJson(a, b, at, pattern, out) {
   if (JSON.stringify(a) === JSON.stringify(b)) return;
   if (isKeyedList(a) && isKeyedList(b)) {
     const [left, right] = [a, b].map((list) => new Map(list.map((x) => [x.id, x])));
-    const [before, after] = [[a, right], [b, left]].map(([list, other]) => list.map((x) => x.id).filter((id) => other.has(id)));
-    if (JSON.stringify(before) !== JSON.stringify(after)) out.push({ at: `${at}(order)`, pattern: `${pattern}(order)`, before, after });
+    diffOrder(a.map((x) => x.id), b.map((x) => x.id), at, pattern, out);
     for (const id of new Set([...left.keys(), ...right.keys()])) diffJson(left.get(id), right.get(id), `${at}[${id}]`, `${pattern}[]`, out);
     return;
   }
   const plain = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
   if (plain(a) && plain(b)) {
+    const compared = (o) => Object.keys(o).filter((k) => !IGNORED_KEYS.has(k));
+    diffOrder(compared(a), compared(b), at, pattern, out);
     for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
       if (IGNORED_KEYS.has(k)) continue;
       diffJson(a[k], b[k], `${at}.${k}`, `${pattern}.${patternKey(k)}`, out);
@@ -158,8 +169,9 @@ function lineDiff(a, b) {
   const [x, y] = [path.join(dir, 'base'), path.join(dir, 'head')];
   fs.writeFileSync(x, a);
   fs.writeFileSync(y, b);
-  const run = spawnSync('diff', ['-U0', '--label', 'base', '--label', 'head', x, y], { encoding: 'utf8', maxBuffer: 1 << 28 });
+  const run = spawnSync('diff', ['-a', '-U0', '--label', 'base', '--label', 'head', x, y], { encoding: 'utf8', maxBuffer: 1 << 28 });
   fs.rmSync(dir, { recursive: true, force: true });
+  if (run.status !== 0 && run.status !== 1) throw new Error(`diff of the two outputs failed: ${run.error?.message ?? run.stderr}`);
   return run.stdout;
 }
 
@@ -184,6 +196,7 @@ const configDir = path.dirname(opts.config);
 config.outDir = path.resolve(configDir, config.outDir ?? '.');
 
 const fetched = spawnSync('git', ['-C', REPO, 'fetch', 'origin', '--quiet']).status === 0;
+if (!fetched) console.error('fetch failed: comparing with the origin refs already on this PC');
 const headIsFolder = fs.existsSync(path.join(opts.head, 'src/cli.ts'));
 const headSha = headIsFolder ? null : git('rev-parse', '--verify', `${opts.head}^{commit}`);
 // 기준 브랜치가 앞서 나갔을 때 그 변경이 PR 의 변경으로 보이지 않도록 갈라진 지점과 견준다.
@@ -208,7 +221,11 @@ try {
   let headDir = path.resolve(opts.head);
   if (headSha) {
     headDir = path.join(work, 'duru-head');
-    report.push(`head install: ${checkout(headSha, headDir)}`);
+    try {
+      report.push(`head install: ${checkout(headSha, headDir)}`);
+    } catch (err) {
+      throw new Error(`head install failed: ${err.message}`);
+    }
   }
 
   const baseRun = rebuild(baseDir, config, configFile, outDir, null);
@@ -226,6 +243,7 @@ try {
     headRun = rebuild(headDir, config, configFile, outDir, null);
   }
   fs.writeFileSync(path.join(reportDir, 'head.log'), headRun.stdout + headRun.stderr);
+  if (headRun.status === null) throw new Error(`head rebuild did not finish (${headRun.signal ?? headRun.error?.message}); see ${reportDir}/head.log`);
   if (headRun.status !== 0) throw new Error(`head rebuild exited with ${headRun.status}; see ${reportDir}/head.log`);
 
   const changes = headRun.stdout.split('\n').find((line) => line.startsWith('changes since '));
