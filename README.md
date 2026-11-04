@@ -365,6 +365,11 @@ client with example results and a config to start from.
 - `visitRecords` — visit record files or folders that story candidates are made from (optional), as
   `["qa/records"]`; duru's Cypress recorder writes such a folder (see **Story candidates**). Playwright reports in
   `tests` whose tests left a trace give candidates too.
+- `candidateSkipScreens` — screens to take out of the story candidates from visit records and traces (optional), as
+  `[{ "screen": "/signin#SignIn", "where": "start" }]`. `start` takes out the screens at the head of the order that a
+  `start` rule names, `end` those at its tail, `any` the screen wherever it is. `screen` is a screen ID, or the
+  address a candidate shows for a step that matches no screen. Candidates from comments and stories keep every
+  screen. See **Story candidates**.
 - `baselineMap` — the `map.json` of an earlier version of the same client (optional), such as the map kept from
   the last release. `rebuild` and the review page then show what changed since it. Build it with the same duru as
   the current map: a map from another duru can differ for reasons in duru rather than in the client, and one from a
@@ -1030,6 +1035,13 @@ its file, and the story or the discarded file keeps it out of the list. When a s
 listed with that step shown as a screen the map does not have. A candidate file that cannot be read is skipped and
 noted with its path and why.
 
+The `candidateSkipScreens` rules apply each time the list is made, and the candidate file keeps the order it was
+found in, so changing or removing a rule shows the candidate again as found. Candidates whose orders become the same
+are one candidate, and a candidate left with no screen is not listed. The page shows the found order folded under
+「원래 순서 N」 with each step taken out marked 「설정 규칙」. A candidate is told apart by its order after the rules,
+so changing a rule moves a comment on a candidate it changes under 「떨어져 나감」. `rebuild` counts the candidates
+the rules cut and names a rule screen that is neither on the map nor an address a candidate went through.
+
 **Candidates from a comment.** A coding agent that answers a comment on a screen order (see **Comments on a screen
 order**) posts the story it found with `candidate <config> <comment ID> <candidate.json>`, or `-` in place of the
 file to read it from standard input. The candidate is a JSON object with `name` and `screens`, each step a screen ID
@@ -1062,11 +1074,12 @@ built before links carried their conditions must be rebuilt first. A wrong call 
 
 On the review page each step of a candidate has a ✕. Pressing it strikes the step through, and pressing it again puts
 the step back; the last step left cannot be taken out. The steps taken out are kept in the candidate file as
-`offSteps`, `[<step>, …]` numbered from 1, so they stay after a reload, and accepting writes only the steps left into
-the story file. The story keeps the source of the candidate, so the candidate is not offered again. The candidate file
-gets the story's ID as `acceptedAs`, and while that story exists the order the candidate was found in is not offered
-from any other source either. Undoing the acceptance removes `acceptedAs`, and the candidate comes back with its steps
-taken out.
+`offSteps`, `[<step>, …]` numbered from 1 in the order the file holds, which `candidateSkipScreens` can make longer
+than the card, so they stay after a reload, and accepting writes only the steps left into the story file, with steps
+of one screen left side by side as one step. The story keeps the source of the candidate, so the candidate is not
+offered again. The candidate file gets the story's ID as `acceptedAs`, and while that story exists the order the
+candidate was found in is not offered from any other source either. Undoing the acceptance removes `acceptedAs`, and
+the candidate comes back with its steps taken out.
 
 ## Review page
 

@@ -1693,6 +1693,21 @@ its address by a key, the record file for a visit record and the screen order fo
 come from one report. Since candidates are kept in files, the key is the screen order for both; the entry on
 keeping candidates says why.
 
+**The `candidateSkipScreens` rules are applied each time the list is made, the candidate file keeps the order it was
+found in, and a candidate is told apart by its order after the rules.**
+A rule says a screen that a reviewer never needs to see, such as the login screen at the front of every test, and a
+person will get it wrong at first: the rule has to be fixable without rewriting the records, the traces or the files
+already stored. Applying the rules on every listing keeps the found order in the file, so changing or removing a rule
+shows the candidate as it was found, and the page can show the steps the rules took out beside the order it kept.
+Applying them once, when a candidate is stored, would bake one version of the rules into every file, and a rule added
+later could not reach the candidates that were already stored. The cost is that the key is the order after the rules,
+so changing a rule moves a comment written on a candidate under 「떨어져 나감」: a comment is attached to the screens a
+reviewer judged, and those screens changed. The rules are applied again until nothing more is taken out, so a screen
+that `any` takes out and the `start` or `end` screen it uncovers both go in one pass; without that, bringing back a
+discarded candidate would list a second candidate through which nothing ever walked. Candidates that come from a
+comment or a story keep every screen, because a person or an agent named those screens for that candidate
+(driver's decision in #530, 2026-11-02).
+
 **`rebuild` writes the screen order of each traced test into `tests.json` as `traced`, and the review page makes
 trace candidates from it instead of reading the reports and traces itself.**
 The candidates then change only at `rebuild`, together with the 「지나간 시험」 links read from the same traces, so
@@ -2168,10 +2183,24 @@ candidate file, the shape the issue first named, loses two things: the order the
 a decision back has to work out which file it came from, and the source of the candidate, which names the record file
 and the steps as they were found. `offSteps` is a list of the steps left out, ascending, never all of them, and
 accepting writes the story from the screens that remain while undoing drops the list and the candidate is one again.
-The key of the candidate stays its found order, as the file keeps that order, so a comment written on a candidate is
-not moved by a step taken out; the list hides a candidate whose found order is a story only after every step of its
+A step taken out does not change the key of the candidate, as the file keeps the found order, so a comment written on
+a candidate is not moved by it; the list hides a candidate whose found order is a story only after every step of its
 order is in that story. A candidate whose order has no file yet gets one on the first X, and a file of the same order
 that belongs to a candidate which became a story is left alone (driver's decision in #531, 2026-11-02).
+The numbers in `offSteps` count the found order in the file, not the steps on the card, and the list turns them into
+card steps, so a step taken out stays on its screen when a `candidateSkipScreens` rule changes. Storing card steps would
+need no conversion, but a rule change would move it to another screen without a word. An X on a step the rules joined
+from two found steps takes both out, and when the rules leave every step on the card off, the list shows none off, so
+the candidate can still be accepted.
+When an X leaves steps of one screen side by side, the story gets them as one step, because a story refuses a screen
+repeated next to itself. Refusing the X or the acceptance was the other way, and it leaves a reviewer who wants home,
+help, home without help holding a candidate that cannot be accepted. The joined step is built as a `candidateSkipScreens`
+join is: each line once and the last value of a box whoever wrote it, so an agent's value on the later step replaces a
+reviewer's on the earlier one. It keeps only the link needs of the link into its first step, since a step taken out
+takes the conditions of the link from it along. In the source it counts as put in by the agent only when all of it was,
+with the reasons joined by ` / `, and the agent's lines are merged among themselves, so a line that a reviewer's later
+value replaced stays in `written` with no row of the story to match, and is not offered as a line to pick. This was
+chosen while fixing the acceptance and has not been put to the driver.
 Once a candidate is accepted with steps taken out, the order it was found in is not offered again from another
 source either, a visit record, a test of another report or another candidate file, until the acceptance is undone
 (#541). An order accepted whole is already hidden by the story, which has that order; hiding only the accepted source

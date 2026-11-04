@@ -350,13 +350,34 @@ function withoutLinkNeeds(step: any) {
 
 export type Kept = Map<number, { step: number; linked: boolean }>;
 
-// 새로 넣는 화면의 picks 는 undefined 다.
-export function keptSteps(screens: unknown[], picks: (number | undefined)[]): { screens: unknown[]; kept: Kept } {
+export const sameBox = (a: StepInput, b: StepInput) => JSON.stringify(a.box) === JSON.stringify(b.box);
+
+const sameValue = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+export const joinedFields = (fields: StepFields[]): StepFields => {
+  const joined: Record<string, unknown[]> = {};
+  for (const key of STEP_FIELDS) {
+    const values = fields.flatMap((f) => (f[key as keyof StepFields] as unknown[] | undefined) ?? []);
+    const kept = key === 'inputs'
+      ? values.reduce<unknown[]>((out, input) => {
+        const at = out.findIndex((i) => sameBox(i as StepInput, input as StepInput));
+        if (at >= 0) out[at] = input;
+        else out.push(input);
+        return out;
+      }, [])
+      : values.filter((value, at) => values.findIndex((other) => sameValue(other, value)) === at);
+    if (kept.length) joined[key] = kept;
+  }
+  return joined as StepFields;
+};
+
+// 새로 넣는 화면의 picks 는 undefined 다. 합친 단계는 picks 가 첫 칸, lasts 가 끝 칸의 번호다.
+export function keptSteps(screens: unknown[], picks: (number | undefined)[], lasts = picks): { screens: unknown[]; kept: Kept } {
   const kept: Kept = new Map();
   const next = screens.map((screen, i) => {
     const pick = picks[i];
     if (pick === undefined) return screen;
-    const linked = i > 0 && picks[i - 1] === pick - 1;
+    const linked = i > 0 && lasts[i - 1] === pick - 1;
     kept.set(pick, { step: i + 1, linked });
     return linked ? screen : withoutLinkNeeds(screen);
   });
@@ -365,12 +386,23 @@ export function keptSteps(screens: unknown[], picks: (number | undefined)[]): { 
 
 export function sourceAfterSteps(source: any, kept: Kept) {
   if (!isSource(source) || !('comment' in source)) return source;
-  const added = (source.added as CommentSource['added']).flatMap(({ step, reason }) => (kept.has(step) ? [{ step: kept.get(step)!.step, reason }] : []));
-  const written = (source.written as CommentSource['written']).flatMap(({ step, ...fields }) => {
-    const to = kept.get(step);
-    const lines = Object.entries(fields).filter(([k]) => k !== 'linkNeeds' || to?.linked);
-    return to && lines.length ? [{ step: to.step, ...Object.fromEntries(lines) }] : [];
+  const addedSteps = source.added as CommentSource['added'];
+  const joinedInto = (to: number) => [...kept].filter(([, k]) => k.step === to).map(([step]) => step);
+  const added = [...new Set(addedSteps.flatMap(({ step }) => (kept.has(step) ? [kept.get(step)!.step] : [])))].flatMap((step) => {
+    const from = joinedInto(step);
+    const here = addedSteps.filter((a) => from.includes(a.step));
+    return here.length === from.length ? [{ step, reason: [...new Set(here.map((a) => a.reason))].join(' / ') }] : [];
   });
+  const byStep = new Map<number, StepFields>();
+  for (const { step, linkNeeds, ...fields } of source.written as CommentSource['written']) {
+    const to = kept.get(step);
+    if (!to) continue;
+    const lines: StepFields = to.linked && linkNeeds ? { linkNeeds, ...fields } : fields;
+    if (!Object.keys(lines).length) continue;
+    const before = byStep.get(to.step);
+    byStep.set(to.step, before ? joinedFields([before, lines]) : lines);
+  }
+  const written = [...byStep].map(([step, fields]) => ({ step, ...fields }));
   return { ...source, added, written };
 }
 
