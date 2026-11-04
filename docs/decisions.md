@@ -1698,7 +1698,9 @@ found in, and a candidate is told apart by its order after the rules.**
 A rule says a screen that a reviewer never needs to see, such as the login screen at the front of every test, and a
 person will get it wrong at first: the rule has to be fixable without rewriting the records, the traces or the files
 already stored. Applying the rules on every listing keeps the found order in the file, so changing or removing a rule
-shows the candidate as it was found, and the page can show the steps the rules took out beside the order it kept.
+shows the candidate as it was found, and the page can show the steps the rules took out beside the order it kept. A
+discarded file keeps that found order too, because it stores the order the reviewer saw: bringing the candidate back
+from only that order would store a second file through which nothing ever walked.
 Applying them once, when a candidate is stored, would bake one version of the rules into every file, and a rule added
 later could not reach the candidates that were already stored. The cost is that the key is the order after the rules,
 so changing a rule moves a comment written on a candidate under 「떨어져 나감」: a comment is attached to the screens a
