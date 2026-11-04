@@ -875,6 +875,26 @@ test('rebuild counts the candidates the candidateSkipScreens rules took a screen
   }
 });
 
+test('rebuild counts as cut by candidateSkipScreens a candidate that became one with another, one that became a story or a discarded candidate, and one left with no screen', () => {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    const configFile = path.join(copy, 'config.json');
+    const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    const visits = { listed: ['/signin', '/home', '/help'], merged: ['/home', '/signin', '/help'], story: ['/signin', '/home', '/lab'], discarded: ['/signin', '/lab/result'], empty: ['/signin'] };
+    fs.mkdirSync(path.join(copy, 'visits'));
+    for (const [name, urls] of Object.entries(visits)) fs.writeFileSync(path.join(copy, 'visits', `${name}.json`), JSON.stringify({ steps: urls.map((url) => ({ url })) }));
+    fs.mkdirSync(path.join(copy, 'stories/discarded'), { recursive: true });
+    fs.writeFileSync(path.join(copy, 'stories/home-lab.json'), JSON.stringify({ name: 'home and lab', screens: ['/home#Home', '/lab#Lab'], author: 'kim', date: '2026-11-03' }));
+    fs.writeFileSync(path.join(copy, 'stories/discarded/lab-result.json'), JSON.stringify({ name: 'lab result', screens: ['/lab/result#LabResult'], reason: 'not a story', author: 'kim', date: '2026-11-03' }));
+    fs.writeFileSync(configFile, JSON.stringify({ ...config, storiesDir: 'stories', visitRecords: ['visits'], candidateSkipScreens: [{ screen: '/signin#SignIn', where: 'any' }] }));
+    const out = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+    assert.match(out, /^story candidates 1 \| from traces 0 \| cut by candidateSkipScreens 5 \| newly stored 1 \| files skipped 0$/m);
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+});
+
 for (const args of [['nope', 'x.json'], ['extract', 'x.json', 'out.json'], ['rebuild', 'x.json', '--port', '5000'], ['tasks', 'x.json', '--port', '5000'], ['review', 'x.json', '--port', 'abc'], ['reply', 'x.json', 'id'], ['reply', 'x.json', 'id', 'text', '--port', '5000'], ['review', 'x.json', '--server', 'http://127.0.0.1:1/'], ['wait', 'x.json'], ['wait', 'x.json', '--server'], ['wait', 'x.json', '--port', '5000'], ['case', 'x.json', 'ended', '/lab#Lab'], ['undecided', 'x.json', 'ended', 'legacy'], ['undecided', 'x.json', 'ended', '--new', '--new']]) {
   test(`"${args.join(' ')}" prints usage and exits with 2`, () => {
     assert.throws(

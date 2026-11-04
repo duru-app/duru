@@ -1039,8 +1039,9 @@ The `candidateSkipScreens` rules apply each time the list is made, and the candi
 found in, so changing or removing a rule shows the candidate again as found. Candidates whose orders become the same
 are one candidate, and a candidate left with no screen is not listed. The page shows the found order folded under
 「원래 순서 N」 with each step taken out marked 「설정 규칙」. A candidate is told apart by its order after the rules,
-so changing a rule moves a comment on a candidate it changes under 「떨어져 나감」. `rebuild` counts the candidates
-the rules cut and names a rule screen that is neither on the map nor an address a candidate went through.
+so changing a rule moves a comment on a candidate it changes under 「떨어져 나감」. `rebuild` counts every found order
+the rules took a screen out of, on the list or not, so accepting or discarding a candidate does not lower the count.
+It also names a rule screen that is neither on the map nor an address a candidate went through.
 
 **Candidates from a comment.** A coding agent that answers a comment on a screen order (see **Comments on a screen
 order**) posts the story it found with `candidate <config> <comment ID> <candidate.json>`, or `-` in place of the

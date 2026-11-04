@@ -634,6 +634,12 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   const screenAt = screenFinder(map);
   const rules: SkipRule[] = config.candidateSkipScreens ?? [];
   const found = new Set<string>();
+  const cut = new Set<string>();
+  const ruledOrCut = (candidate: Candidate) => {
+    const after = ruled(candidate, rules);
+    if (after !== candidate) cut.add(JSON.stringify(candidate.screens));
+    return after;
+  };
   const stories = loadStories(config.storiesDir).stories;
   // 고친 후보가 목록에 있거나 받았거나 버린 동안, 그것이 대신하는 원래 후보는 기록과 시험에서 다시 나와도 올리지 않는다.
   const replaced = [...stored, ...stories, ...current].flatMap((c) => replacedOrders(c.source));
@@ -656,7 +662,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   for (const record of records) {
     const made = candidateOf(record, screenAt);
     for (const screen of made.screens) found.add(screen);
-    const candidate = ruled(made, rules);
+    const candidate = ruledOrCut(made);
     if (!candidate) continue;
     const key = JSON.stringify(candidate.screens);
     if (seen.has(key) || taken(candidate.source) || accepted.has(key)) {
@@ -672,7 +678,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   for (const { report, title, screens, inputs, skipped } of traced) {
     for (const screen of screens) found.add(screen);
     const base = { key: screens.join(' > '), name: titleWithoutTags(title), screens, source: { report, tests: [title] }, ...carried({ stepFields: inputFields(inputs), skipped }) } as Candidate;
-    const candidate = ruled(base, rules);
+    const candidate = ruledOrCut(base);
     const shownScreens = candidate?.screens ?? [];
     const key = JSON.stringify(shownScreens);
     if (shownScreens.length > 0 && (seen.has(key) || takenOrders.has(key) || accepted.has(key))) {
@@ -692,7 +698,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   for (const { name, screens, source, file, offLines, offSteps, ...rest } of byFirstSeenStored) {
     const base = { key: screens.join(' > '), name, screens, source, ...carried(rest) } as Candidate;
     if (!('comment' in source)) for (const screen of screens) found.add(screen);
-    const candidate = 'comment' in source ? base : ruled(base, rules);
+    const candidate = 'comment' in source ? base : ruledOrCut(base);
     if (!candidate) continue;
     const key = JSON.stringify(candidate.screens);
     if (seen.has(key) || taken(candidate.source) || accepted.has(key)) {
@@ -706,7 +712,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   }
   const onMap = new Set(map.screens.map((s: any) => s.id));
   const missedRules = [...new Set(rules.map((r) => r.screen))].filter((s) => !onMap.has(s) && !found.has(s));
-  return { list: checkStories(map, list), discarded: shown, gone, notices: all, missedRules };
+  return { list: checkStories(map, list), discarded: shown, gone, notices: all, missedRules, cutByRules: cut.size };
 }
 
 const AGENT_STEPS = 'screens 는 화면 ID 나 { "screen", "reason", "needs", "linkNeeds", "inputs", "expects" } 객체를 하나 이상 차례대로 담은 목록이어야 합니다';
