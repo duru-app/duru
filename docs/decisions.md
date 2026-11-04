@@ -1708,6 +1708,19 @@ discarded candidate would list a second candidate through which nothing ever wal
 comment or a story keep every screen, because a person or an agent named those screens for that candidate
 (driver's decision in #530, 2026-11-02).
 
+**A candidate that replaces others carries them in its comment source, each as its listed order with the step
+numbers dropped from it, and the list hides every order such a source names in a candidate file, a story or a
+current discard.**
+The agent names a step by its number in the original order rather than by its screen, because the same screen can
+sit twice in one order, as a second login under another role, and only one of them may go. Keeping the originals in
+the source of the new candidate, rather than writing a record for each original into `discarded/`, makes one file say
+both what was replaced and why, so a story accepted from it keeps that origin, discarding it hides the originals with
+no second record, and the hiding survives a `rebuild` that makes the originals again from records and traces. Being
+told apart by the comment and the orders replaced, rather than by the comment alone as for a screen-order comment,
+lets one comment with no target get a candidate per original and lets the next one through after the first is
+accepted. A comment on a screen order takes no `replaces`: it asks for screens between two ends, and nothing listed
+stands for it (model's decision in #532, not yet confirmed).
+
 **`rebuild` writes the screen order of each traced test into `tests.json` as `traced`, and the review page makes
 trace candidates from it instead of reading the reports and traces itself.**
 The candidates then change only at `rebuild`, together with the 「지나간 시험」 links read from the same traces, so

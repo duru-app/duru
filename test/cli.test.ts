@@ -1459,7 +1459,7 @@ test('candidate refuses with the reason and exits with 1 a screen not on the map
       [comment, { name: 'x', screens: ['/signin#SignIn', { screen: '/nowhere', reason: 'x' }, kept[2]] }, 'screens 의 2 번째 단계의 /nowhere 는 맵에 없는 화면입니다\n'],
       [comment, { name: 'x', screens: [kept[0], kept[1], { screen: '/home#Home', reason: 'x' }, kept[2]] }, 'screens 의 2 번째와 3 번째가 같은 화면입니다\n'],
       ['no-such-id', { name: 'x', screens: kept }, '코멘트 no-such-id 가 없습니다\n'],
-      [onNode, { name: 'x', screens: kept }, `코멘트 ${onNode} 는 화면 순서에 단 코멘트가 아닙니다\n`],
+      [onNode, { name: 'x', screens: kept }, `코멘트 ${onNode} 는 화면 순서나 후보에 단 코멘트도, 대상 없는 코멘트도 아닙니다\n`],
       [comment, { name: 'x', screens: [kept[0], kept[1], { screen: '/lab#Lab', expects: ['실험이 보인다'] }] }, 'screens 의 3 번째 단계 /lab#Lab 의 expects 는 검토자가 적은 줄이라 바꿀 수 없습니다\n'],
       [comment, '[1, 2]', 'the candidate in INPUT must be a JSON object with "name" and "screens"\n'],
     ];
@@ -1512,6 +1512,104 @@ test('a candidate sent with --server is written by the running review in the sam
       child.kill();
     }
   });
+});
+
+const HELP_ORDER = ['/signin#SignIn', '/home#Home', '/beta/inbox', '/help#Help'];
+const LAB_CHECK = ['/home#Home', '/lab#Lab', '/lab/result#LabResult'];
+const PUBLISH = ['/home#Home', '/document/:tab#DocumentList', '/document/:id#DocumentDetail', '/help#Help'];
+const VISITS = { visitRecords: ['example-visits'] };
+const NO_SIGNIN = '검토자가 로그인을 빼라고 했습니다';
+const NO_HOME = '홈은 지나가기만 합니다';
+const commentOn = (configFile: string, target?: object) => addMark(path.join(path.dirname(configFile), 'example-marks'), { ...(target ? { target } : { targets: [] }), note: '필요 없는 단계를 빼 줘', author: 'hit' }).id;
+const firstDropped = (screens: string[], reason: string) => ({ screens, dropped: [{ step: 1, reason }] });
+const candidateLine = (configFile: string) => execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' }).match(/^story candidates .*$/m)![0];
+
+async function listedOnPage(configFile: string) {
+  const { child, base, closed } = startReview(configFile);
+  try {
+    const url = await within(base, 'review page address on stderr');
+    const { candidates } = (await (await fetch(`${url}/api/data`)).json()) as { candidates: { list: { name: string; screens: string[] }[]; gone: Record<string, string> } };
+    await endReview(url);
+    await within(closed, 'exit');
+    return candidates;
+  } finally {
+    child.kill();
+  }
+}
+
+test('candidate answers a comment on a candidate with a candidate that drops steps, written with the original it replaces and each step dropped with why, and after a rebuild the original stays out of the list while the new candidate is in it', async () => {
+  await withReviewFixture(async (configFile) => {
+    const comment = commentOn(configFile, { candidate: HELP_ORDER.join(' > ') });
+    const dropped = [{ step: 1, reason: NO_SIGNIN }, { step: 3, reason: '맵에 없는 주소라 시험 준비로 봅니다', judged: true }];
+    const written = runCandidate(configFile, comment, candidateInput(configFile, { name: '홈에서 도움말을 연다', screens: ['/home#Home', '/help#Help'], replaces: [{ screens: HELP_ORDER, dropped }] }));
+    assert.equal(written.status, 0, written.stderr);
+    assert.match(written.stdout, /^wrote out\/stories\/candidates\/\S+\.json\nstep 1 → 2: from \/home#Home to \/help#Help — /);
+    const replacement = storedCandidates(configFile).find((c) => c.name === '홈에서 도움말을 연다');
+    assert.deepEqual(replacement.source, { comment, added: [], written: [], replaces: [{ screens: HELP_ORDER, dropped, source: { record: 'example-visits/open-help.json', steps: [1, 5] } }] });
+    assert.equal(candidateLine(configFile), 'story candidates 3 | from traces 0 | newly stored 0 | files skipped 1');
+    const { list, gone } = await listedOnPage(configFile);
+    assert.deepEqual(list.map((c) => c.name), ['lab-check', 'publish-document', '홈에서 도움말을 연다']);
+    assert.equal(gone[HELP_ORDER.join(' > ')], 'open-help');
+  }, VISITS);
+});
+
+test('candidate posts several candidates for one comment with no target, and after one of them is accepted it still takes the next one, while each original stays out of the list', async () => {
+  await withReviewFixture(async (configFile) => {
+    const comment = commentOn(configFile);
+    const post = (name: string, screens: string[], original: string[]) => runCandidate(configFile, comment, candidateInput(configFile, { name, screens, replaces: [firstDropped(original, NO_HOME)] }));
+    assert.equal(post('실험 결과', LAB_CHECK.slice(1), LAB_CHECK).status, 0);
+    assert.equal(post('문서 게시', PUBLISH.slice(1), PUBLISH).status, 0);
+    const lab = storedCandidates(configFile).find((c) => c.name === '실험 결과');
+    fs.writeFileSync(path.join(path.dirname(configFile), 'out/stories/lab-result.json'), JSON.stringify({ name: lab.name, screens: lab.screens, memo: '', author: 'hit', date: '2026-11-03', source: lab.source }));
+    const helpOnly = runCandidate(configFile, comment, candidateInput(configFile, { name: '도움말', screens: ['/help#Help'], replaces: [{ screens: HELP_ORDER, dropped: [1, 2, 3].map((step) => ({ step, reason: NO_SIGNIN })) }] }));
+    assert.equal(helpOnly.status, 0, helpOnly.stderr);
+    assert.equal(candidateLine(configFile), 'story candidates 2 | from traces 0 | newly stored 0 | files skipped 1');
+    assert.deepEqual((await listedOnPage(configFile)).list.map((c) => c.name), ['문서 게시', '도움말']);
+  }, VISITS);
+});
+
+test('candidate writes one candidate in place of two originals that become the same order, naming both with their own sources', async () => {
+  await withReviewFixture(async (configFile) => {
+    const signedIn = ['/signin#SignIn', '/lab#Lab', '/lab/result#LabResult'];
+    fs.writeFileSync(path.join(path.dirname(configFile), 'example-visits/lab-signin.json'), JSON.stringify({ steps: [{ url: '/signin' }, { url: '/lab' }, { url: '/lab/result?id=3' }] }));
+    const comment = commentOn(configFile, { candidate: LAB_CHECK.join(' > ') });
+    const written = runCandidate(configFile, comment, candidateInput(configFile, { name: '실험 결과', screens: LAB_CHECK.slice(1), replaces: [firstDropped(LAB_CHECK, NO_HOME), firstDropped(signedIn, NO_SIGNIN)] }));
+    assert.equal(written.status, 0, written.stderr);
+    const replacement = storedCandidates(configFile).find((c) => c.name === '실험 결과');
+    assert.deepEqual(replacement.source.replaces.map((r: { screens: string[]; source: { record: string } }) => [r.screens, r.source.record]), [[LAB_CHECK, 'example-visits/lab-check.json'], [signedIn, 'example-visits/lab-signin.json']]);
+    assert.deepEqual((await listedOnPage(configFile)).list.map((c) => c.name), ['open-help', 'publish-document', '실험 결과']);
+  }, VISITS);
+});
+
+test('candidate refuses with the reason and exits with 1, the same directly and with --server and writing nothing, an original not in the list, a step left out without a reason, steps in another order, an order already listed, and originals for a comment on a screen order', async () => {
+  await withReviewFixture(async (configFile) => {
+    const comment = commentOn(configFile, { candidate: HELP_ORDER.join(' > ') });
+    const order = orderComment(configFile, ['/signin#SignIn', '/help#Help']);
+    const where = (screens: string[]) => `replaces 의 1 번째 원래 후보 ${screens.join(' > ')}`;
+    const refusals: [string, object, string][] = [
+      [comment, { screens: ['/help#Help'], replaces: [firstDropped(['/signin#SignIn', '/help#Help'], NO_SIGNIN)] }, `${where(['/signin#SignIn', '/help#Help'])} 는 지금 후보 목록에 없습니다`],
+      [comment, { screens: ['/home#Home', '/help#Help'], replaces: [firstDropped(HELP_ORDER, NO_SIGNIN)] }, `${where(HELP_ORDER)} 의 3 번째 단계 /beta/inbox 가 이유 없이 빠졌습니다. 뺀 단계는 dropped 에 step 과 reason 으로 적습니다`],
+      [comment, { screens: ['/lab#Lab', '/home#Home', '/lab/result#LabResult'], replaces: [{ screens: LAB_CHECK, dropped: [] }] }, `이유를 적지 않은 단계의 차례가 ${where(LAB_CHECK)} 에서 dropped 의 단계를 뺀 순서 ${LAB_CHECK.join(' > ')} 와 다릅니다. 원래 후보의 단계는 차례를 바꾸지 않습니다`],
+      [comment, { screens: LAB_CHECK, replaces: [{ screens: LAB_CHECK, dropped: [] }] }, '이미 후보 「lab-check」의 화면 순서입니다'],
+      [order, { screens: ['/signin#SignIn', '/help#Help'], replaces: [firstDropped(HELP_ORDER, NO_SIGNIN)] }, `코멘트 ${order} 는 화면 순서에 단 코멘트라 replaces 를 적지 않습니다`],
+    ];
+    const before = storedCandidates(configFile);
+    const { child, base, closed } = startReview(configFile);
+    try {
+      const url = await within(base, 'review page address on stderr');
+      for (const [id, body, stderr] of refusals) {
+        const input = candidateInput(configFile, { name: '고친 후보', ...body });
+        const expected = { status: 1, stdout: '', stderr: `${stderr}\n` };
+        assert.deepEqual(runCandidate(configFile, id, input), expected, stderr);
+        assert.deepEqual(runCandidate(configFile, id, input, '--server', url), expected, `${stderr} --server`);
+      }
+      assert.deepEqual(storedCandidates(configFile), before);
+      await endReview(url);
+      await within(closed, 'exit');
+    } finally {
+      child.kill();
+    }
+  }, VISITS);
 });
 
 function startWait(configFile: string, server: string) {

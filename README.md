@@ -37,7 +37,7 @@ node src/cli.ts reply path/to/project-config.json <comment ID> "<text>" [--serve
 node src/cli.ts wait path/to/project-config.json --server <review page address>   # exits with the comments not yet answered
 node src/cli.ts case path/to/project-config.json <kind> <screen or call ID> needed|not-needed [--note "<why>"] [--author <name> | --server <review page address>]   # decide a case kind for one screen or call
 node src/cli.ts undecided path/to/project-config.json [<kind>] [--new]   # exits with 3 while a candidate of a case kind is undecided; with --new, only while one missing from baselineMap is
-node src/cli.ts candidate path/to/project-config.json <comment ID> <candidate.json | -> [--server <review page address>]   # post a story candidate answering a comment on a screen order
+node src/cli.ts candidate path/to/project-config.json <comment ID> <candidate.json | -> [--server <review page address>]   # post a story candidate answering a comment on a screen order, on a candidate or with no target
 npm test
 ```
 
@@ -1070,6 +1070,42 @@ candidate at once; without it, the file is written directly. The command prints 
 each link between two steps, `step 1 → 2: from <screen> to <screen> — <verdict>`, worded as in the task list. A
 candidate it does not take is not written: the command prints why on standard error and exits with code 1. A map
 built before links carried their conditions must be rebuilt first. A wrong call exits with 2.
+
+**Candidates that replace others.** A comment on a candidate, or one with no target, usually asks for steps nobody
+needs to be taken out, such as the login at the front of every test. The agent answers it with the same command and a
+candidate that also names, in `replaces`, each listed candidate it takes the place of: `screens`, that candidate's
+order as listed now, and `dropped`, each step taken out of that order with `step` (its number in that order, from 1),
+`reason`, one line saying why, and `judged: true` when the reviewer did not ask for that step to go and the agent
+judged it so:
+
+```json
+{
+  "name": "홈에서 도움말을 연다",
+  "screens": ["/home#Home", "/help#Help"],
+  "replaces": [
+    {
+      "screens": ["/signin#SignIn", "/home#Home", "/beta/inbox", "/help#Help"],
+      "dropped": [
+        { "step": 1, "reason": "검토자가 모든 후보에서 로그인을 빼라고 했습니다" },
+        { "step": 3, "reason": "맵에 없는 주소라 시험 준비로 봅니다", "judged": true }
+      ]
+    }
+  ]
+}
+```
+
+The steps without `reason` must be each order in `replaces` with its dropped steps taken out, neighbouring steps of
+one screen joined into one; a screen the agent put in carries `reason` as above. Two candidates that become the same
+order are replaced by one candidate naming both. The command refuses a candidate in `replaces` that is not listed, a
+step left out without being in `dropped`, kept steps in another order, and an order that is already a story, a listed
+candidate or a discarded one. A comment on a screen order takes no `replaces`. One comment may get several such
+candidates, and accepting one of them does not stop the next; for a comment on a screen order, a story accepted from
+it still stops the next candidate. The source written adds `"replaces": [{ "screens", "dropped", "source" }, …]`,
+the source of each candidate replaced kept beside it, and each kept step keeps the lines that step had on the
+candidates it replaces. While the new candidate is listed, accepted or discarded, the candidates it replaces are not
+listed, even after a `rebuild` gives them again from the records or the traces, and a comment on one of them goes
+under 「떨어져 나감」. The page shows each order replaced folded under 「원래 순서 N」 with where it came from, each
+dropped step struck through with its reason under it and 「판단」 on a step the agent judged.
 
 ## Review page
 

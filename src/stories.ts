@@ -12,6 +12,7 @@ interface RawSource {
   comment?: unknown;
   added?: unknown;
   written?: unknown;
+  replaces?: unknown;
 }
 
 interface RawStory {
@@ -46,10 +47,18 @@ export interface StepFields {
   expects?: string[];
 }
 
+// step 은 원래 후보의 순서에서 몇 번째 단계인지(1 부터)다. judged 는 검토자가 시키지 않았는데 에이전트가 판단해 뺀 단계다.
+export interface ReplacedCandidate {
+  screens: string[];
+  dropped: { step: number; reason: string; judged?: true }[];
+  source: StorySource;
+}
+
 export interface CommentSource {
   comment: string;
   added: { step: number; reason: string }[];
   written: ({ step: number } & StepFields)[];
+  replaces?: ReplacedCandidate[];
 }
 
 export type StorySource = { record: string; steps: [number, number] } | { report: string; tests: string[] } | CommentSource;
@@ -118,10 +127,14 @@ function isWrittenStep(v: any) {
   const { step, ...fields } = v;
   return Object.keys(fields).length > 0 && !('screen' in fields) && stepProblem({ ...fields, screen: 'x' }, '', step === 1) === null;
 }
+const isDroppedStep = (v: any) => isPlainObject(v) && Object.keys(v).length === (v.judged === undefined ? 2 : 3) && isText(v.reason) && (v.judged === undefined || v.judged === true);
+const isReplaced = (v: any) => isPlainObject(v) && Object.keys(v).length === 3 && isScreenList(v.screens) && Array.isArray(v.dropped) && v.dropped.every(isDroppedStep)
+  && ascending(v.dropped) && v.dropped.length < v.screens.length && v.dropped.every((d: any) => d.step <= v.screens.length) && isSource(v.source);
 const isCommentSource = (v: RawSource) => isText(v.comment) && Array.isArray(v.added) && v.added.every(isAddedStep) && ascending(v.added)
-  && Array.isArray(v.written) && v.written.every(isWrittenStep) && ascending(v.written);
-export const isSource = (v: RawSource) => isPlainObject(v) && (Object.keys(v).length === 2 ? isRecordSource(v) || isTestsSource(v) : Object.keys(v).length === 3 && isCommentSource(v));
-export const SOURCE_SHAPES = 'source 는 { "record": 기록 파일, "steps": [첫 단계, 끝 단계] }, { "report": 보고 파일, "tests": [시험 제목, ...] }, { "comment": 코멘트 ID, "added": [{ "step", "reason" }, ...], "written": [{ "step", 칸 이름: [줄, ...] }, ...] } 가운데 하나여야 합니다';
+  && Array.isArray(v.written) && v.written.every(isWrittenStep) && ascending(v.written)
+  && (v.replaces === undefined || (Array.isArray(v.replaces) && v.replaces.length > 0 && v.replaces.every(isReplaced)));
+export const isSource = (v: RawSource): boolean => isPlainObject(v) && (Object.keys(v).length === 2 ? isRecordSource(v) || isTestsSource(v) : Object.keys(v).length === (v.replaces === undefined ? 3 : 4) && isCommentSource(v));
+export const SOURCE_SHAPES = 'source 는 { "record": 기록 파일, "steps": [첫 단계, 끝 단계] }, { "report": 보고 파일, "tests": [시험 제목, ...] }, { "comment": 코멘트 ID, "added": [{ "step", "reason" }, ...], "written": [{ "step", 칸 이름: [줄, ...] }, ...] } 가운데 하나여야 합니다. 코멘트 출처에는 "replaces": [{ "screens", "dropped": [{ "step", "reason", "judged" }, ...], "source" }, ...] 를 더할 수 있습니다';
 // Date.parse 는 2026-02-30 을 3월 2일로 넘겨 받으므로, 날짜 부분이 그대로 되돌아오는지 본다.
 export const isDate = (v: unknown) => typeof v === 'string' && DATE.test(v) && !Number.isNaN(Date.parse(v))
   && new Date(`${v.slice(0, 10)}T00:00:00Z`).toISOString().slice(0, 10) === v.slice(0, 10);

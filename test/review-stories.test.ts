@@ -848,3 +848,38 @@ test('in a browser, a candidate the candidateSkipScreens rules took a screen out
     ),
   );
 });
+
+test('in a browser, a candidate an agent posted in place of another shows under its comment line the order it replaces folded under 「원래 순서 N」 with where that order came from, each step dropped struck through with why under it, and 「판단」 on a step the agent dropped on its own judgment', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const comment = await (await postMark(base, { target: { candidate: HELP_KEY }, note: '로그인 단계를 빼 줘' })).json();
+      const dropped = [{ step: 1, reason: '검토자가 로그인을 빼라고 했습니다' }, { step: 3, reason: '맵에 없는 주소라 시험 준비로 봅니다', judged: true }];
+      const res = await postJson(base, '/api/candidates/add', { comment: comment.id, name: '홈에서 도움말을 연다', screens: ['/home#Home', '/help#Help'], replaces: [{ screens: HELP_KEY.split(' > '), dropped }] });
+      assert.equal(res.status, 201, await res.clone().text());
+      await withPage(base, async (p, errors) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#candidate-list li:has-text("홈에서 도움말을 연다")');
+        await p.waitForSelector('#center details.replaced-order');
+        assert.equal(await p.locator('#candidate-list li:has-text("open-help")').count(), 0);
+        assert.equal(await p.locator('#center-body > .source + details.replaced-order').count(), 1);
+        assert.equal(await p.textContent('#center details.replaced-order > summary'), '원래 순서 4');
+        assert.equal(await p.getAttribute('#center details.replaced-order', 'open'), null);
+        await p.click('#center details.replaced-order > summary');
+        assert.match((await p.textContent('#center details.replaced-order .source'))!, /example-visits\/open-help\.json/);
+        const rows = await p.evaluate(() => [...document.querySelectorAll('#center details.replaced-order li')].map((li) => {
+          const screen = li.querySelector('.found-screen')!;
+          return [screen.textContent, getComputedStyle(screen).textDecorationLine.includes('line-through'), li.querySelector('.drop-reason')?.textContent ?? null, li.querySelector('.chip.judged')?.textContent ?? null];
+        }));
+        assert.deepEqual(rows, [
+          ['/signin#SignIn', true, dropped[0].reason, null],
+          ['/home#Home', false, null, null],
+          ['/beta/inbox', true, dropped[1].reason, '판단'],
+          ['/help#Help', false, null, null],
+        ]);
+        assert.match((await p.getAttribute('#center .chip.judged', 'title'))!, /판단해서 뺀/);
+        assert.deepEqual(errors, []);
+      });
+    }),
+  );
+});
