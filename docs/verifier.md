@@ -66,8 +66,8 @@ Steps:
    `node <checkout>/scripts/compare-maps.mjs <commit> --base <base>`. Exit 0 means no difference, 3 means a
    difference, 4 means installing or rebuilding with this commit failed, whatever the cause. Exit 1 means something
    else stopped it and 2 means it was started wrongly or the client config is missing; report those two as not run.
-   Read `report.txt` and, for anything it lists, `output.diff` and `json-details.txt` in the folder it names. A
-   `fetch failed` line means the base may be old: say so in the report. If only `src/review-page/` changed, skip it
+   On exit 0 or 3, read `report.txt` and, for anything it lists, `output.diff` and `json-details.txt` in the folder
+   it names. A `fetch failed` line means the base may be old: say so in the report. If only `src/review-page/` changed, skip it
    and say so.
 5. For each item in the issue's acceptance criteria, find what shows it: a test you ran, a line of the comparison, or
    a line of the diff. Mark each one shown, not shown, or a human step (for example the driver looking at a screen).

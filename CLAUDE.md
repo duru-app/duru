@@ -36,7 +36,7 @@
   client's map with both versions of duru and reports what differs. A new feature, or any difference it reports, also
   gets a verifier that did not write the code, as `docs/verifier.md` says; only what that file lists as a block holds
   the merge. Exit 4 means installing or rebuilding with the pull request failed: run it again, and a second exit 4
-  holds the merge. The client's config and the results stay in `~/duru-verify-out/` and name a private client, so nothing
+  holds the merge. Exit 1 or 2 means nothing was compared: say so in the pull request. The client's config and the results stay in `~/duru-verify-out/` and name a private client, so nothing
   from them goes into an issue or a pull request.
 
 ## Writing the review page
