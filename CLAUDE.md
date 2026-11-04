@@ -29,6 +29,15 @@
 - Tests that open a browser need Chromium and the system libraries it loads, installed once on the machine:
   `npx playwright-core install --with-deps chromium` (the libraries are installed with `sudo`).
 
+## Before queueing a pull request
+
+- After `/code-review` and before `gh pr merge`, a pull request that changes `src/` outside `src/review-page/` gets
+  `node ~/duru-verify/compare-maps.mjs <head> --base origin/<base branch>`, which builds a real client's map with both
+  versions of duru and reports what differs. A new feature, or any difference it reports, also gets a verifier that
+  did not write the code, as `~/duru-verify/verifier.md` says; only a problem shown by a failing run or a wrong
+  document line holds the merge. Both files stay on the driver's PC and their results name a private client, so
+  nothing from them goes into an issue or a pull request.
+
 ## Writing the review page
 
 - The data from `/api/data` has the type `PageData` in `src/review.ts`. Give a new field the server sends a type
