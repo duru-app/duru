@@ -5,7 +5,6 @@
 // 종료 코드: 0 차이 없음, 3 차이 있음, 2 잘못된 사용, 1 실행 실패.
 // 결과에 비공개 클라이언트의 경로와 이름이 들어 있으므로 공개 저장소나 PR 본문에 옮기지 않는다.
 import { execFileSync, spawnSync } from 'node:child_process';
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -15,6 +14,7 @@ const REPO = path.resolve(import.meta.dirname, '..');
 const DEFAULT_CONFIG = path.join(HOME, 'duru-verify-out/compare.config.json');
 const REPORTS = path.join(HOME, 'duru-verify-out/compare');
 const IGNORED_KEYS = new Set(['generatedAt', 'duruCommit']);
+const KEPT_FOLDERS = { marksDir: 'marks', storiesDir: 'stories', judgmentsDir: 'judgments' };
 
 function parseArgs(argv) {
   const opts = { base: 'origin/main', config: DEFAULT_CONFIG, head: null };
@@ -34,15 +34,19 @@ function parseArgs(argv) {
 const git = (...args) => execFileSync('git', ['-C', REPO, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const short = (sha) => sha.slice(0, 8);
 
-function lockHash(dir) {
-  return crypto.createHash('sha256').update(fs.readFileSync(path.join(dir, 'package-lock.json'))).digest('hex');
+function installedFrom(dir) {
+  const hidden = path.join(REPO, 'node_modules/.package-lock.json');
+  if (!fs.existsSync(hidden)) return false;
+  const installed = JSON.parse(fs.readFileSync(hidden, 'utf8')).packages;
+  const wanted = JSON.parse(fs.readFileSync(path.join(dir, 'package-lock.json'), 'utf8')).packages;
+  return Object.entries(wanted).every(([name, { version, optional }]) => !name || installed[name]?.version === version || (optional && !installed[name]));
 }
 
 function checkout(sha, dir) {
   fs.mkdirSync(dir, { recursive: true });
   const tar = spawnSync('sh', ['-c', `git -C "${REPO}" archive ${sha} | tar -x -C "${dir}"`], { encoding: 'utf8' });
   if (tar.status !== 0) throw new Error(`could not unpack ${sha}: ${tar.stderr}`);
-  if (lockHash(dir) === lockHash(REPO) && fs.existsSync(path.join(REPO, 'node_modules'))) {
+  if (installedFrom(dir)) {
     fs.symlinkSync(path.join(REPO, 'node_modules'), path.join(dir, 'node_modules'));
     return 'shared node_modules';
   }
@@ -54,13 +58,14 @@ function rebuild(duruDir, config, configFile, outDir, baselineMap) {
   const written = { ...config, outDir };
   if (baselineMap) written.baselineMap = baselineMap;
   else delete written.baselineMap;
-  fs.writeFileSync(configFile, JSON.stringify(written, null, 2));
   fs.rmSync(outDir, { recursive: true, force: true });
   fs.mkdirSync(outDir, { recursive: true });
-  for (const name of ['marks', 'stories', 'judgments']) {
-    const from = path.join(config.outDir, name);
-    if (fs.existsSync(from)) fs.cpSync(from, path.join(outDir, name), { recursive: true });
+  for (const [key, name] of Object.entries(KEPT_FOLDERS)) {
+    const from = path.resolve(configDir, config[key] ?? path.join(config.outDir, name));
+    written[key] = path.join(outDir, name);
+    if (fs.existsSync(from)) fs.cpSync(from, written[key], { recursive: true });
   }
+  fs.writeFileSync(configFile, JSON.stringify(written, null, 2));
   const started = Date.now();
   const run = spawnSync('node', [path.join(duruDir, 'src/cli.ts'), 'rebuild', configFile], { encoding: 'utf8', maxBuffer: 1 << 28 });
   return { status: run.status, stdout: run.stdout ?? '', stderr: run.stderr ?? '', seconds: Math.round((Date.now() - started) / 1000) };
@@ -75,13 +80,15 @@ function comparableOutput(text) {
     .join('\n');
 }
 
-const isKeyedList = (v) => Array.isArray(v) && v.length > 0 && v.every((x) => typeof x?.id === 'string');
+const isKeyedList = (v) => Array.isArray(v) && v.length > 0 && v.every((x) => typeof x?.id === 'string') && new Set(v.map((x) => x.id)).size === v.length;
 const patternKey = (k) => (/^[A-Za-z_][A-Za-z0-9_]*$/.test(k) ? k : '{}');
 
 function diffJson(a, b, at, pattern, out) {
   if (JSON.stringify(a) === JSON.stringify(b)) return;
   if (isKeyedList(a) && isKeyedList(b)) {
     const [left, right] = [a, b].map((list) => new Map(list.map((x) => [x.id, x])));
+    const [before, after] = [[a, right], [b, left]].map(([list, other]) => list.map((x) => x.id).filter((id) => other.has(id)));
+    if (JSON.stringify(before) !== JSON.stringify(after)) out.push({ at: `${at}(order)`, pattern: `${pattern}(order)`, before, after });
     for (const id of new Set([...left.keys(), ...right.keys()])) diffJson(left.get(id), right.get(id), `${at}[${id}]`, `${pattern}[]`, out);
     return;
   }
@@ -176,7 +183,7 @@ const config = JSON.parse(fs.readFileSync(opts.config, 'utf8'));
 const configDir = path.dirname(opts.config);
 config.outDir = path.resolve(configDir, config.outDir ?? '.');
 
-spawnSync('git', ['-C', REPO, 'fetch', 'origin', '--quiet']);
+const fetched = spawnSync('git', ['-C', REPO, 'fetch', 'origin', '--quiet']).status === 0;
 const headIsFolder = fs.existsSync(path.join(opts.head, 'src/cli.ts'));
 const headSha = headIsFolder ? null : git('rev-parse', '--verify', `${opts.head}^{commit}`);
 // 기준 브랜치가 앞서 나갔을 때 그 변경이 PR 의 변경으로 보이지 않도록 갈라진 지점과 견준다.
@@ -187,14 +194,14 @@ const label = `${short(baseSha)}..${headSha ? short(headSha) : `folder-${path.ba
 const work = path.join(configDir, `.compare-${process.pid}`);
 const configFile = path.join(configDir, `.compare-${process.pid}.config.json`);
 const outDir = path.join(work, 'out');
-const reportDir = path.join(REPORTS, label);
+const reportDir = path.join(REPORTS, `${label}.${process.pid}`);
 let exitCode = 1;
 
 try {
   fs.mkdirSync(work, { recursive: true });
-  fs.rmSync(reportDir, { recursive: true, force: true });
   fs.mkdirSync(reportDir, { recursive: true });
   const report = [`base ${baseSha}`, `head ${headSha ?? path.resolve(opts.head)}`, `client ${config.srcRoot}`];
+  if (!fetched) report.push('fetch failed: compared with the origin refs already on this PC');
 
   const baseDir = path.join(work, 'duru-base');
   report.push(`base install: ${checkout(baseSha, baseDir)}`);
@@ -230,7 +237,7 @@ try {
 
   const counted = changes?.replace(/^changes since \S+ \| /, '') ?? null;
   const countedTotal = counted ? [...counted.matchAll(/ (\d+)/g)].reduce((sum, m) => sum + Number(m[1]), 0) : null;
-  const outputLines = outputDiff.split('\n').filter((l) => /^[-+][^-+]/.test(l)).length;
+  const outputLines = outputDiff.split('\n').slice(2).filter((l) => /^[-+]/.test(l)).length;
   const jsonCount = Object.values(jsonDiffs).reduce((sum, found) => sum + found.length, 0);
   const different = refused !== null || (countedTotal ?? 0) > 0 || jsonCount > 0 || other.length > 0 || outputLines > 0;
 

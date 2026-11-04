@@ -5373,9 +5373,9 @@ results do not.**
 Chosen by the driver for #546 (2026-11-04). The first version kept both files on one PC because their results name a
 private client. Reading the files showed the name was only in one default path and in the results, so moving those out
 left nothing private in the files. The script is under `scripts/` because whoever prepares a pull request runs it and
-duru's users do not.
+duru's users do not. A PC without the client's config still cannot run the comparison; the script says so and stops.
 Compared:
-- Keeping both files on the PC: another PC or session could not follow `CLAUDE.md`, the script got no review, and
+- Keeping both files on the PC: another PC or session could not read the procedure, the script got no review, and
   losing the PC lost them.
 - A private repository: less to change, but the public `CLAUDE.md` would point at files others cannot read, and the
   script would still get no review here.

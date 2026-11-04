@@ -12,7 +12,7 @@ adding nothing else — no summary of the change, no pull request number, no rev
 Follow docs/verifier.md in <checkout>, section "Instructions for the verifier".
 commit: <full head SHA>
 base: <the pull request's base branch as origin/<name>, or the full SHA of the commit it should be compared with>
-issue: <issue number in duru-app/duru>
+issue: <issue number in duru-app/duru, or none>
 scratch: <a new empty folder in the caller's scratchpad>
 ```
 
@@ -36,6 +36,8 @@ Rules:
 
 - Read the issue with `gh issue view <n> --repo duru-app/duru --json title,body`. Do not read the pull request's
   body, its comments, its review history, or the issue's comments: they carry the author's account of the change.
+- With `issue: none`, skip step 5, and in step 6 and the blocks read "the issue" as the subjects of the commits from
+  the merge-base to the commit.
 - Change nothing outside `scratch` and `~/duru-verify-out/compare/`. No commits, no pushes, no comments or labels on
   GitHub, no edits to any existing checkout. Other sessions may be working in other checkouts on this PC.
 - Nothing you found goes to GitHub. The comparison results name a private client; they stay on this PC.
@@ -57,11 +59,12 @@ Steps:
    run the tests that name it (`grep -l` over `test/*.test.ts`). If `src/review-page/` changed, also run
    `test/review-page-types.test.ts`. Do not run the whole suite; the merge queue does. A test that cannot start
    because Chromium is missing is reported as not run, never as passed.
-4. If the diff changes anything under `src/`, run the comparison:
+4. If the diff changes `package-lock.json` or anything under `src/`, run the comparison:
    `node <checkout>/scripts/compare-maps.mjs <commit> --base <base>`. Exit 0 means no difference, 3 means a
    difference, 1 means it could not run, 2 means it was started wrongly or the client config is missing. Read
    `report.txt` and, for anything it lists, `output.diff` and `json-details.txt` in the folder it names. If only
-   `src/review-page/` changed, skip it and say so.
+   `src/review-page/` changed, skip it and say so. Exit 1 or 2 is reported as not run, unless the message says the
+   head rebuild failed.
 5. For each item in the issue's acceptance criteria, find what shows it: a test you ran, a line of the comparison, or
    a line of the diff. Mark each one shown, not shown, or a human step (for example the driver looking at a screen).
 6. Judge the comparison against the issue: does every difference follow from what the issue asks for, and does
@@ -70,7 +73,7 @@ Steps:
 
 What blocks the merge — only a problem you can show:
 
-- a run that fails at this commit (type check, test, comparison exit 1 or 2), with the command and the output;
+- a run that fails at this commit (type check, test, the comparison's head rebuild), with the command and the output;
 - a document line this change made wrong, quoting the line and showing the behaviour that contradicts it;
 - a difference in the comparison that contradicts the issue, or an acceptance criterion that a run shows is not met.
 
