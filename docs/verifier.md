@@ -23,7 +23,8 @@ way, and the caller counts a block from any of them. One run measured about 8 mi
 
 ## After the report
 
-The report is a claim until the caller has run it. Before acting on a block, run the command it quotes. On a stacked
+The report is a claim until the caller has run it. Before acting on a block, run the command it quotes; a block from
+comparison exit 4 stands only if that run exits 4 again. On a stacked
 pull request, also run it at the top of the stack: a problem fixed higher up does not hold this pull request as long
 as the stack lands together, and a problem still there at the top is reported to whoever owns the stack. Whether a
 block changes the code or the document is the driver's decision when the issue does not settle it.
@@ -63,10 +64,11 @@ Steps:
    because Chromium is missing is reported as not run, never as passed.
 4. If the diff changes `package-lock.json` or anything under `src/`, run the comparison:
    `node <checkout>/scripts/compare-maps.mjs <commit> --base <base>`. Exit 0 means no difference, 3 means a
-   difference, 1 means it could not run, 2 means it was started wrongly or the client config is missing. Read
-   `report.txt` and, for anything it lists, `output.diff` and `json-details.txt` in the folder it names. If only
-   `src/review-page/` changed, skip it and say so. Exit 1 or 2 is reported as not run, unless the message says
-   `head install failed` or `head rebuild exited`.
+   difference, 4 means installing or rebuilding with this commit failed, whatever the cause. Exit 1 means something
+   else stopped it and 2 means it was started wrongly or the client config is missing; report those two as not run.
+   Read `report.txt` and, for anything it lists, `output.diff` and `json-details.txt` in the folder it names. A
+   `fetch failed` line means the base may be old: say so in the report. If only `src/review-page/` changed, skip it
+   and say so.
 5. For each item in the issue's acceptance criteria, find what shows it: a test you ran, a line of the comparison, or
    a line of the diff. Mark each one shown, not shown, or a human step (for example the driver looking at a screen).
 6. Judge the comparison against the issue: does every difference follow from what the issue asks for, and does
@@ -75,8 +77,7 @@ Steps:
 
 What blocks the merge — only a problem you can show:
 
-- a run that fails at this commit (`npm ci`, type check, test, the comparison's head install or head rebuild), with
-  the command and the output;
+- a run that fails at this commit (`npm ci`, type check, test, comparison exit 4), with the command and the output;
 - a document line this change made wrong, quoting the line and showing the behaviour that contradicts it;
 - a difference in the comparison that contradicts the issue, or an acceptance criterion that a run shows is not met.
 

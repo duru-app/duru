@@ -2,7 +2,7 @@
 // 두 duru 로 같은 클라이언트를 rebuild 해서 지도와 출력의 차이를 보고한다.
 // 사용: node scripts/compare-maps.mjs <head: 커밋·브랜치·폴더> [--base <ref>] [--config <file>]
 // 기본 설정은 ~/duru-verify-out/compare.config.json 이고, 결과는 ~/duru-verify-out/compare/ 에 쌓인다.
-// 종료 코드: 0 차이 없음, 3 차이 있음, 2 잘못된 사용, 1 실행 실패.
+// 종료 코드: 0 차이 없음, 3 차이 있음, 4 PR 쪽 설치나 rebuild 실패, 2 잘못된 사용, 1 그 밖의 실행 실패.
 // 결과에 비공개 클라이언트의 경로와 이름이 들어 있으므로 공개 저장소나 PR 본문에 옮기지 않는다.
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -15,6 +15,8 @@ const DEFAULT_CONFIG = path.join(HOME, 'duru-verify-out/compare.config.json');
 const REPORTS = path.join(HOME, 'duru-verify-out/compare');
 const IGNORED_KEYS = new Set(['generatedAt', 'duruCommit']);
 const KEPT_FOLDERS = { marksDir: 'marks', storiesDir: 'stories', judgmentsDir: 'judgments' };
+
+class HeadFailed extends Error {}
 
 function parseArgs(argv) {
   const opts = { base: 'origin/main', config: DEFAULT_CONFIG, head: null };
@@ -52,9 +54,12 @@ function checkout(sha, dir) {
     fs.symlinkSync(path.join(REPO, 'node_modules'), path.join(dir, 'node_modules'));
     return 'shared node_modules';
   }
-  execFileSync('npm', ['ci', '--no-audit', '--no-fund'], { cwd: dir, stdio: 'pipe' });
+  execFileSync('npm', ['ci', '--no-audit', '--no-fund'], { cwd: dir, stdio: ['ignore', 'ignore', 'pipe'], maxBuffer: 1 << 28 });
   return 'own npm ci';
 }
+
+const rebuildFailed = (run) => run.status !== 0 || run.error;
+const howItEnded = (run) => run.error?.message ?? run.signal ?? `exit ${run.status}`;
 
 function rebuild(duruDir, config, configFile, outDir, baselineMap) {
   const written = { ...config, outDir };
@@ -224,13 +229,13 @@ try {
     try {
       report.push(`head install: ${checkout(headSha, headDir)}`);
     } catch (err) {
-      throw new Error(`head install failed: ${err.message}`);
+      throw new HeadFailed(`head install failed: ${err.message}`);
     }
   }
 
   const baseRun = rebuild(baseDir, config, configFile, outDir, null);
   fs.writeFileSync(path.join(reportDir, 'base.log'), baseRun.stdout + baseRun.stderr);
-  if (baseRun.status !== 0) throw new Error(`base rebuild exited with ${baseRun.status}; see ${reportDir}/base.log`);
+  if (rebuildFailed(baseRun)) throw new Error(`base rebuild failed (${howItEnded(baseRun)}); see ${reportDir}/base.log`);
   const baseOut = path.join(work, 'base-out');
   fs.renameSync(outDir, baseOut);
   const baselineMap = path.join(work, 'baseline-map.json');
@@ -243,8 +248,7 @@ try {
     headRun = rebuild(headDir, config, configFile, outDir, null);
   }
   fs.writeFileSync(path.join(reportDir, 'head.log'), headRun.stdout + headRun.stderr);
-  if (headRun.status === null) throw new Error(`head rebuild did not finish (${headRun.signal ?? headRun.error?.message}); see ${reportDir}/head.log`);
-  if (headRun.status !== 0) throw new Error(`head rebuild exited with ${headRun.status}; see ${reportDir}/head.log`);
+  if (rebuildFailed(headRun)) throw new HeadFailed(`head rebuild failed (${howItEnded(headRun)}); see ${reportDir}/head.log`);
 
   const changes = headRun.stdout.split('\n').find((line) => line.startsWith('changes since '));
   const { jsonDiffs, other } = compareFolders(baseOut, outDir);
@@ -271,6 +275,7 @@ try {
   console.log(`report ${reportDir}/report.txt`);
   exitCode = different ? 3 : 0;
 } catch (err) {
+  if (err instanceof HeadFailed) exitCode = 4;
   console.error(err.message);
   console.error(`report folder ${reportDir}`);
 } finally {
