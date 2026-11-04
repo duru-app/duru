@@ -1703,7 +1703,8 @@ discarded file keeps that found order too, because it stores the order the revie
 from only that order would store a second file through which nothing ever walked.
 Accepting a candidate a rule cut stores its found order for the same reason, and undoing writes no file when a stored
 one of the same source already leaves the story's order under the rules. A file of another source is not counted: it
-may be hidden by another story, and the undone candidate would then be listed nowhere.
+may be hidden by another story, and the undone candidate would then be listed nowhere. A file of another source holding
+exactly the story's order still stops the write, because `candidates/` keeps one file per order.
 Applying them once, when a candidate is stored, would bake one version of the rules into every file, and a rule added
 later could not reach the candidates that were already stored. The cost is that the key is the order after the rules,
 so changing a rule moves a comment written on a candidate under 「떨어져 나감」: a comment is attached to the screens a

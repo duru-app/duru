@@ -1398,6 +1398,20 @@ test('a candidate accepted whole under a rule and brought back stays the order i
   });
 });
 
+test('undoing a story writes its order as a candidate when the only file leaving that order under a rule is another source that another story hides', () => {
+  withFolder(recordsIn({ 'a.json': ['/home', '/help'] }), (dir: string) => {
+    const stories = path.join(dir, 'stories');
+    const source = { report: 'r.json', tests: ['t'] };
+    storeCandidates(stories, [{ key: 'x', name: 't', screens: [SIGNIN, HOME, HELP], source }]);
+    acceptCandidate(stories, { key: 'y', name: 't', screens: [HOME], source }, { id: 'other', name: '다른 스토리', author: 'reviewer' });
+    const [shown] = shownWith(dir, skipStart).list;
+    acceptCandidate(stories, shown, { id: 'a', name: '도움말을 연다', author: 'reviewer' });
+    fs.rmSync(path.join(dir, 'a.json'));
+    unacceptStory(stories, 'a', skipStart);
+    assert.deepEqual(shownWith(dir, skipStart).list.map((c) => c.screens), [[HOME, HELP]]);
+  });
+});
+
 test('accepting a candidate under a rule with an ID that is refused writes no candidate file', () => {
   withFolder(recordsIn({ 'a.json': ['/signin', '/home', '/help'] }), (dir: string) => {
     const stories = path.join(dir, 'stories');
