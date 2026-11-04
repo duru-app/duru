@@ -425,11 +425,11 @@ const stepsLeft = (screens: string[], offSteps: number[]) => sameScreenRuns(scre
 export function acceptCandidate(dir: string, candidate: Candidate, { id, name, author }: { id: unknown; name: unknown; author: unknown }, now = new Date()) {
   const { source, stepFields } = pickedLines(candidate);
   const offSteps = candidate.offSteps ?? [];
-  if (candidate.skippedByRule) {
-    const kept = storeCandidates(dir, [candidate], now);
-    if (kept.reason) throw new Error(kept.reason);
+  if (!offSteps.length) {
+    const story = addStory(dir, { id, name, screens: withFields({ screens: candidate.screens, stepFields }), author, source }, now);
+    if (candidate.skippedByRule && !candidate.file) storeCandidates(dir, [candidate], now);
+    return story;
   }
-  if (!offSteps.length) return addStory(dir, { id, name, screens: withFields({ screens: candidate.screens, stepFields }), author, source }, now);
   const groups = stepsLeft(candidate.screens, offSteps);
   const fieldsAt = (i: number): StepFields => stepFields?.[i] ?? {};
   const withoutLink = (i: number) => {
@@ -513,8 +513,7 @@ export function unacceptStory(dir: string, id: unknown, rules: SkipRule[] = []) 
     const shown = shownOrder(c.screens, applied);
     return JSON.stringify(stepsLeft(shown, off).map((g) => shown[g[0]])) === storyScreens;
   };
-  const found = [...loadStored(dir).found].sort(byFirstSeen);
-  const back = found.find((c) => sameSource(c.source, source) && leavesStory(c)) ?? found.find((c) => !c.offSteps?.length && leavesStory(c));
+  const back = [...loadStored(dir).found].sort(byFirstSeen).find((c) => sameSource(c.source, source) && leavesStory(c));
   if (!back) {
     const kept = storeCandidates(dir, [{ key: story.screens.join(' > '), name: story.id, screens: story.screens, source, ...carried({ stepFields }) }]);
     if (kept.reason) throw new Error(kept.reason);
@@ -543,8 +542,9 @@ export function undiscardCandidate(dir: string, screens: unknown, { author }: { 
   const discarded = discardedNow(loadDiscarded(dir).discarded).find((d) => JSON.stringify(d.screens) === key);
   if (!discarded) throw new Error(`버린 후보 ${Array.isArray(screens) ? screens.join(' > ') : screens} 가 없습니다`);
   if (isText(discarded.name) && isSource(discarded.source)) {
-    const byRule = isScreenList(discarded.skippedByRule?.found) ? discarded.skippedByRule : undefined;
-    if (byRule && discarded.foundStepFields?.length === byRule.found.length) foundStepFields.set(byRule, discarded.foundStepFields);
+    const found = discarded.skippedByRule?.found;
+    const byRule = storedProblemOf({ ...discarded, screens: found, stepFields: discarded.foundStepFields }) ? undefined : discarded.skippedByRule;
+    if (byRule && discarded.foundStepFields) foundStepFields.set(byRule, discarded.foundStepFields);
     const kept = storeCandidates(dir, [{ key: discarded.screens.join(' > '), name: discarded.name, screens: discarded.screens, source: discarded.source, ...carried(discarded), ...(byRule && { skippedByRule: byRule }) }]);
     if (kept.reason) throw new Error(kept.reason);
   }
