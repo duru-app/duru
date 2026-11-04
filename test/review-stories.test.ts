@@ -988,6 +988,25 @@ test('in a browser, a candidate the candidateSkipScreens rules took a screen out
   );
 });
 
+test('in a browser, when an agent replaces the candidate a reviewer has open, the page moves to the new candidate and keeps the comment being typed', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const comment = await (await postMark(base, { target: { candidate: HELP_KEY }, note: '로그인 단계를 빼 줘' })).json();
+      await withPage(base, async (p, errors) => {
+        await p.waitForSelector('#view-story:not(:disabled)');
+        await p.click(storiesTab);
+        await p.click('#candidate-list li:has-text("open-help")');
+        await p.fill('#right-dock textarea', '쓰던 코멘트');
+        const res = await postJson(base, '/api/candidates/add', { comment: comment.id, name: '홈에서 도움말을 연다', screens: ['/home#Home', '/help#Help'], replaces: [{ screens: HELP_KEY.split(' > '), dropped: [{ step: 1, reason: '로그인은 뺀다' }, { step: 3, reason: '맵에 없는 주소입니다' }] }] });
+        assert.equal(res.status, 201, await res.clone().text());
+        await p.waitForFunction(() => document.querySelector('#center h3')?.textContent === '홈에서 도움말을 연다');
+        assert.equal(await p.inputValue('#right-dock textarea'), '쓰던 코멘트');
+        assert.deepEqual(errors, []);
+      });
+    }),
+  );
+});
+
 test('in a browser, a candidate an agent posted in place of another shows under its comment line the order it replaces folded under 「원래 순서 N」 with where that order came from, each step dropped struck through with why under it, and 「판단」 on a step the agent dropped on its own judgment', { skip: browserMissing }, async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', async (base) => {

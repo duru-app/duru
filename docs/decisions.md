@@ -1725,6 +1725,12 @@ told apart by the comment and the orders replaced, rather than by the comment al
 lets one comment with no target get a candidate per original and lets the next one through after the first is
 accepted. A comment on a screen order takes no `replaces`: it asks for screens between two ends, and nothing listed
 stands for it (model's decision in #532, not yet confirmed).
+An order an original already holds is refused rather than bringing the original back, because the new candidate would
+then hide itself; taking a replacement back belongs to the undo in #533. Originals that typed different values into one
+box are refused until the agent gives the value, because keeping the last one would let the order of `replaces` choose
+what the story types. Records and stored files are also hidden by their source, so a change to `candidateSkipScreens`
+does not bring an original back; a trace is hidden by its order only, because one test can walk several orders and a
+new path must still be offered (model's decisions in #532, not yet confirmed).
 
 **`rebuild` writes the screen order of each traced test into `tests.json` as `traced`, and the review page makes
 trace candidates from it instead of reading the reports and traces itself.**

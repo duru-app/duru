@@ -413,8 +413,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    step you took out on your own judgment rather than because the reviewer asked. The steps you post without
    `reason` must be that order with the dropped steps taken out, neighbouring steps of one screen joined into one;
    a screen you put in carries `reason` as above. When two listed candidates become the same order, post one
-   candidate naming both in `replaces`. You may post several candidates for one such comment. The candidates it
-   replaces leave the list. A comment on a screen order takes no `replaces`.
+   candidate naming both in `replaces`; if they typed different values into one box, give the value to keep in that
+   step's `inputs`. You may post several candidates for one such comment. The candidates it replaces leave the list. A comment on a screen order takes no `replaces`.
    A comment can also be on several targets or on none. Its line then has `targets`, a list of targets in the shapes
    above, in place of `target`, and `wheres`, the `where` of each target in the same order (`null` for one that has
    none or is no longer found). Answer it once, covering every target it names. With an empty `targets` the reviewer

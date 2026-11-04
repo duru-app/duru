@@ -1108,13 +1108,16 @@ judged it so:
 The steps without `reason` must be each order in `replaces` with its dropped steps taken out, neighbouring steps of
 one screen joined into one; a screen the agent put in carries `reason` as above. Two candidates that become the same
 order are replaced by one candidate naming both. The command refuses a candidate in `replaces` that is not listed, a
-step left out without being in `dropped`, kept steps in another order, and an order that is already a story, a listed
-candidate or a discarded one. A comment on a screen order takes no `replaces`. One comment may get several such
+step left out without being in `dropped`, kept steps in another order, an order that is already a story, a listed
+candidate, a discarded one or one another candidate replaces, and a kept step whose originals typed different values
+into one box unless the step's `inputs` give the value to keep. A comment on a screen order takes no `replaces`. One comment may get several such
 candidates, and accepting one of them does not stop the next; for a comment on a screen order, a story accepted from
 it still stops the next candidate. The source written adds `"replaces": [{ "screens", "dropped", "source" }, …]`,
 the source of each candidate replaced kept beside it, and each kept step keeps the lines that step had on the
-candidates it replaces. While the new candidate is listed, accepted or discarded, the candidates it replaces are not
-listed, even after a `rebuild` gives them again from the records or the traces, and a comment on one of them goes
+candidates it replaces, without the lines the reviewer turned off; the lines an agent wrote can still be turned off. The
+new candidate also adds up the inputs its originals could not move. While the new candidate is listed, accepted or discarded, the candidates it replaces are not
+listed, even after a `rebuild` gives them again from the records or the traces, and a page open on one moves to the
+new candidate with the comment being typed, and a comment on one of them goes
 under 「떨어져 나감」. The page shows each order replaced folded under 「원래 순서 N」 with where it came from, each
 dropped step struck through with its reason under it and 「판단」 on a step the agent judged.
 

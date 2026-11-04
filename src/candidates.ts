@@ -603,9 +603,8 @@ function recordSources(config: any) {
 // 순서를 고치면 코멘트 출처의 단계 번호가 바뀌므로, 코멘트 출처는 코멘트와 대신하는 원래 후보의 순서로만 맞춘다.
 const sourceKey = (source: Candidate['source']) => JSON.stringify('comment' in source ? { comment: source.comment, ...(source.replaces && { replaces: source.replaces.map((r) => r.screens) }) } : source);
 
-const replacedOrders = (source: any): string[] => (isSource(source) && source.replaces ? source.replaces.map((r: ReplacedCandidate) => JSON.stringify(r.screens)) : []);
+const replacedIn = (holders: { source?: unknown }[]): ReplacedCandidate[] => holders.flatMap(({ source }: any) => (isSource(source) && source.replaces) || []);
 
-// 리포트 출처는 리포트 파일과 테스트 제목을 함께 적으므로, 같은 리포트의 테스트가 하나라도 겹치면 같은 출처로 본다.
 function sameSource(a: Candidate['source'], b: Candidate['source']) {
   if ('report' in a && 'report' in b) return a.report === b.report && a.tests.some((title) => b.tests.includes(title));
   return sourceKey(a) === sourceKey(b);
@@ -642,8 +641,9 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   };
   const stories = loadStories(config.storiesDir).stories;
   // 고친 후보가 목록에 있거나 받았거나 버린 동안, 그것이 대신하는 원래 후보는 기록과 시험에서 다시 나와도 올리지 않는다.
-  const replaced = [...stored, ...stories, ...current].flatMap((c) => replacedOrders(c.source));
-  const seen = new Set([...[...stories, ...current].map((s) => JSON.stringify(s.screens)), ...replaced]);
+  const replaced = replacedIn([...stored, ...stories, ...current]);
+  const seen = new Set([...stories, ...current, ...replaced].map((s) => JSON.stringify(s.screens)));
+  const replacedSource = takenBy(replaced.filter((r) => !('comment' in r.source)));
   // 받은 뒤 화면 순서를 고친 스토리도 그 출처의 후보를 다시 올리지 않는다.
   const taken = takenBy(stories);
   const firstOfOrder = new Map<string, any>();
@@ -665,7 +665,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
     const candidate = ruledOrCut(made);
     if (!candidate) continue;
     const key = JSON.stringify(candidate.screens);
-    if (seen.has(key) || taken(candidate.source) || accepted.has(key)) {
+    if (seen.has(key) || taken(candidate.source) || replacedSource(candidate.source) || accepted.has(key)) {
       gone[candidate.key] ??= candidate.name;
       continue;
     }
@@ -701,7 +701,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
     const candidate = 'comment' in source ? base : ruledOrCut(base);
     if (!candidate) continue;
     const key = JSON.stringify(candidate.screens);
-    if (seen.has(key) || taken(candidate.source) || accepted.has(key)) {
+    if (seen.has(key) || taken(candidate.source) || replacedSource(candidate.source) || accepted.has(key)) {
       gone[candidate.key] ??= name;
       continue;
     }
@@ -758,18 +758,6 @@ function replacesInput(replaces: unknown): AskedReplace[] {
   return asked;
 }
 
-// 뺀 단계를 지우고 이웃한 같은 화면을 한 단계로 묶은 순서를, 원래 순서의 단계 번호(0 부터) 묶음으로 준다.
-function keptGroups(screens: string[], dropped: AskedReplace['dropped']) {
-  const groups: number[][] = [];
-  for (const [i, screen] of screens.entries()) {
-    if (dropped.some((d) => d.step === i + 1)) continue;
-    const group = groups.at(-1);
-    if (group && screens[group.at(-1)!] === screen) group.push(i);
-    else groups.push([i]);
-  }
-  return groups;
-}
-
 function leftProblem(where: string, left: string[], groups: number[][], kept: string[]) {
   if (left.length === kept.length && isDeepStrictEqual([...left].sort(), [...kept].sort())) {
     return `이유를 적지 않은 단계의 차례가 ${where} 에서 dropped 의 단계를 뺀 순서 ${orderKey(left)} 와 다릅니다. 원래 후보의 단계는 차례를 바꾸지 않습니다`;
@@ -787,25 +775,42 @@ function replacedCandidates(asked: AskedReplace[], list: Candidate[], kept: stri
     const where = `replaces 의 ${i + 1} 번째 원래 후보 ${orderKey(r.screens)}`;
     const candidate = list.find((c) => isDeepStrictEqual(c.screens, r.screens));
     if (!candidate) throw new Error(`${where} 는 지금 후보 목록에 없습니다`);
-    const groups = keptGroups(r.screens, r.dropped);
+    const groups = stepsLeft(r.screens, r.dropped.map((d) => d.step));
     const left = groups.map((g) => r.screens[g[0]]);
     if (!isDeepStrictEqual(left, kept)) throw new Error(leftProblem(where, left, groups, kept));
-    return { ...r, candidate, groups };
+    return { ...r, candidate, groups, picked: pickedLines(candidate) };
   });
 }
 
+type Originals = ReturnType<typeof replacedCandidates>;
+
 // 남긴 단계는 원래 후보들의 칸을 이어받는다. 들어오는 링크 조건은 원래 순서에서 바로 앞이던 단계가 여전히 앞에 올 때만 남긴다.
-function fieldsFromOriginals(originals: ReturnType<typeof replacedCandidates>, keptAt: (number | undefined)[], i: number): StepFields {
+function fieldsFromOriginals(originals: Originals, keptAt: (number | undefined)[], i: number): StepFields {
   const k = keptAt[i];
   if (k === undefined) return {};
   const linked = (groups: number[][]) => k > 0 && keptAt[i - 1] === k - 1 && groups[k - 1].at(-1)! + 1 === groups[k][0];
-  return joinedFields(originals.flatMap(({ candidate, groups }) => groups[k].map((j, at) => {
-    const { linkNeeds, ...rest } = candidate.stepFields?.[j] ?? {};
+  return joinedFields(originals.flatMap(({ picked, groups }) => groups[k].map((j, at) => {
+    const { linkNeeds, ...rest } = picked.stepFields?.[j] ?? {};
     return at === 0 && linked(groups) && linkNeeds ? { ...rest, linkNeeds } : rest;
   })));
 }
 
-const ownLines = (fields: StepFields, from: StepFields) => Object.fromEntries(Object.entries(fields)
+function agentLinesFromOriginals(originals: Originals, k: number | undefined, from: StepFields): StepFields {
+  if (k === undefined) return {};
+  const { linkNeeds, ...lines } = joinedFields(originals.flatMap(({ picked, groups }) => ('comment' in picked.source ? picked.source.written : [])
+    .filter(({ step }) => groups[k].includes(step - 1))
+    .map(({ step: _, ...fields }) => fields)));
+  return linkNeeds && from.linkNeeds ? { ...lines, linkNeeds } : lines;
+}
+
+function inputClash(originals: Originals, k: number | undefined, typed: StepFields) {
+  if (k === undefined) return null;
+  const inputs = originals.map(({ picked, groups }) => joinedFields(groups[k].map((j) => picked.stepFields?.[j] ?? {})).inputs ?? []);
+  return inputs.flat().find((input) => !typed.inputs?.some((t) => sameBox(t, input))
+    && inputs.flat().some((other) => sameBox(other, input) && !isDeepStrictEqual(other.value, input.value))) ?? null;
+}
+
+const ownLines =(fields: StepFields, from: StepFields) => Object.fromEntries(Object.entries(fields)
   .map(([key, lines]) => [key, (lines as unknown[]).filter((line) => !((from[key as LineField] ?? []) as unknown[]).some((o) => isDeepStrictEqual(o, line)))] as const)
   .filter(([, lines]) => lines.length));
 
@@ -860,13 +865,17 @@ export function addCommentCandidate(config: any, map: any, mapFile: string, trac
   if (listed.discarded.some((d) => JSON.stringify(d.screens) === key)) throw new Error('이 화면 순서는 버린 후보에 있습니다. 검토자가 「되돌리기」를 누른 뒤에 올릴 수 있습니다');
   const same = listed.list.find((c) => JSON.stringify(c.screens) === key);
   if (same) throw new Error(`이미 후보 「${same.name}」의 화면 순서입니다`);
+  const holders = [...loadStored(config.storiesDir).found, ...stories, ...discardedNow(loadDiscarded(config.storiesDir).discarded)];
+  if (replacedIn(holders).some((r) => JSON.stringify(r.screens) === key)) throw new Error('이 화면 순서는 다른 후보가 이미 대신한 원래 후보의 순서입니다');
 
-  const added = steps.flatMap((s, i) => (s.reason === undefined ? [] : [{ step: i + 1, reason: s.reason }]));
+  const added =steps.flatMap((s, i) => (s.reason === undefined ? [] : [{ step: i + 1, reason: s.reason }]));
   const keptAt = steps.map((_, i) => (kept.includes(i) ? kept.indexOf(i) : undefined));
   const lines = steps.map(({ fields }, i) => {
     if (!originals) return { fields, own: Object.fromEntries(Object.entries(fields).filter(([k]) => !typed.get(i)?.[k])) };
+    const clash = inputClash(originals, keptAt[i], fields);
+    if (clash) throw new Error(`screens 의 ${i + 1} 번째 단계 ${ids[i]} 의 입력칸 ${JSON.stringify(clash.box)} 에 원래 후보들의 값이 서로 다릅니다. 이 단계의 inputs 에 남길 값을 적습니다`);
     const from = fieldsFromOriginals(originals, keptAt, i);
-    return { fields: joinedFields([from, fields]), own: ownLines(fields, from) };
+    return { fields: joinedFields([from, fields]), own: joinedFields([agentLinesFromOriginals(originals, keptAt[i], from), ownLines(fields, from)]) };
   });
   const written = lines.flatMap(({ own }, i) => (Object.keys(own).length ? [{ step: i + 1, ...own }] : []));
   const source: CommentSource = {
@@ -881,6 +890,7 @@ export function addCommentCandidate(config: any, map: any, mapFile: string, trac
   const date = now.toISOString();
   const file = path.join(folder, `${date.slice(0, 10)}-${crypto.randomUUID().slice(0, 8)}.json`);
   const stepFields = lines.some((l) => Object.keys(l.fields).length) ? lines.map((l) => l.fields) : undefined;
-  writeNewRecord(file, { name: name.trim(), screens: ids, source, date, ...(stepFields && { stepFields }) });
+  const skipped = originals?.reduce((sum, { candidate }) => sum + (candidate.skipped ?? 0), 0);
+  writeNewRecord(file, { name: name.trim(), screens: ids, source, date, ...carried({ stepFields, skipped }) });
   return { file: relative(config.configDir, file), key: ids.join(' > '), links: checkStories(map, [{ screens: ids }])[0].links };
 }

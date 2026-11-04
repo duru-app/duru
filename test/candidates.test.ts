@@ -1579,6 +1579,73 @@ test('a story file whose comment source names originals that do not fit is noted
   });
 });
 
+test('a candidate may not take the order of an original another candidate replaces, because it would hide itself and the one it replaces', () => {
+  withReplaceable(HELP_VISITS, ({ comment, post, listed, files }) => {
+    const a = [SIGNIN, HOME, HELP];
+    post(comment({ candidate: a.join(' > ') }), { name: '홈에서 도움말을 연다', screens: [HOME, HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }] }] });
+    const asked = comment({ candidate: [HOME, HELP].join(' > ') });
+    assert.throws(() => post(asked, { name: '로그인부터', screens: [{ screen: SIGNIN, reason: '로그인이 필요합니다' }, HOME, HELP], replaces: [{ screens: [HOME, HELP], dropped: [] }] }),
+      { message: '이 화면 순서는 다른 후보가 이미 대신한 원래 후보의 순서입니다' });
+    assert.equal(files().length, 1);
+    assert.deepEqual(listed().list.map((c) => c.name), ['b', '홈에서 도움말을 연다']);
+  });
+});
+
+test('a candidate that replaces an agent\'s candidate leaves out the lines the reviewer turned off and keeps the other lines of that agent as lines the reviewer can turn off', () => {
+  withReplaceable(HELP_VISITS, ({ cfg, comment, post, listed, stored }) => {
+    post(comment({ screens: [HOME, LAB] }), { name: '실험', screens: [HOME, { screen: LAB, expects: ['틀린 줄', '맞는 줄'] }] });
+    const agents = () => listed().list.find((c) => c.name === '실험')!;
+    pickCandidateLine(cfg.storiesDir, agents(), { step: 2, field: 'expects', line: 1, on: false });
+    const posted = post(comment({ candidate: [HOME, LAB].join(' > ') }), { name: '실험만', screens: [LAB], replaces: [{ screens: [HOME, LAB], dropped: [{ step: 1, reason: '시험 준비입니다' }] }] });
+    const file = stored(posted);
+    assert.deepEqual(file.stepFields, [{ expects: ['맞는 줄'] }]);
+    assert.deepEqual(file.source.written, [{ step: 1, expects: ['맞는 줄'] }]);
+    assert.deepEqual(listed().list.find((c) => c.name === '실험만')!.lines, [{ step: 1, field: 'expects', line: 1, row: 0, on: true }]);
+  });
+});
+
+test('a candidate that replaces others carries how many inputs each of them could not move', () => {
+  const records = {
+    'visits/a.json': [{ url: '/signin' }, { url: '/home', skipped: 2 }, { url: '/help' }],
+    'visits/c.json': [{ url: '/lab' }, { url: '/home', skipped: 1 }, { url: '/help' }],
+  };
+  withReplaceable(records, ({ comment, post, listed, stored }) => {
+    const drop = (screens: string[]) => ({ screens, dropped: [{ step: 1, reason: '시험 준비입니다' }] });
+    const posted = post(comment(), { name: '홈에서 도움말을 연다', screens: [HOME, HELP], replaces: [drop([SIGNIN, HOME, HELP]), drop([LAB, HOME, HELP])] });
+    assert.equal(stored(posted).skipped, 3);
+    assert.equal(listed().list[0].skipped, 3);
+  });
+});
+
+test('originals that typed different values into one box are refused until the agent writes the value to keep', () => {
+  const typed = (value: string) => ({ box: { label: '메모' }, value });
+  const records = {
+    'visits/a.json': [{ url: '/signin' }, { url: '/home', inputs: [typed('하나')] }, { url: '/help' }],
+    'visits/c.json': [{ url: '/lab' }, { url: '/home', inputs: [typed('둘')] }, { url: '/help' }],
+  };
+  withReplaceable(records, ({ comment, post, files, stored }) => {
+    const id = comment();
+    const drop = (screens: string[]) => ({ screens, dropped: [{ step: 1, reason: '시험 준비입니다' }] });
+    const replaces = [drop([SIGNIN, HOME, HELP]), drop([LAB, HOME, HELP])];
+    assert.throws(() => post(id, { name: '홈에서 도움말을 연다', screens: [HOME, HELP], replaces }),
+      { message: `screens 의 1 번째 단계 ${HOME} 의 입력칸 {"label":"메모"} 에 원래 후보들의 값이 서로 다릅니다. 이 단계의 inputs 에 남길 값을 적습니다` });
+    assert.deepEqual(files(), []);
+    const posted = post(id, { name: '홈에서 도움말을 연다', screens: [{ screen: HOME, inputs: [typed('둘')] }, HELP], replaces });
+    assert.deepEqual(stored(posted).stepFields[0].inputs, [typed('둘')]);
+  });
+});
+
+test('an original stays out of the list after candidateSkipScreens changes its order, from a record and from a stored file, while another comment\'s candidate is not hidden by it', () => {
+  withReplaceable(HELP_VISITS, ({ cfg, comment, post }) => {
+    const a = [SIGNIN, HOME, HELP];
+    post(comment({ candidate: a.join(' > ') }), { name: '홈에서 도움말을 연다', screens: [HOME, HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }] }] });
+    const names = () => storyCandidates({ ...cfg, candidateSkipScreens: [{ screen: HELP, where: 'any' }] }, map, MAP_FILE).list.map((c) => c.name);
+    assert.deepEqual(names(), ['b', '홈에서 도움말을 연다']);
+    storeCandidates(cfg.storiesDir, storyCandidates(cfg, map, MAP_FILE).list);
+    assert.deepEqual(names(), ['b', '홈에서 도움말을 연다']);
+  });
+});
+
 test('the usage guide and the agent skill give duru candidate the same replaces input, each original with screens and its dropped steps with step, reason and judged, and the guide says the originals stay out of the list while the new candidate is listed, accepted or discarded', () => {
   const readme = fs.readFileSync(path.join(import.meta.dirname, '../README.md'), 'utf8');
   const skill = fs.readFileSync(path.join(import.meta.dirname, '../skills/duru/SKILL.md'), 'utf8');

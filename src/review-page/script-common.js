@@ -189,8 +189,11 @@ async function load() {
     state.storyDraft = null;
   }
   if (!candidateOf()) {
-    state.candidate = null;
-    state.candidateTalk = null;
+    const left = state.candidate;
+    const replacement = state.data.candidates.list.find((c) => byAgent(c) && c.source.replaces?.some((r) => r.screens.join(' > ') === left));
+    state.candidate = replacement?.key ?? null;
+    if (!replacement) state.candidateTalk = null;
+    else if (state.candidateTalk?.tags) state.candidateTalk.tags = state.candidateTalk.tags.map((t) => (t.candidate === left ? { candidate: replacement.key } : t));
   }
   dropLostNeed();
   const c = state.compose;
