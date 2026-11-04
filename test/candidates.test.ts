@@ -1377,7 +1377,7 @@ test('the rules reach the same order when they meet an order they already shorte
   });
 });
 
-test('a candidate accepted whole under a rule and brought back stays the order it was found in, stored or not, whatever source already holds that order', () => {
+test('a candidate accepted whole under a rule and brought back stays the order it was found in, stored or not', () => {
   const acceptAndUndo = (dir: string, stories: string) => {
     const [shown] = shownWith(dir, skipStart).list;
     acceptCandidate(stories, shown, { id: 'a', name: '도움말을 연다', author: 'reviewer' });
@@ -1395,24 +1395,30 @@ test('a candidate accepted whole under a rule and brought back stays the order i
   withFolder(recordsIn({ 'a.json': ['/signin', '/home', '/help'] }), (dir: string) => {
     acceptAndUndo(dir, path.join(dir, 'stories'));
   });
-  withFolder(recordsIn({ 'a.json': ['/signin', '/home', '/help'] }), (dir: string) => {
-    const stories = path.join(dir, 'stories');
-    storeCandidates(stories, [{ key: 'x', name: 't', screens: [SIGNIN, HOME, HELP], source: { report: 'r.json', tests: ['t'] } }]);
-    acceptAndUndo(dir, stories);
-  });
 });
 
-test('a discarded file whose found order is not a list of screens brings back the order it shows', () => {
+test('accepting a candidate under a rule with an ID that is refused writes no candidate file', () => {
   withFolder(recordsIn({ 'a.json': ['/signin', '/home', '/help'] }), (dir: string) => {
     const stories = path.join(dir, 'stories');
     const [shown] = shownWith(dir, skipStart).list;
-    const { file } = discardCandidate(stories, shown, { reason: '잠깐 뺀다', author: 'reviewer' }, new Date('2026-10-03T00:00:00Z'));
-    const at = path.join(stories, file);
-    fs.writeFileSync(at, JSON.stringify({ ...JSON.parse(fs.readFileSync(at, 'utf8')), skippedByRule: { found: [], steps: [] } }));
-    undiscardCandidate(stories, shown.screens, { author: 'reviewer' }, new Date('2026-10-04T00:00:00Z'));
-    const written = fs.readdirSync(path.join(stories, 'candidates')).map((f) => JSON.parse(fs.readFileSync(path.join(stories, 'candidates', f), 'utf8')).screens);
-    assert.deepEqual(written, [[HOME, HELP]]);
+    assert.throws(() => acceptCandidate(stories, shown, { id: 'BAD ID', name: '도움말을 연다', author: 'reviewer' }));
+    assert.equal(fs.existsSync(path.join(stories, 'candidates')), false);
   });
+});
+
+test('a discarded file whose found order cannot be stored brings back the order it shows', () => {
+  for (const broken of [{ skippedByRule: { found: [], steps: [] } }, { foundStepFields: [null, null, null] }, { foundStepFields: [{}] }]) {
+    withFolder(recordsIn({ 'a.json': ['/signin', '/home', '/help'] }), (dir: string) => {
+      const stories = path.join(dir, 'stories');
+      const [shown] = shownWith(dir, skipStart).list;
+      const { file } = discardCandidate(stories, shown, { reason: '잠깐 뺀다', author: 'reviewer' }, new Date('2026-10-03T00:00:00Z'));
+      const at = path.join(stories, file);
+      fs.writeFileSync(at, JSON.stringify({ ...JSON.parse(fs.readFileSync(at, 'utf8')), ...broken }));
+      undiscardCandidate(stories, shown.screens, { author: 'reviewer' }, new Date('2026-10-04T00:00:00Z'));
+      const written = fs.readdirSync(path.join(stories, 'candidates')).map((f) => JSON.parse(fs.readFileSync(path.join(stories, 'candidates', f), 'utf8')).screens);
+      assert.deepEqual(written, [[HOME, HELP]]);
+    });
+  }
 });
 
 test('a candidate discarded and brought back keeps the order it was found in, so removing the rule lists that one candidate and no order nobody walked', () => {
@@ -1715,6 +1721,17 @@ test('a step a ✕ joins counts as put in by the agent only when the agent put i
     post({ screens: reviewers });
     const story = acceptWithOff(cfg, 2);
     assert.deepEqual((story.source as { added: object[] }).added, []);
+  });
+});
+
+test('a candidate that has a file, accepted under a rule, writes no second file for the order a record found', () => {
+  withFolder(recordsIn({ 'a.json': ['/signin', '/home', '/help'] }), (dir: string) => {
+    const stories = path.join(dir, 'stories');
+    storeCandidates(stories, [{ key: 'x', name: 'x', screens: [HOME, HELP], source: { record: 'a.json', steps: [2, 3] } }]);
+    const [shown] = shownWith(dir, skipStart).list;
+    assert.ok(shown.file);
+    acceptCandidate(stories, shown, { id: 'a', name: '도움말을 연다', author: 'reviewer' });
+    assert.equal(fs.readdirSync(path.join(stories, 'candidates')).length, 1);
   });
 });
 
