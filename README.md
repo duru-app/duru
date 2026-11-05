@@ -1039,7 +1039,9 @@ noted with its path and why.
 The `candidateSkipScreens` rules apply each time the list is made, and the candidate file keeps the order it was
 found in, so changing or removing a rule shows the candidate again as found. Candidates whose orders become the same
 are one candidate, and a candidate left with no screen is not listed. Such a candidate with a test in the current
-results names only the tests there, so a test known only from a stored file is not named. The page shows the found
+results names only the tests there, so a test known only from a stored file is not named. Only the first of them
+keeps its found order in a file, so the found order of another comes back only while its record or trace is there,
+and its test titles stay on the first one's file. The page shows the found
 order folded under 「원래 순서 N」 with each step taken out marked 「설정 규칙」. A candidate is told apart by its order after the rules,
 so changing a rule moves a comment on a candidate it changes under 「떨어져 나감」. `rebuild` counts the candidates
 the rules cut and names a rule screen that is not on the map.

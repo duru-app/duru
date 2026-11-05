@@ -1717,6 +1717,9 @@ A candidate joining a test in the current results with a test only in a stored f
 because a test missing from this run cannot be told apart from a deleted one. Writing both titles into the file was
 tried: a renamed or tagged test kept its old title in the source, and the joined title stayed in the file after the
 rule was removed (driver's decision in #530, 2026-11-05).
+Candidates a rule joins write one file, the first one's found order, so the found order of another returns only while
+its record or trace is there. Writing a file for each would only add files and can still be done later; for now the
+limit is written down (the author's call, not yet confirmed by the driver, 2026-11-05).
 
 **`rebuild` writes the screen order of each traced test into `tests.json` as `traced`, and the review page makes
 trace candidates from it instead of reading the reports and traces itself.**
