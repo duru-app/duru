@@ -1128,7 +1128,7 @@ candidates it replaces, without the lines the reviewer turned off; the lines an 
 new candidate also adds up the inputs its originals could not move. While the new candidate is listed, accepted or discarded, the candidates it replaces are not
 listed, even after a `rebuild` gives them again from the records or the traces, and a page open on one moves to the
 new candidate with the comment being typed, and a comment on one of them goes
-under 「떨어져 나감」. The page shows each order replaced folded under 「원래 순서 N」 with where it came from, each
+under 「떨어져 나감」. A discard made with 「원래대로」 is the exception: it lists them again. The page shows each order replaced folded under 「원래 순서 N」 with where it came from, each
 dropped step struck through with its reason under it and 「판단」 on a step the agent judged.
 
 ## Review page
