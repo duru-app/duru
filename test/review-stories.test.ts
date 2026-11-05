@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from 'playwright-core';
 import { addMark } from '../src/marks.ts';
+import { addStory } from '../src/stories.ts';
 import { taskList } from '../src/tasks.ts';
 import { FIXTURE, withRebuiltFixture, withServer, postMark, rebuild, browserMissing, withPage, TRACED, asked, why, placeOf, postJson, CANDIDATES, HELP_RECORD, HELP_KEY, PUBLISH_KEY, storiesTab, BAD_REQUEST, discardCandidate, postCandidate, postAgentCandidate, AGENT_KEY, EMAIL_INPUT, untilSet } from './review-helpers.ts';
 import type { PageData } from './review-helpers.ts';
@@ -414,6 +415,35 @@ async function openHelpCandidate(p: Page) {
   await p.click('#candidate-list li:has-text("open-help")');
   await p.waitForSelector('#center button.step-off');
 }
+
+test('in a browser, a candidate whose steps left are the order of a story says why on its card with its accept buttons off, until a ✕ changes the order', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) => {
+    addStory(config.storiesDir, { id: 'help-direct', name: '바로 도움말', screens: ['/signin#SignIn', '/home#Home', '/help#Help'], author: 'Kim Min' });
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        const acceptOff = () => p.evaluate(() => ['button.accept', 'button.accept-edited'].map((b) => (document.querySelector(`#center ${b}`) as HTMLButtonElement).disabled));
+        await openHelpCandidate(p);
+        assert.deepEqual(await acceptOff(), [false, false]);
+        assert.equal(await p.locator('#center .accept-problem').count(), 0);
+
+        const REASON = '남은 단계가 이미 스토리 help-direct 의 화면 순서입니다. ✕ 를 바꾸거나 이 후보를 버려 주세요';
+        const place = async () => [await p.locator('#center button.discard').boundingBox(), await p.locator('#center button[name="step-off-3"]').boundingBox()];
+        const placeBefore = await place();
+        await p.click('#center button[name="step-off-3"]');
+        await p.waitForSelector('#center .accept-problem');
+        assert.equal(await p.textContent('#center .accept-problem'), REASON);
+        assert.deepEqual(await acceptOff(), [true, true]);
+        assert.equal(await p.getAttribute('#center button.accept', 'title'), REASON);
+        assert.equal(await p.getAttribute('#center button.accept-edited', 'title'), REASON);
+        assert.equal(await p.isDisabled('#center button.discard'), false);
+        assert.deepEqual(await place(), placeBefore);
+
+        await p.click('#center button[name="step-off-2"]');
+        await p.waitForSelector('#center .accept-problem', { state: 'detached' });
+        assert.deepEqual(await acceptOff(), [false, false]);
+      }));
+  });
+});
 
 test('in a browser, each step of a candidate has a ✕ that strikes the step through without opening its screen and puts it back on a second press, what is taken out stays after a reload, the last step left cannot be taken out, and accepting writes only the steps left into the story file', { skip: browserMissing }, async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
