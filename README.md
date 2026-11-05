@@ -1078,7 +1078,8 @@ On the review page each step of a candidate has a ✕. Pressing it strikes the s
 the step back; the last step left cannot be taken out. The steps taken out are kept in the candidate file as
 `offSteps`, `[<step>, …]` numbered from 1 in the order the file holds, which `candidateSkipScreens` can make longer
 than the card, so they stay after a reload, and accepting writes only the steps left into the story file, with steps
-of one screen left side by side as one step. Accepting any candidate writes the story's ID into its candidate file as
+of one screen left side by side as one step. While the steps left are the order of a story already there, why shows
+below the steps and both accept buttons are off. Accepting any candidate writes the story's ID into its candidate file as
 `acceptedAs`, making the file if there is none. While that story exists, the order the candidate was found in is not
 offered from any source, but any other order of the same test is, until it is discarded. Undoing the acceptance removes
 `acceptedAs`, and the candidate comes back with its steps taken out.
@@ -1107,7 +1108,7 @@ judged it so:
 ```
 
 A step the reviewer took out of a listed candidate with ✕ counts as dropped without being named, with
-`검토자가 ✕ 로 뺐습니다` as its reason, so `dropped` may be empty.
+`검토자 제외` as its reason, so `dropped` may be empty.
 The steps without `reason` must be each order in `replaces` with its dropped steps taken out, neighbouring steps of
 one screen joined into one; a screen the agent put in carries `reason` as above. Two candidates that become the same
 order are replaced by one candidate naming both. The command refuses a candidate in `replaces` that is not listed, a

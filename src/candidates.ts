@@ -124,6 +124,7 @@ export interface Candidate {
   file?: string;
   lines?: AgentLine[];
   offSteps?: number[];
+  acceptProblem?: string;
 }
 
 const inputFields = (inputs: StepInput[][] = []) => (inputs.some((i) => i.length) ? inputs.map((i) => (i.length ? { inputs: i } : {})) : undefined);
@@ -422,6 +423,13 @@ function pickedLines({ source, stepFields, lines }: Candidate) {
 }
 
 const stepsLeft = (screens: string[], offSteps: number[]) => sameScreenRuns(screens, screens.flatMap((_, i) => (offSteps.includes(i + 1) ? [] : [i])));
+const orderLeft = (screens: string[], offSteps: number[]) => stepsLeft(screens, offSteps).map((g) => screens[g[0]]);
+
+function stepsLeftProblem(stories: { id: string; screens: string[] }[], { screens, offSteps = [] }: Candidate) {
+  if (!offSteps.length) return undefined;
+  const same = stories.find((s) => isDeepStrictEqual(s.screens, orderLeft(screens, offSteps)));
+  return same && `남은 단계가 이미 스토리 ${same.id} 의 화면 순서입니다. ✕ 를 바꾸거나 이 후보를 버려 주세요`;
+}
 
 export function acceptCandidate(dir: string, candidate: Candidate, { id, name, author }: { id: unknown; name: unknown; author: unknown }, now = new Date()) {
   const { source, stepFields } = pickedLines(candidate);
@@ -432,6 +440,7 @@ export function acceptCandidate(dir: string, candidate: Candidate, { id, name, a
     else storeCandidates(dir, [candidate], now, story.id);
     return story;
   }
+  if (candidate.acceptProblem) throw new Error(candidate.acceptProblem);
   const groups = stepsLeft(candidate.screens, offSteps);
   const fieldsAt = (i: number): StepFields => stepFields?.[i] ?? {};
   const withoutLink = (i: number) => {
@@ -520,7 +529,7 @@ export function unacceptStory(dir: string, id: unknown, rules: SkipRule[] = []) 
     const applied = rulesFor(c.source, rules);
     const off = shownOffSteps(c.screens, c.offSteps, applied) ?? [];
     const shown = shownOrder(c.screens, applied);
-    return JSON.stringify(stepsLeft(shown, off).map((g) => shown[g[0]])) === storyScreens;
+    return JSON.stringify(orderLeft(shown, off)) === storyScreens;
   };
   const back = accepted.find(leavesStory);
   if (!back) {
@@ -610,7 +619,7 @@ function recordSources(config: any) {
   return { sources: [...config.visitRecords, folder], notices: [] };
 }
 
-// 순서를 고치면 코멘트 출처의 단계 번호가 바뀌므로, 코멘트 출처는 코멘트와 대신하는 원래 후보의 순서로만 맞춘다.
+// 순서를 고치면 코멘트 출처의 단계 번호가 바뀐다.
 const sourceKey = (source: Candidate['source']) => JSON.stringify('comment' in source ? { comment: source.comment, ...(source.replaces && { replaces: source.replaces.map((r) => r.screens) }) } : source);
 
 const replacedIn = (holders: { source?: unknown }[]): ReplacedCandidate[] => holders.flatMap(({ source }: any) => (isSource(source) && source.replaces) || []);
@@ -650,7 +659,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
     return after;
   };
   const stories = loadStories(config.storiesDir).stories;
-  // 고친 후보가 목록에 있거나 받았거나 버린 동안, 그것이 대신하는 원래 후보는 기록과 시험에서 다시 나와도 올리지 않는다.
+  // 고친 후보를 받거나 버린 뒤에도 원래 후보는 목록에 올리지 않는다.
   const replaced = replacedIn([...stored, ...stories, ...current]);
   const seen = new Set([...stories, ...current, ...replaced].map((s) => JSON.stringify(s.screens)));
   const replacedSource = takenBy(replaced.filter((r) => !('comment' in r.source)));
@@ -727,7 +736,11 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   }
   const onMap = new Set(map.screens.map((s: any) => s.id));
   const missedRules = [...new Set(rules.map((r) => r.screen))].filter((s) => !onMap.has(s) && !found.has(s));
-  return { list: checkStories(map, list), discarded: shown, gone, notices: all, missedRules, cutByRules: cut.size };
+  const checked = list.map((c) => {
+    const acceptProblem = stepsLeftProblem(stories, c);
+    return acceptProblem ? { ...c, acceptProblem } : c;
+  });
+  return { list: checkStories(map, checked), discarded: shown, gone, notices: all, missedRules, cutByRules: cut.size };
 }
 
 const AGENT_STEPS = 'screens 는 화면 ID 나 { "screen", "reason", "needs", "linkNeeds", "inputs", "expects" } 객체를 하나 이상 차례대로 담은 목록이어야 합니다';
@@ -785,7 +798,7 @@ function leftProblem(where: string, left: string[], groups: number[][], kept: st
   return `이유를 적지 않은 단계는 ${where} 에서 dropped 의 단계를 뺀 순서 ${orderKey(left)} 그대로여야 합니다. 에이전트가 넣은 화면에는 reason 에 이유를 적습니다`;
 }
 
-const DROPPED_BY_REVIEWER = '검토자가 ✕ 로 뺐습니다';
+const DROPPED_BY_REVIEWER = '검토자 제외';
 
 function replacedCandidates(asked: AskedReplace[], list: Candidate[], kept: string[]) {
   return asked.map((r, i) => {
@@ -804,7 +817,6 @@ function replacedCandidates(asked: AskedReplace[], list: Candidate[], kept: stri
 
 type Originals = ReturnType<typeof replacedCandidates>;
 
-// 남긴 단계는 원래 후보들의 칸을 이어받는다. 들어오는 링크 조건은 원래 순서에서 바로 앞이던 단계가 여전히 앞에 올 때만 남긴다.
 function fieldsFromOriginals(originals: Originals, keptAt: (number | undefined)[], i: number): StepFields {
   const k = keptAt[i];
   if (k === undefined) return {};

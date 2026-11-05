@@ -2,8 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { Page, Route } from 'playwright-core';
+import type { Page } from 'playwright-core';
 import { addMark } from '../src/marks.ts';
+import { addStory } from '../src/stories.ts';
 import { taskList } from '../src/tasks.ts';
 import { FIXTURE, withRebuiltFixture, withServer, postMark, rebuild, browserMissing, withPage, TRACED, asked, why, placeOf, postJson, CANDIDATES, HELP_RECORD, HELP_KEY, PUBLISH_KEY, storiesTab, BAD_REQUEST, discardCandidate, postCandidate, postAgentCandidate, AGENT_KEY, EMAIL_INPUT, untilSet } from './review-helpers.ts';
 import type { PageData } from './review-helpers.ts';
@@ -326,29 +327,6 @@ test('in a browser, a candidate an agent posted has a box on each line the agent
   );
 });
 
-test('in a browser, a line box pressed while the candidate is being accepted stays as it was, so the story keeps the line and the candidate file switches none off', { skip: browserMissing }, async () => {
-  await withRebuiltFixture(CANDIDATES, (config) =>
-    withServer(config, 'reviewer', (base) =>
-      withPage(base, async (p, errors) => {
-        const { file } = await postAgentCandidate(base, 'lab-path');
-        await openAgentCandidate(p, 'lab-path');
-        let held: Route | null = null;
-        await p.route('**/api/candidates/accept', (route) => { held = route; });
-        await p.click('#center button.accept');
-        const accept = (await untilSet(() => held, 'the accept request held'))!;
-        await p.click('#center input[name="line-3-needs-1"]');
-        assert.equal(await p.isChecked('#center input[name="line-3-needs-1"]'), true);
-        await accept.continue();
-        await p.waitForSelector('#story-list li.selected:has-text("lab-path")');
-        const story = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'lab-path.json'), 'utf8'));
-        assert.deepEqual(story.screens.at(-1).needs, ['실험 메뉴가 켜져 있다']);
-        assert.equal(offLinesIn(path.join(config.configDir, file)), undefined);
-        assert.deepEqual(errors, []);
-      }),
-    ),
-  );
-});
-
 test('in a browser, 「스토리로 받기」 and 「고쳐서 받기」 write into the story file only the lines of the agent switched on, and the reviewer\'s lines as they were', { skip: browserMissing }, async () => {
   for (const [button, id] of [['button.accept', 'lab-path'], ['button.accept-edited', 'lab-edited']]) {
     await withRebuiltFixture(CANDIDATES, (config) =>
@@ -438,6 +416,35 @@ async function openHelpCandidate(p: Page) {
   await p.waitForSelector('#center button.step-off');
 }
 
+test('in a browser, a candidate whose steps left are the order of a story says why on its card with its accept buttons off, until a ✕ changes the order', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) => {
+    addStory(config.storiesDir, { id: 'help-direct', name: '바로 도움말', screens: ['/signin#SignIn', '/home#Home', '/help#Help'], author: 'Kim Min' });
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        const acceptOff = () => p.evaluate(() => ['button.accept', 'button.accept-edited'].map((b) => (document.querySelector(`#center ${b}`) as HTMLButtonElement).disabled));
+        await openHelpCandidate(p);
+        assert.deepEqual(await acceptOff(), [false, false]);
+        assert.equal(await p.locator('#center .accept-problem').count(), 0);
+
+        const REASON = '남은 단계가 이미 스토리 help-direct 의 화면 순서입니다. ✕ 를 바꾸거나 이 후보를 버려 주세요';
+        const place = async () => [await p.locator('#center button.discard').boundingBox(), await p.locator('#center button[name="step-off-3"]').boundingBox()];
+        const placeBefore = await place();
+        await p.click('#center button[name="step-off-3"]');
+        await p.waitForSelector('#center .accept-problem');
+        assert.equal(await p.textContent('#center .accept-problem'), REASON);
+        assert.deepEqual(await acceptOff(), [true, true]);
+        assert.equal(await p.getAttribute('#center button.accept', 'title'), REASON);
+        assert.equal(await p.getAttribute('#center button.accept-edited', 'title'), REASON);
+        assert.equal(await p.isDisabled('#center button.discard'), false);
+        assert.deepEqual(await place(), placeBefore);
+
+        await p.click('#center button[name="step-off-2"]');
+        await p.waitForSelector('#center .accept-problem', { state: 'detached' });
+        assert.deepEqual(await acceptOff(), [false, false]);
+      }));
+  });
+});
+
 test('in a browser, each step of a candidate has a ✕ that strikes the step through without opening its screen and puts it back on a second press, what is taken out stays after a reload, the last step left cannot be taken out, and accepting writes only the steps left into the story file', { skip: browserMissing }, async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', (base) =>
@@ -479,29 +486,6 @@ test('in a browser, each step of a candidate has a ✕ that strikes the step thr
         await p.click('#center button.unaccept');
         await p.waitForSelector('#candidate-list li.selected:has-text("open-help")');
         assert.equal(await p.textContent('#center h3'), 'open-help');
-        assert.deepEqual(errors, []);
-      }),
-    ),
-  );
-});
-
-test('in a browser, a ✕ pressed while the candidate is being accepted takes no step out, so the story keeps every step and the candidate file records none', { skip: browserMissing }, async () => {
-  await withRebuiltFixture(CANDIDATES, (config) =>
-    withServer(config, 'reviewer', (base) =>
-      withPage(base, async (p, errors) => {
-        await openHelpCandidate(p);
-        const steps = await p.locator('#center .story-path .step').count();
-        let held: Route | null = null;
-        await p.route('**/api/candidates/accept', (route) => { held = route; });
-        await p.click('#center button.accept');
-        const accept = (await untilSet(() => held, 'the accept request held'))!;
-        await p.click('#center button[name="step-off-2"]');
-        assert.equal(await p.getAttribute('#center button[name="step-off-2"]', 'aria-pressed'), 'false');
-        await accept.continue();
-        await p.waitForSelector('#story-list li.selected:has-text("open-help")');
-        const saved = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'open-help.json'), 'utf8'));
-        assert.equal(saved.screens.length, steps);
-        assert.equal(offStepsIn(config.storiesDir), undefined);
         assert.deepEqual(errors, []);
       }),
     ),
