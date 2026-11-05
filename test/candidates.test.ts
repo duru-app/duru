@@ -1754,15 +1754,30 @@ test('replacing one of the candidates answering a comment on a screen order leav
   });
 });
 
-test('a candidate that replaces another must drop the steps the reviewer took out of it with ✕', () => {
+test('a candidate that replaces another takes over the steps the reviewer took out of it with ✕, with the reviewer as their reason and no judged mark', () => {
   withReplaceable(HELP_VISITS, ({ cfg, comment, post, listed, stored }) => {
+    const a = [SIGNIN, HOME, HELP];
+    pickCandidateStep(cfg.storiesDir, listed().list.find((c) => c.name === 'a')!, { step: 2, on: false });
+    const posted = post(comment({ candidate: a.join(' > ') }), { name: '도움말만', screens: [HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }] }] });
+    assert.deepEqual(stored(posted).source.replaces[0].dropped, [{ step: 1, reason: NO_SIGNIN }, { step: 2, reason: '검토자가 ✕ 로 뺐습니다' }]);
+  });
+  withReplaceable(HELP_VISITS, ({ cfg, comment, post, listed, stored }) => {
+    const a = [SIGNIN, HOME, HELP];
+    pickCandidateStep(cfg.storiesDir, listed().list.find((c) => c.name === 'a')!, { step: 2, on: false });
+    const posted = post(comment({ candidate: a.join(' > ') }), { name: '도움말만', screens: [HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }, { step: 2, reason: '제가 판단했습니다', judged: true }] }] });
+    assert.deepEqual(stored(posted).source.replaces[0].dropped[1], { step: 2, reason: '검토자가 ✕ 로 뺐습니다' });
+  });
+});
+
+test('a candidate that replaces another cannot keep a step the reviewer took out with ✕, or leave nothing once those steps are out', () => {
+  withReplaceable(HELP_VISITS, ({ cfg, comment, post, listed }) => {
     const a = [SIGNIN, HOME, HELP];
     pickCandidateStep(cfg.storiesDir, listed().list.find((c) => c.name === 'a')!, { step: 2, on: false });
     const id = comment({ candidate: a.join(' > ') });
     assert.throws(() => post(id, { name: '홈부터', screens: [HOME, HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }] }] }),
-      { message: `replaces 의 1 번째 원래 후보 ${a.join(' > ')} 의 2 번째 단계는 검토자가 ✕ 로 뺐습니다. dropped 에 step 과 reason 으로 적습니다` });
-    const posted = post(id, { name: '도움말만', screens: [HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }, { step: 2, reason: '검토자가 뺐습니다' }] }] });
-    assert.deepEqual(stored(posted).screens, [HELP]);
+      { message: /2 번째 단계는 검토자가 ✕ 로 뺐으므로 빠진 것으로 봅니다/ });
+    assert.throws(() => post(id, { name: '없음', screens: [{ screen: LAB, reason: '넣습니다' }], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }, { step: 3, reason: '뺍니다' }] }] }),
+      { message: /단계를 모두 뺄 수는 없습니다\. 2 번째 단계는 검토자가 ✕ 로 뺐습니다/ });
   });
 });
 

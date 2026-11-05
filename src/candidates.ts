@@ -788,17 +788,20 @@ function leftProblem(where: string, left: string[], groups: number[][], kept: st
   return `이유를 적지 않은 단계는 ${where} 에서 dropped 의 단계를 뺀 순서 ${orderKey(left)} 그대로여야 합니다. 에이전트가 넣은 화면에는 reason 에 이유를 적습니다`;
 }
 
+const DROPPED_BY_REVIEWER = '검토자가 ✕ 로 뺐습니다';
+
 function replacedCandidates(asked: AskedReplace[], list: Candidate[], kept: string[]) {
   return asked.map((r, i) => {
     const where = `replaces 의 ${i + 1} 번째 원래 후보 ${orderKey(r.screens)}`;
     const candidate = list.find((c) => isDeepStrictEqual(c.screens, r.screens));
     if (!candidate) throw new Error(`${where} 는 지금 후보 목록에 없습니다`);
-    const taken = candidate.offSteps?.find((step) => !r.dropped.some((d) => d.step === step));
-    if (taken) throw new Error(`${where} 의 ${taken} 번째 단계는 검토자가 ✕ 로 뺐습니다. dropped 에 step 과 reason 으로 적습니다`);
-    const groups = stepsLeft(r.screens, r.dropped.map((d) => d.step));
+    const off = candidate.offSteps ?? [];
+    const dropped = [...r.dropped.filter((d) => !off.includes(d.step)), ...off.map((step) => ({ step, reason: DROPPED_BY_REVIEWER }))].sort((a, b) => a.step - b.step);
+    if (dropped.length === r.screens.length) throw new Error(`${where}의 단계를 모두 뺄 수는 없습니다. ${off.join(', ')} 번째 단계는 검토자가 ✕ 로 뺐습니다`);
+    const groups = stepsLeft(r.screens, dropped.map((d) => d.step));
     const left = groups.map((g) => r.screens[g[0]]);
-    if (!isDeepStrictEqual(left, kept)) throw new Error(leftProblem(where, left, groups, kept));
-    return { ...r, candidate, groups, picked: pickedLines(candidate) };
+    if (!isDeepStrictEqual(left, kept)) throw new Error(leftProblem(where, left, groups, kept) + (off.length ? `. ${off.join(', ')} 번째 단계는 검토자가 ✕ 로 뺐으므로 빠진 것으로 봅니다` : ''));
+    return { ...r, dropped, candidate, groups, picked: pickedLines(candidate) };
   });
 }
 

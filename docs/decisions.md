@@ -1737,6 +1737,10 @@ box are refused until the agent gives the value, because keeping the last one wo
 what the story types. Records and stored files are also hidden by their source, so a change to `candidateSkipScreens`
 does not bring an original back; a trace is hidden by its order only, because one test can walk several orders and a
 new path must still be offered (model's decisions in #532, not yet confirmed).
+A step the reviewer took out of an original with ✕ is dropped from the new candidate without the agent naming it, with
+「검토자가 ✕ 로 뺐습니다」 as its reason and no 「판단」 chip, whatever the agent wrote for it. Refusing a candidate that
+left it unnamed told the agent one step per refusal and made it invent a reason for a choice the reviewer made, which
+could also mark the reviewer's step as the agent's judgment (model's decision in #532, not yet confirmed).
 
 **`rebuild` writes the screen order of each traced test into `tests.json` as `traced`, and the review page makes
 trace candidates from it instead of reading the reports and traces itself.**
