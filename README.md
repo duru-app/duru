@@ -1017,8 +1017,7 @@ follow the limits of reading traces:
 
 On the review page a candidate is accepted, which writes a story file into `storiesDir`, or discarded with a
 reason, which writes a file into `discarded/` in `storiesDir` so the same order does not come back. Accepting a
-candidate that `candidateSkipScreens` shortened can also write its found order into `candidates/`, under the
-candidate's name. Undoing an
+candidate with no file also writes its found order into `candidates/`, under the candidate's name. Undoing an
 acceptance deletes that story file, and the candidate is listed again; if `candidates/` has no file for its screen
 order yet, one is written first, under the story's ID, so it comes back even once its record is gone. Undoing a
 discard writes another file into `discarded/`, `{ "screens", "kind": "undo", "author", "date" }`, with no reason, and
@@ -1079,10 +1078,10 @@ On the review page each step of a candidate has a ✕. Pressing it strikes the s
 the step back; the last step left cannot be taken out. The steps taken out are kept in the candidate file as
 `offSteps`, `[<step>, …]` numbered from 1 in the order the file holds, which `candidateSkipScreens` can make longer
 than the card, so they stay after a reload, and accepting writes only the steps left into the story file, with steps
-of one screen left side by side as one step. The story keeps the source of the candidate, so the candidate is not
-offered again. The candidate file gets the story's ID as `acceptedAs`, and while that story exists the order the
-candidate was found in is not offered from any other source either. Undoing the acceptance removes `acceptedAs`, and
-the candidate comes back with its steps taken out.
+of one screen left side by side as one step. Accepting any candidate writes the story's ID into its candidate file as
+`acceptedAs`, making the file if there is none. While that story exists, the order the candidate was found in is not
+offered from any source, but any other order of the same test is, until it is discarded. Undoing the acceptance removes
+`acceptedAs`, and the candidate comes back with its steps taken out.
 
 **Candidates that replace others.** A comment on a candidate, or one with no target, usually asks for steps nobody
 needs to be taken out, such as the login at the front of every test. The agent answers it with the same command and a
