@@ -1783,6 +1783,15 @@ test('a candidate that replaces another cannot keep a step the reviewer took out
   });
 });
 
+test('✕ on one visit to a repeated screen does not stop a candidate that replaces it from putting that screen in again, since the screen is still in the order', () => {
+  withReplaceable(recordsIn({ 'visits/a.json': ['/home', '/lab', '/home', '/help'] }), ({ cfg, comment, post, listed, stored }) => {
+    const a = [HOME, LAB, HOME, HELP];
+    pickCandidateStep(cfg.storiesDir, listed().list.find((c) => c.name === 'a')!, { step: 1, on: false });
+    const posted = post(comment({ candidate: a.join(' > ') }), { name: '끝에 홈으로 돌아온다', screens: [LAB, HOME, HELP, { screen: HOME, reason: '끝에 홈으로 돌아옵니다' }], replaces: [{ screens: a, dropped: [] }] });
+    assert.deepEqual(stored(posted).screens, [LAB, HOME, HELP, HOME]);
+  });
+});
+
 test('a value typed on a step the reviewer took out with ✕ stays out of the candidate that replaces it, and dropped may be empty when ✕ took out all that goes', () => {
   const records = { 'visits/a.json': [{ url: '/home', inputs: [{ box: { label: '메모' }, value: '뺀 칸' }] }, { url: '/lab' }, { url: '/help' }] };
   withReplaceable(records, ({ cfg, comment, post, listed, stored }) => {
