@@ -1039,7 +1039,7 @@ noted with its path and why.
 
 The `candidateSkipScreens` rules apply each time the list is made, and the candidate file keeps the order it was
 found in, so changing or removing a rule shows the candidate again as found. A rule added later lists a discarded
-candidate again, and an accepted one from a trace, since its order after the rule is one no file holds. Candidates
+candidate again, and can list an accepted one from a trace, since its order after the rule is one no file holds. Candidates
 whose orders become the same are one candidate, and a candidate left with no screen is not listed. Such a candidate
 with a test in the current results names only the tests there, so a test known only from a stored file is not named.
 Only the first of them keeps its found order in a file, so the found order of another comes back only while its
