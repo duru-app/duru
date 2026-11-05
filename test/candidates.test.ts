@@ -1287,6 +1287,39 @@ test('a rule may name the address of a step that matches no screen, which stays 
   });
 });
 
+test('the count of candidates the rules cut takes in every found order a rule changed, on the list or not', () => {
+  const visits = recordsIn({ 'a.json': ['/signin', '/home', '/help'], 'b.json': ['/home', '/signin', '/help'], 'c.json': ['/signin', '/home'], 'd.json': ['/signin'], 'e.json': ['/home', '/help', '/home'] });
+  const files = { ...Object.fromEntries(Object.entries(visits).map(([name, body]) => [`visits/${name}`, body])), 'stories/home-only.json': { name: 'home', screens: [HOME], author: 'kim', date: '2026-11-03' } };
+  withFolder(files, (dir: string) => {
+    const { list, cutByRules } = storyCandidates({ ...config, visitRecords: [path.join(dir, 'visits')], storiesDir: path.join(dir, 'stories'), candidateSkipScreens: [{ screen: SIGNIN, where: 'any' }] }, map, MAP_FILE);
+    assert.deepEqual(list.map((c) => c.screens), [[HOME, HELP], [HOME, HELP, HOME]]);
+    assert.equal(cutByRules, 4);
+  });
+});
+
+test('the count of candidates the rules cut takes in an order found only in a test and one found only in a candidate file', () => {
+  withFolder({ 'candidates/2026-10-02-aaaaaaaa.json': { name: 'stored', screens: [SIGNIN, HOME], source: { record: 'gone.json', steps: [1, 2] }, date: '2026-10-02T00:00:00.000Z' } }, (dir: string) => {
+    const cfg = { ...config, visitRecords: [], storiesDir: dir, candidateSkipScreens: [{ screen: SIGNIN, where: 'any' }] };
+    const { list, cutByRules } = storyCandidates(cfg, map, MAP_FILE, [{ report: 'r.json', title: 'opens help', screens: [SIGNIN, HELP] }]);
+    assert.deepEqual(list.map((c) => c.screens), [[HELP], [HOME]]);
+    assert.equal(cutByRules, 2);
+  });
+});
+
+test('accepting or discarding a candidate a rule changed does not lower the count of candidates the rules cut', () => {
+  withFolder(recordsIn({ 'a.json': ['/signin', '/home', '/help'], 'b.json': ['/signin', '/help'] }), (dir: string) => {
+    const cfg = { ...config, visitRecords: [dir], storiesDir: path.join(dir, 'stories'), candidateSkipScreens: [{ screen: SIGNIN, where: 'any' }] };
+    const first = storyCandidates(cfg, map, MAP_FILE);
+    assert.equal(first.cutByRules, 2);
+    storeCandidates(cfg.storiesDir, first.list);
+    const [homeHelp, help] = first.list;
+    acceptCandidate(cfg.storiesDir, homeHelp, { id: 'home-help', name: 'home and help', author: 'kim' });
+    discardCandidate(cfg.storiesDir, help, { reason: 'not a story', author: 'kim' });
+    const after = storyCandidates(cfg, map, MAP_FILE);
+    assert.deepEqual([after.list, after.cutByRules], [[], 2]);
+  });
+});
+
 test('a rule takes its screen out of a candidate from a visit record where it says: start the screens at the head of the order that a start rule names, end those at its tail, any wherever it is; steps of one screen left side by side become one step, and the candidate keeps the order it was found in and the steps taken out', () => {
   withFolder(recordsIn({ 'a.json': ['/signin', '/home', '/signin', '/help'] }), (dir: string) => {
     const shown = (rules: object[]) => shownWith(dir, rules).list.map((c) => c.screens);
