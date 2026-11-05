@@ -1701,9 +1701,9 @@ already stored. Applying the rules on every listing keeps the found order in the
 shows the candidate as it was found, and the page can show the steps the rules took out beside the order it kept. A
 discarded file keeps that found order too, because it stores the order the reviewer saw: bringing the candidate back
 from only that order would store a second file through which nothing ever walked.
-Accepting a candidate a rule cut stores its found order for the same reason, and undoing writes no file when a stored
-one of the same source already leaves the story's order under the rules. A file of another source is not counted: it
-may be hidden by another story, and the undone candidate would then be listed nowhere. A file of another source holding
+Accepting a candidate a rule cut stores its found order for the same reason, and undoing writes no file when a file
+that names the story in `acceptedAs` already leaves the story's order under the rules. A file that does not name it is
+not counted: it may be hidden by another story, and the undone candidate would then be listed nowhere. A file holding
 exactly the story's order still stops the write, because `candidates/` keeps one file per order.
 Applying them once, when a candidate is stored, would bake one version of the rules into every file, and a rule added
 later could not reach the candidates that were already stored. The cost is that the key is the order after the rules,
@@ -1718,6 +1718,13 @@ candidate does not lower the count (driver's decision in #538, 2026-11-03). The 
 rule touched, so someone changing a rule can see a candidate that left the list because of it. Leaving out what a
 reviewer already handled was tried across five review rounds; it needed the source of each candidate matched against
 each story and discarded candidate, and the rule for what counts kept changing.
+A candidate joining a test in the current results with a test only in a stored file names only the current test,
+because a test missing from this run cannot be told apart from a deleted one. Writing both titles into the file was
+tried: a renamed or tagged test kept its old title in the source, and the joined title stayed in the file after the
+rule was removed (driver's decision in #530, 2026-11-05).
+Candidates a rule joins write one file, the first one's found order, so the found order of another returns only while
+its record or trace is there. Writing a file for each would only add files and can still be done later; for now the
+limit is written down (the author's call, not yet confirmed by the driver, 2026-11-05).
 
 **A candidate that replaces others carries them in its comment source, each as its listed order with the step
 numbers dropped from it, and the list hides every order such a source names in a candidate file, a story or a
@@ -5490,6 +5497,31 @@ Compared:
   request that crashed it.
 - Keeping every request the browser sent: one refused at connect or cut before its body was sent never reached the
   server whole.
+
+**The map comparison script and the verifier's procedure live in this repository; the client they run on and their
+results do not.**
+Chosen by the driver for #546 (2026-11-04). The first version kept both files on one PC because their results name a
+private client. Reading the files showed the name was only in one default path and in the results, so moving those out
+left nothing private in the files. The script is under `scripts/` because whoever prepares a pull request runs it and
+duru's users do not. A PC without the client's config still cannot run the comparison; the script says so and stops.
+Compared:
+- Keeping both files on the PC: another PC or session could not read the procedure, the script got no review, and
+  losing the PC lost them.
+- A private repository: less to change, but the public `CLAUDE.md` would point at files others cannot read, and the
+  script would still get no review here.
+
+**The comparison runs on every pull request that can change the map; a verifier runs on a new feature or a reported
+difference, and any failure on the pull request's side holds the merge until a second run clears it.**
+Chosen by the driver for #546 (2026-11-04). A comparison took 11 to 23 seconds and 10 of the last 25 merges showed a
+difference; a verifier took about 8 minutes and 145,000 tokens, and three on a PRD feature's first pull request has
+not been run yet. The failure rule costs one more run when the network was at fault, and a broken pull request does
+not pass as "could not run".
+Compared:
+- Comparison only, with no verifier: cheaper, but the problem the first verifier found on #536 showed nothing in the
+  comparison.
+- One verifier even on a new feature: cheaper on those pull requests, with fewer chances to catch a problem.
+- Telling the cause of a failure from its error text: a crash caused by the pull request read as "could not run", and
+  rewording a message would change the decision with nothing to notice it.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 
