@@ -9,7 +9,7 @@ import type { SkipRule } from '../src/candidates.ts';
 import { compare, loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
 import { addMark, addReply } from '../src/marks.ts';
-import { editStory, loadStories, writeStoryFields, writeStorySteps } from '../src/stories.ts';
+import { addStory, editStory, loadStories, writeStoryFields, writeStorySteps } from '../src/stories.ts';
 import type { StepInput } from '../src/stories.ts';
 import { linkTests } from '../src/test-links.ts';
 import { traceLinker } from '../src/trace-links.ts';
@@ -1625,6 +1625,167 @@ test('taking a step out of a candidate not stored yet, with a candidates entry t
   });
 });
 
+test('once a test walks a new order after its candidate was accepted, with or without a step taken out, the new order is offered and the accepted one is not', () => {
+  for (const off of [false, true]) {
+    withFolder({}, (dir: string) => {
+      const walked = { report: 'results/playwright/e2e.json', title: 'opens help from home' };
+      const before = [{ ...walked, screens: [SIGNIN, '/home#Home', '/help#Help'] }];
+      const after = [{ ...walked, screens: [SIGNIN, '/home#Home', '/help#Help', '/lab#Lab'] }];
+      const settings = { ...config, visitRecords: [], storiesDir: dir };
+      const listed = (traced: typeof before) => storyCandidates(settings, map, MAP_FILE, traced).list;
+      if (off) {
+        storeCandidates(dir, listed(before));
+        pickCandidateStep(dir, listed(before)[0], stepOff(1));
+      }
+      acceptCandidate(dir, listed(before)[0], { id: 'help', name: '홈에서 도움말을 연다', author: 'reviewer' });
+      assert.deepEqual(listed(before), []);
+      assert.deepEqual(listed(after).map((c) => c.screens), [after[0].screens]);
+    });
+  }
+});
+
+const WALKED = { report: 'results/playwright/e2e.json', title: 'opens help from home' };
+const FIRST_WALK = [{ ...WALKED, screens: [SIGNIN, HOME, HELP] }];
+const NEW_WALK = [{ ...WALKED, screens: [SIGNIN, HOME, HELP, '/lab#Lab'] }];
+const walkedIn = (dir: string) => {
+  const settings = { ...config, visitRecords: [], storiesDir: dir };
+  return (traced: typeof FIRST_WALK | never[]) => storyCandidates(settings, map, MAP_FILE, traced).list;
+};
+const storedFiles = (dir: string) => fs.readdirSync(path.join(dir, 'candidates')).map((file) => JSON.parse(fs.readFileSync(path.join(dir, 'candidates', file), 'utf8')));
+
+test('accepting a candidate whole writes the story ID into a candidate file of the order it was found in, also when it had no file yet', () => {
+  for (const hadFile of [false, true]) {
+    withFolder({}, (dir: string) => {
+      const listed = walkedIn(dir);
+      if (hadFile) storeCandidates(dir, listed(FIRST_WALK));
+      acceptCandidate(dir, listed(FIRST_WALK)[0], { id: 'help', name: '홈에서 도움말을 연다', author: 'reviewer' });
+      assert.deepEqual(storedFiles(dir).map((c) => [c.screens, c.acceptedAs]), [[[SIGNIN, HOME, HELP], 'help']]);
+    });
+  }
+});
+
+test('a step taken out of the new order a test walks after its candidate was accepted stays taken out, and accepting leaves it out of the story', () => {
+  for (const hadFile of [false, true]) {
+    withFolder({}, (dir: string) => {
+      const listed = walkedIn(dir);
+      if (hadFile) storeCandidates(dir, listed(FIRST_WALK));
+      acceptCandidate(dir, listed(FIRST_WALK)[0], { id: 'help', name: '홈에서 도움말을 연다', author: 'reviewer' });
+      pickCandidateStep(dir, listed(NEW_WALK)[0], stepOff(2));
+      assert.deepEqual(listed(NEW_WALK).map((c) => c.offSteps), [[2]]);
+      acceptCandidate(dir, listed(NEW_WALK)[0], { id: 'lab', name: '실험실까지 간다', author: 'reviewer' });
+      assert.deepEqual(loadStories(dir).stories.find((s) => s.id === 'lab')!.screens, [SIGNIN, HELP, '/lab#Lab']);
+      assert.deepEqual(listed(NEW_WALK), []);
+    });
+  }
+});
+
+test('the new order a test walked after its candidate was accepted stays on the list from its file once the test no longer walks it', () => {
+  withFolder({}, (dir: string) => {
+    const listed = walkedIn(dir);
+    acceptCandidate(dir, listed(FIRST_WALK)[0], { id: 'help', name: '홈에서 도움말을 연다', author: 'reviewer' });
+    storeCandidates(dir, listed(NEW_WALK));
+    assert.deepEqual(listed([]).map((c) => c.screens), [NEW_WALK[0].screens]);
+  });
+});
+
+test('an order found by a test and accepted whole stays off the list after the story is edited, and undoing brings it back beside the edited order', () => {
+  withFolder({}, (dir: string) => {
+    const listed = walkedIn(dir);
+    acceptCandidate(dir, listed(FIRST_WALK)[0], { id: 'help', name: '홈에서 도움말을 연다', author: 'reviewer' });
+    const story = loadStories(dir).stories[0];
+    writeStorySteps(dir, 'help', { steps: [{ step: 2, screen: HOME }, { step: 3, screen: HELP }], contentHash: story.contentHash });
+    assert.deepEqual(listed(FIRST_WALK), []);
+    assert.deepEqual(listed([]), []);
+    unacceptStory(dir, 'help');
+    assert.deepEqual(listed([]).map((c) => c.screens).sort((x, y) => y.length - x.length), [[SIGNIN, HOME, HELP], [HOME, HELP]]);
+  });
+});
+
+test('undoing one of two stories accepted from one test brings back that order, and the other stays a story', () => {
+  for (const traced of [NEW_WALK, []]) {
+    withFolder({}, (dir: string) => {
+      const listed = walkedIn(dir);
+      acceptCandidate(dir, listed(FIRST_WALK)[0], { id: 'help', name: '홈에서 도움말을 연다', author: 'reviewer' });
+      acceptCandidate(dir, listed(NEW_WALK)[0], { id: 'lab', name: '실험실까지 간다', author: 'reviewer' });
+      unacceptStory(dir, 'help');
+      assert.deepEqual(listed(traced).map((c) => c.screens), [FIRST_WALK[0].screens]);
+      assert.deepEqual(loadStories(dir).stories.map((s) => s.id), ['lab']);
+    });
+  }
+});
+
+test('a story no candidate file names hides only its own order, so another order of its test stays on the list and keeps its ✕', () => {
+  withFolder({}, (dir: string) => {
+    const listed = walkedIn(dir);
+    storeCandidates(dir, listed(FIRST_WALK));
+    addStory(dir, { id: 'help', name: '홈에서 도움말을 연다', screens: [SIGNIN, HOME], author: 'reviewer', source: { report: WALKED.report, tests: [WALKED.title] } });
+    assert.deepEqual(listed([{ ...WALKED, screens: [SIGNIN, HOME] }]).map((c) => c.screens), [FIRST_WALK[0].screens]);
+    assert.deepEqual(listed([]).map((c) => c.screens), [FIRST_WALK[0].screens]);
+    pickCandidateStep(dir, listed(NEW_WALK)[0], stepOff(2));
+    const newOrder = () => listed(NEW_WALK).find((c) => c.screens.length === 4)!;
+    assert.deepEqual(newOrder().offSteps, [2]);
+    acceptCandidate(dir, newOrder(), { id: 'lab', name: '실험실까지 간다', author: 'reviewer' });
+    unacceptStory(dir, 'lab');
+    assert.deepEqual(newOrder().offSteps, [2]);
+  });
+});
+
+test('undoing a story no candidate file names writes its order although a file of the same test leaves that order', () => {
+  withFolder({}, (dir: string) => {
+    const listed = walkedIn(dir);
+    storeCandidates(dir, listed(FIRST_WALK));
+    addStory(dir, { id: 'help', name: '홈에서 도움말을 연다', screens: [HOME, HELP], author: 'reviewer', source: { report: WALKED.report, tests: [WALKED.title] } });
+    pickCandidateStep(dir, listed([])[0], stepOff(1));
+    discardCandidate(dir, listed([])[0], { reason: '필요 없음', author: 'reviewer' });
+    unacceptStory(dir, 'help');
+    assert.deepEqual(listed([]).map((c) => c.screens), [[HOME, HELP]]);
+  });
+});
+
+test('undoing a story brings back the order it was found in and leaves alone the file another story names, which already holds the order it was edited to', () => {
+  withFolder({}, (dir: string) => {
+    const listed = walkedIn(dir);
+    const edit = (id: string, steps: { step: number; screen: string }[]) => writeStorySteps(dir, id, { steps, contentHash: loadStories(dir).stories.find((s) => s.id === id)!.contentHash });
+    acceptCandidate(dir, listed(FIRST_WALK)[0], { id: 'one', name: '첫 경로', author: 'reviewer' });
+    edit('one', [{ step: 1, screen: SIGNIN }, { step: 3, screen: HELP }]);
+    acceptCandidate(dir, listed(NEW_WALK)[0], { id: 'two', name: '새 경로', author: 'reviewer' });
+    edit('two', [{ step: 1, screen: SIGNIN }, { step: 2, screen: HOME }, { step: 3, screen: HELP }]);
+    unacceptStory(dir, 'two');
+    assert.deepEqual(listed([]).map((c) => c.screens), [NEW_WALK[0].screens]);
+    assert.deepEqual(storedFiles(dir).map((c) => c.acceptedAs).sort(), ['one', undefined]);
+  });
+});
+
+test('a story from a visit record keeps every candidate of that record and those steps off the list', () => {
+  withFolder(recordsIn({ 'r.json': ['/signin', '/home', '/help'] }), (dir: string) => {
+    const cfg = { ...config, visitRecords: [dir], storiesDir: path.join(dir, 'stories') };
+    const listed = () => storyCandidates(cfg, map, MAP_FILE).list;
+    addStory(cfg.storiesDir, { id: 'other-order', name: '다른 순서', screens: [HOME, HELP], author: 'reviewer', source: listed()[0].source });
+    assert.deepEqual(listed(), []);
+  });
+});
+
+test('another order of a test found before the acceptance stays on the list', () => {
+  withFolder({}, (dir: string) => {
+    const listed = walkedIn(dir);
+    storeCandidates(dir, listed(FIRST_WALK));
+    storeCandidates(dir, listed(NEW_WALK));
+    acceptCandidate(dir, listed(NEW_WALK)[0], { id: 'lab', name: '실험실까지 간다', author: 'reviewer' });
+    assert.deepEqual(listed(NEW_WALK).map((c) => c.screens), [FIRST_WALK[0].screens]);
+  });
+});
+
+test('a candidate of the same comment stays off the list once another of its candidates is accepted', () => {
+  withOrderComment({ screens: LAB_ORDER }, ({ cfg, post }) => {
+    post({});
+    post({ screens: [...LAB_ORDER.slice(0, 1), { screen: '/help#Help', reason: '도움말도 거친다' }, ...LAB_ORDER.slice(1)] });
+    const listed = () => storyCandidates(cfg, map, path.join(config.outDir, 'map.json')).list;
+    assert.equal(listed().length, 2);
+    acceptCandidate(cfg.storiesDir, listed()[0], { id: 'lab', name: 'x', author: 'hit' });
+    assert.deepEqual(listed(), []);
+  });
+});
+
 test('a candidate from a trace accepted with a step taken out leaves the list, also once another test of that report passes the same order, and undoing the acceptance gives it back once with the step still taken out', () => {
   withFolder({}, (dir: string) => {
     const report = 'results/playwright/e2e.json';
@@ -1926,7 +2087,7 @@ test('an agent posting a candidate for an order accepted with a step taken out i
     acceptCandidate(cfg.storiesDir, listed()[0], { id: 'lab', name: 'x', author: 'hit' });
     const before = files();
     const { id: other } = addMark(cfg.marksDir, { target: { screens: LAB_ORDER }, note: '다시 채워 줘', author: 'hit' }, new Date('2026-10-22T01:00:00Z'));
-    assert.throws(() => post({ comment: other }), { message: '이미 단계를 빼고 스토리 lab 로 받은 화면 순서입니다. 검토자가 받기를 되돌린 뒤에 올릴 수 있습니다' });
+    assert.throws(() => post({ comment: other }), { message: '이미 스토리 lab 로 받은 화면 순서입니다. 검토자가 받기를 되돌린 뒤에 올릴 수 있습니다' });
     assert.deepEqual(files(), before);
   });
 });
