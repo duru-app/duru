@@ -1028,10 +1028,10 @@ the discard kept.
 
 `rebuild` keeps each candidate as a file in `candidates/` in `storiesDir`, one for each screen order that has no
 file there yet, holding the name, the screens, the source and the date it was first seen. Files are only added,
-never deleted, and changed only where the review page keeps the lines switched off on a candidate from a comment;
-keep the folder in git with the stories. If a file cannot be written, `rebuild` stops
-storing and prints why under the candidate line. The candidates listed are these files together with what the
-records and traces give now, and for a screen order in both, what they give now is shown. So a candidate stays
+never deleted, and changed only where the review page keeps the lines switched off on a candidate from a comment
+or the steps taken out of a candidate; keep the folder in git with the stories. If a file cannot be written,
+`rebuild` stops storing and prints why under the candidate line. The candidates listed are these files together
+with what the records and traces give now, and for a screen order in both, what they give now is shown. So a candidate stays
 after a `rebuild` whose results have no traces, or once its record is gone. An accepted or discarded candidate keeps
 its file, and the story or the discarded file keeps it out of the list. When a screen of a stored candidate has left the map, the candidate stays
 listed with that step shown as a screen the map does not have. A candidate file that cannot be read is skipped and
@@ -1039,7 +1039,7 @@ noted with its path and why.
 
 The `candidateSkipScreens` rules apply each time the list is made, and the candidate file keeps the order it was
 found in, so changing or removing a rule shows the candidate again as found. A rule added later lists a discarded
-candidate again, and an accepted one from a trace, since its order after the rule is one no file holds. Candidates
+candidate again, and can list an accepted one from a trace, since its order after the rule is one no file holds. Candidates
 whose orders become the same are one candidate, and a candidate left with no screen is not listed. Such a candidate
 with a test in the current results names only the tests there, so a test known only from a stored file is not named.
 Only the first of them keeps its found order in a file, so the found order of another comes back only while its
@@ -1078,6 +1078,14 @@ candidate at once; without it, the file is written directly. The command prints 
 each link between two steps, `step 1 → 2: from <screen> to <screen> — <verdict>`, worded as in the task list. A
 candidate it does not take is not written: the command prints why on standard error and exits with code 1. A map
 built before links carried their conditions must be rebuilt first. A wrong call exits with 2.
+
+On the review page each step of a candidate has a ✕. Pressing it strikes the step through, and pressing it again puts
+the step back; the last step left cannot be taken out. The steps taken out are kept in the candidate file as
+`offSteps`, `[<step>, …]` numbered from 1 in the order the file holds, which `candidateSkipScreens` can make longer
+than the card, so they stay after a reload, and accepting writes only the steps left into the story file, with steps
+of one screen left side by side as one step. While the steps left are the order of a story already there, why shows
+below the steps and both accept buttons are off. The story keeps the source of the candidate, so the candidate is not
+offered again.
 
 ## Review page
 

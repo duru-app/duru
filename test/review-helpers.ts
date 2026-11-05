@@ -42,7 +42,7 @@ export type PageData = {
   stories: { list: Story[]; notices: { file: string }[]; unknownTags: { tag: string }[]; stale: string };
   storiesDir: string;
   needs: { list: { file: string; name: string; text: string; stories: string[]; contentHash: string }[] };
-  candidates: { list: { key: string; name: string; source: { record?: unknown; report?: string; tests?: string[] }; screens: string[]; links: { verdict: string }[]; lines?: { step: number; field: string; line: number; on: boolean }[] }[]; notices: object[] };
+  candidates: { list: { key: string; name: string; source: { record?: unknown; report?: string; tests?: string[] }; screens: string[]; links: { verdict: string }[]; lines?: { step: number; field: string; line: number; on: boolean }[]; offSteps?: number[] }[]; notices: object[] };
   marks: { attached: Mark[]; detached: Mark[] };
   testSteps: Record<string, Record<string, object[]>>;
   app: AppData;

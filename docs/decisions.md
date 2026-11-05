@@ -2193,6 +2193,38 @@ Alternatives compared:
   key of that candidate would change once its fresh twin is gone, so a copied address, or anything else that names
   it by key, would stop finding it.
 
+**A step taken out of a story candidate is kept as `offSteps` beside the order the candidate was found in, not by
+changing the order.**
+The card on the review page offers an X on each step before the candidate is accepted, and the step has to be gone
+from the story and from the list, and back again if the reviewer changes their mind. Writing a shorter order into the
+candidate file, the shape the issue first named, loses two things: the order the records and traces gave, so changing
+a decision back has to work out which file it came from, and the source of the candidate, which names the record file
+and the steps as they were found. `offSteps` is a list of the steps left out, ascending, never all of them, and
+accepting writes the story from the screens that remain while undoing drops the list and the candidate is one again.
+A step taken out does not change the key of the candidate, as the file keeps the found order, so a comment written on
+a candidate is not moved by it; the list hides a candidate whose found order is a story only after every step of its
+order is in that story. A candidate whose order has no file yet gets one on the first X, and a file of the same order
+that belongs to a candidate which became a story is left alone (driver's decision in #531, 2026-11-02).
+Accepting is refused when the steps left are the order of a story, since two stories of one order differ only by who
+wrote them; pressing ✕ stays allowed, as another ✕ can still change the order (driver's decision, 2026-11-05). Why shows
+on the card as soon as the ✕ makes that order, with the accept buttons off: refusing only on the press showed it inside
+the window asking for an ID, so a candidate with a Korean name asked for an ID first. It sits below the steps, since
+above them it would move the ✕ just pressed away from the pointer.
+The numbers in `offSteps` count the found order in the file, not the steps on the card, and the list turns them into
+card steps, so a step taken out stays on its screen when a `candidateSkipScreens` rule changes. Storing card steps would
+need no conversion, but a rule change would move it to another screen without a word. An X on a step the rules joined
+from two found steps takes both out, and when the rules leave every step on the card off, the list shows none off, so
+the candidate can still be accepted.
+When an X leaves steps of one screen side by side, the story gets them as one step, because a story refuses a screen
+repeated next to itself. Refusing the X or the acceptance was the other way, and it leaves a reviewer who wants home,
+help, home without help holding a candidate that cannot be accepted. The joined step is built as a `candidateSkipScreens`
+join is: each line once and the last value of a box whoever wrote it, so an agent's value on the later step replaces a
+reviewer's on the earlier one. It keeps only the link needs of the link into its first step, since a step taken out
+takes the conditions of the link from it along. In the source it counts as put in by the agent only when all of it was,
+with the reasons joined by ` / `, and the agent's lines are merged among themselves, so a line that a reviewer's later
+value replaced stays in `written` with no row of the story to match, and is not offered as a line to pick. This was
+chosen while fixing the acceptance and has not been put to the driver.
+
 **Undoing an accepted candidate deletes its story file; the discarded candidates are listed, folded, below the
 candidates.**
 #249 asked for a way back from 「스토리로 받기」 and 「버리기」. A story file is already rewritten in place when its name
