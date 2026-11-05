@@ -2193,6 +2193,11 @@ A step taken out does not change the key of the candidate, as the file keeps the
 a candidate is not moved by it; the list hides a candidate whose found order is a story only after every step of its
 order is in that story. A candidate whose order has no file yet gets one on the first X, and a file of the same order
 that belongs to a candidate which became a story is left alone (driver's decision in #531, 2026-11-02).
+Accepting is refused when the steps left are the order of a story, since two stories of one order differ only by who
+wrote them; pressing ✕ stays allowed, as another ✕ can still change the order (driver's decision, 2026-11-05). Why shows
+on the card as soon as the ✕ makes that order, with the accept buttons off: refusing only on the press showed it inside
+the window asking for an ID, so a candidate with a Korean name asked for an ID first. It sits below the steps, since
+above them it would move the ✕ just pressed away from the pointer.
 The numbers in `offSteps` count the found order in the file, not the steps on the card, and the list turns them into
 card steps, so a step taken out stays on its screen when a `candidateSkipScreens` rule changes. Storing card steps would
 need no conversion, but a rule change would move it to another screen without a word. An X on a step the rules joined
