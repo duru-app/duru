@@ -412,8 +412,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    number of a step taken out of that order, from 1, `reason` is one line on why it goes, and `judged: true` marks a
    step you took out on your own judgment rather than because the reviewer asked. A step the reviewer took out with ✕
    is taken out for you: its number is in `offSteps` of that candidate in `candidates.list` of
-   `GET <review page address>/api/data`. Leave it out of the order and do not put it back; `dropped`, which may be
-   empty, need not name it. The steps you post without
+   `GET <review page address>/api/data`. Leave it out of the order, and put that screen back with a `reason` only when a
+   comment asks for it; `dropped`, which may be empty, need not name it. The steps you post without
    `reason` must be that order with the dropped steps taken out, neighbouring steps of one screen joined into one;
    a screen you put in carries `reason` as above. When two listed candidates become the same order, post one
    candidate naming both in `replaces`; if they typed different values into one box, give the value to keep in that

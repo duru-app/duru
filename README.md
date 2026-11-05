@@ -1112,7 +1112,7 @@ A step the reviewer took out of a listed candidate with ✕ counts as dropped wi
 The steps without `reason` must be each order in `replaces` with its dropped steps taken out, neighbouring steps of
 one screen joined into one; a screen the agent put in carries `reason` as above. Two candidates that become the same
 order are replaced by one candidate naming both. The command refuses a candidate in `replaces` that is not listed, a
-step left out without being in `dropped`, a step the reviewer took out with ✕ kept or put back in the new order, kept
+step left out without being in `dropped`, a step the reviewer took out with ✕ kept without a `reason`, kept
 steps in another order, an order that is already a story, a listed
 candidate, a discarded one or one another candidate replaces, and a kept step whose originals typed different values
 into one box unless the step's `inputs` give the value to keep. A comment on a screen order takes no `replaces`. One comment may get several such
