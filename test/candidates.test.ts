@@ -1778,8 +1778,17 @@ test('a candidate that replaces another cannot keep a step the reviewer took out
       { message: /2 번째 단계는 검토자가 ✕ 로 뺐으므로 빠진 것으로 봅니다/ });
     assert.throws(() => post(id, { name: '없음', screens: [{ screen: LAB, reason: '넣습니다' }], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }, { step: 3, reason: '뺍니다' }] }] }),
       { message: /단계를 모두 뺄 수는 없습니다\. 2 번째 단계는 검토자가 ✕ 로 뺐습니다/ });
-    assert.throws(() => post(id, { name: '이유를 달아 되살림', screens: [{ screen: HOME, reason: '다시 넣습니다' }, HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }] }] }),
-      { message: new RegExp(`2 번째 단계 ${HOME} 는 검토자가 ✕ 로 뺐습니다`) });
+  });
+});
+
+test('an agent may put a screen the reviewer took out with ✕ back in with a reason, and the candidate shows that reason as an added step beside the reviewer\'s drop', () => {
+  withReplaceable(HELP_VISITS, ({ cfg, comment, post, listed, stored }) => {
+    const a = [SIGNIN, HOME, HELP];
+    pickCandidateStep(cfg.storiesDir, listed().list.find((c) => c.name === 'a')!, { step: 2, on: false });
+    const posted = post(comment({ candidate: a.join(' > ') }), { name: '홈을 다시 넣음', screens: [{ screen: HOME, reason: '검토자가 코멘트로 부탁했습니다' }, HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }] }] });
+    const { source } = stored(posted);
+    assert.deepEqual(source.added, [{ step: 1, reason: '검토자가 코멘트로 부탁했습니다' }]);
+    assert.deepEqual(source.replaces[0].dropped[1], { step: 2, reason: '검토자가 ✕ 로 뺐습니다' });
   });
 });
 

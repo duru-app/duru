@@ -1740,7 +1740,11 @@ new path must still be offered (model's decisions in #532, not yet confirmed).
 A step the reviewer took out of an original with ✕ is dropped from the new candidate without the agent naming it, with
 「검토자가 ✕ 로 뺐습니다」 as its reason and no 「판단」 chip, whatever the agent wrote for it. Refusing a candidate that
 left it unnamed told the agent one step per refusal and made it invent a reason for a choice the reviewer made, which
-could also mark the reviewer's step as the agent's judgment (model's decision in #532, not yet confirmed).
+could also mark the reviewer's step as the agent's judgment. An agent can still put that screen in with a `reason`, like
+any screen it adds: the reason shows on the card and the reviewer takes or discards the candidate. Refusing it was tried
+by screen name, which also refused a later visit to a screen that stays in the order, and telling the two apart by
+position adds a rule for orders that visit one screen twice, so the instruction to agents carries it instead (model's
+decisions in #532, not yet confirmed).
 
 **`rebuild` writes the screen order of each traced test into `tests.json` as `traced`, and the review page makes
 trace candidates from it instead of reading the reports and traces itself.**

@@ -790,14 +790,12 @@ function leftProblem(where: string, left: string[], groups: number[][], kept: st
 
 const DROPPED_BY_REVIEWER = '검토자가 ✕ 로 뺐습니다';
 
-function replacedCandidates(asked: AskedReplace[], list: Candidate[], kept: string[], put: string[]) {
+function replacedCandidates(asked: AskedReplace[], list: Candidate[], kept: string[]) {
   return asked.map((r, i) => {
     const where = `replaces 의 ${i + 1} 번째 원래 후보 ${orderKey(r.screens)}`;
     const candidate = list.find((c) => isDeepStrictEqual(c.screens, r.screens));
     if (!candidate) throw new Error(`${where} 는 지금 후보 목록에 없습니다`);
     const off = candidate.offSteps ?? [];
-    const back = off.find((step) => put.includes(r.screens[step - 1]));
-    if (back) throw new Error(`${where} 의 ${back} 번째 단계 ${r.screens[back - 1]} 는 검토자가 ✕ 로 뺐습니다. 검토자가 ✕ 를 되돌리기 전에는 다시 넣지 않습니다`);
     const dropped = [...r.dropped.filter((d) => !off.includes(d.step)), ...off.map((step) => ({ step, reason: DROPPED_BY_REVIEWER }))].sort((a, b) => a.step - b.step);
     if (dropped.length === r.screens.length) throw new Error(`${where}의 단계를 모두 뺄 수는 없습니다. ${off.join(', ')} 번째 단계는 검토자가 ✕ 로 뺐습니다`);
     const groups = stepsLeft(r.screens, dropped.map((d) => d.step));
@@ -886,7 +884,7 @@ export function addCommentCandidate(config: any, map: any, mapFile: string, trac
   const acceptedAs = acceptedOrders(loadStored(config.storiesDir).found, stories, config.candidateSkipScreens ?? []).get(key);
   if (acceptedAs) throw new Error(`이미 단계를 빼고 스토리 ${acceptedAs} 로 받은 화면 순서입니다. 검토자가 받기를 되돌린 뒤에 올릴 수 있습니다`);
   const listed = storyCandidates(config, map, mapFile, traced);
-  const originals = askedReplace && replacedCandidates(askedReplace, listed.list, kept.map((i) => steps[i].screen), steps.filter((s) => s.reason !== undefined).map((s) => s.screen));
+  const originals = askedReplace && replacedCandidates(askedReplace, listed.list, kept.map((i) => steps[i].screen));
   if (listed.discarded.some((d) => JSON.stringify(d.screens) === key)) throw new Error('이 화면 순서는 버린 후보에 있습니다. 검토자가 「되돌리기」를 누른 뒤에 올릴 수 있습니다');
   const same = listed.list.find((c) => JSON.stringify(c.screens) === key);
   if (same) throw new Error(`이미 후보 「${same.name}」의 화면 순서입니다`);
