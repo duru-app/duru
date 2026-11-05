@@ -2239,17 +2239,27 @@ takes the conditions of the link from it along. In the source it counts as put i
 with the reasons joined by ` / `, and the agent's lines are merged among themselves, so a line that a reviewer's later
 value replaced stays in `written` with no row of the story to match, and is not offered as a line to pick. This was
 chosen while fixing the acceptance and has not been put to the driver.
-Once a candidate is accepted with steps taken out, the order it was found in is not offered again from another
-source either, a visit record, a test of another report or another candidate file, until the acceptance is undone
-(#541). An order accepted whole is already hidden by the story, which has that order; hiding only the accepted source
-would offer the same walk again under another name. Accepting writes the story's ID into the candidate file holding
-the steps taken out, as `acceptedAs`, and the list and the undo read that (driver's decision in #541, 2026-11-03).
+Once a candidate is accepted, the order it was found in is not offered again from another source either, a visit
+record, a test of another report or another candidate file, until the acceptance is undone (#541). Hiding only the
+accepted source would offer the same walk again under another name. Accepting writes the story's ID into the candidate
+file of that order, as `acceptedAs`, and the list and the undo read that (driver's decision in #541, 2026-11-03).
+A test is hidden by that order and not by its title: one test can walk a new order later, and hiding every order of a
+test already accepted would keep that change from the reviewer. For that, `acceptedAs` is written on every acceptance
+and not only when steps are taken out, with a file made when the candidate had none (driver's decision, 2026-11-05):
+writing it only then left a new order of an accepted test with no file of its own to hold a ✕, or hid the file that
+held it. A visit record's source already names its steps and a comment asks for one story, so those two stay hidden by
+the source. Another order of an accepted test found before the acceptance stays on the list until it is discarded,
+since nothing tells it from an order whose acceptance was undone.
 Working out at each listing which file became the story, from the steps left and the sources walking the order now,
 split the candidate in two on undo, brought the order back when a test was retitled and hid a candidate on a mere ✕.
 Writing the found order into the story file was compared too; it would survive deleting the candidate file, but it
 adds a key to a file people and agents read, for a case that needs someone to delete that file by hand.
-A story accepted whole has no `acceptedAs`, so the undo finds its file by the source and the order the rules leave;
-storing the story's order instead would write a file through which nothing ever walked.
+A story no file names hides only its own order, so another order of its test is offered until it is discarded, also
+one the story was edited away from, and a ✕ on it goes into that file. Hiding the files written up to the story's date
+was tried for such stories; it lost a ✕ and an undo in the cases where two tests or two stories met, and no story of
+that kind was in use (driver's decision, 2026-11-05). The undo looks only at the file naming the story, since a file
+of the same source may be named by another story or have been discarded; with none it writes the story's order, unless
+some file already holds that order.
 Undoing a story whose steps were edited after it was accepted also keeps the edited order as a candidate, beside the
 one found, because dropping it would lose what the reviewer wrote.
 
