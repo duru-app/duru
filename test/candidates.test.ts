@@ -1275,6 +1275,19 @@ test('candidateSkipScreens defaults to none, and each rule names a screen and wh
   }
 });
 
+test('a rule may name the address of a step that matches no screen, which stays in the candidate as that address; only a rule screen that is neither on the map nor in a found order is reported as missed', () => {
+  withFolder(recordsIn({ 'a.json': ['/home', '/beta/inbox', '/help'] }), (dir: string) => {
+    const { list, missedRules } = shownWith(dir, [{ screen: '/beta/inbox', where: 'any' }, { screen: '/nowhere#Nowhere', where: 'any' }, { screen: HELP, where: 'start' }]);
+    assert.deepEqual(list.map((c) => c.screens), [[HOME, HELP]]);
+    assert.deepEqual(missedRules, ['/nowhere#Nowhere']);
+  });
+  withFolder({}, (dir: string) => {
+    const traced = [{ report: 'r.json', title: 'opens the beta inbox', screens: [HOME, '/beta/inbox', HELP] }];
+    const { list, missedRules } = shownWith(dir, [{ screen: '/beta/inbox', where: 'any' }], traced);
+    assert.deepEqual([list.map((c) => c.screens), missedRules], [[[HOME, HELP]], []]);
+  });
+});
+
 test('a rule takes its screen out of a candidate from a visit record where it says: start the screens at the head of the order that a start rule names, end those at its tail, any wherever it is; steps of one screen left side by side become one step, and the candidate keeps the order it was found in and the steps taken out', () => {
   withFolder(recordsIn({ 'a.json': ['/signin', '/home', '/signin', '/help'] }), (dir: string) => {
     const shown = (rules: object[]) => shownWith(dir, rules).list.map((c) => c.screens);

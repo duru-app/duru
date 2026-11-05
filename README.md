@@ -367,8 +367,9 @@ client with example results and a config to start from.
   `tests` whose tests left a trace give candidates too.
 - `candidateSkipScreens` — screens to take out of the story candidates from visit records and traces (optional), as
   `[{ "screen": "/signin#SignIn", "where": "start" }]`. `start` takes out the screens at the head of the order that a
-  `start` rule names, `end` those at its tail, `any` the screen wherever it is. Candidates from comments and stories
-  keep every screen. See **Story candidates**.
+  `start` rule names, `end` those at its tail, `any` the screen wherever it is. `screen` is a screen ID, or the
+  address a candidate shows for a step that matches no screen. Candidates from comments and stories keep every
+  screen. See **Story candidates**.
 - `baselineMap` — the `map.json` of an earlier version of the same client (optional), such as the map kept from
   the last release. `rebuild` and the review page then show what changed since it. Build it with the same duru as
   the current map: a map from another duru can differ for reasons in duru rather than in the client, and one from a
@@ -1045,7 +1046,7 @@ keeps its found order in a file, so the found order of another comes back only w
 and its test titles stay on the first one's file. The page shows the found
 order folded under 「원래 순서 N」 with each step taken out marked 「설정 규칙」. A candidate is told apart by its order after the rules,
 so changing a rule moves a comment on a candidate it changes under 「떨어져 나감」. `rebuild` counts the candidates
-the rules cut and names a rule screen that is not on the map.
+the rules cut and names a rule screen that is neither on the map nor an address a candidate went through.
 
 **Candidates from a comment.** A coding agent that answers a comment on a screen order (see **Comments on a screen
 order**) posts the story it found with `candidate <config> <comment ID> <candidate.json>`, or `-` in place of the
