@@ -651,6 +651,12 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   const screenAt = screenFinder(map);
   const rules: SkipRule[] = config.candidateSkipScreens ?? [];
   const found = new Set<string>();
+  const cut = new Set<string>();
+  const ruledOrCut = (candidate: Candidate) => {
+    const after = ruled(candidate, rules);
+    if (after !== candidate) cut.add(JSON.stringify(candidate.screens));
+    return after;
+  };
   const stories = loadStories(config.storiesDir).stories;
   const seen = new Set([...stories, ...current].map((s) => JSON.stringify(s.screens)));
   const taken = takenBy(stories.filter((s) => s.source && !('tests' in s.source)));
@@ -670,7 +676,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   for (const record of records) {
     const made = candidateOf(record, screenAt);
     for (const screen of made.screens) found.add(screen);
-    const candidate = ruled(made, rules);
+    const candidate = ruledOrCut(made);
     if (!candidate) continue;
     const key = JSON.stringify(candidate.screens);
     if (seen.has(key) || taken(candidate.source) || accepted.has(key)) {
@@ -685,7 +691,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   for (const { report, title, screens, inputs, skipped } of traced) {
     for (const screen of screens) found.add(screen);
     const base = { key: screens.join(' > '), name: titleWithoutTags(title), screens, source: { report, tests: [title] }, ...carried({ stepFields: inputFields(inputs), skipped }) } as Candidate;
-    const candidate = ruled(base, rules);
+    const candidate = ruledOrCut(base);
     const shownScreens = candidate?.screens ?? [];
     const key = JSON.stringify(shownScreens);
     if (shownScreens.length > 0 && (seen.has(key) || accepted.has(key))) {
@@ -706,7 +712,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   for (const { name, screens, source, file, offLines, offSteps, ...rest } of byFirstSeenStored) {
     const base = { key: screens.join(' > '), name, screens, source, ...carried(rest) } as Candidate;
     if (!('comment' in source)) for (const screen of screens) found.add(screen);
-    const candidate = 'comment' in source ? base : ruled(base, rules);
+    const candidate = 'comment' in source ? base : ruledOrCut(base);
     if (!candidate) continue;
     const key = JSON.stringify(candidate.screens);
     const titles = storedTests.get(key);
@@ -730,7 +736,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
     const acceptProblem = stepsLeftProblem(stories, c);
     return acceptProblem ? { ...c, acceptProblem } : c;
   });
-  return { list: checkStories(map, checked), discarded: shown, gone, notices: all, missedRules };
+  return { list: checkStories(map, checked), discarded: shown, gone, notices: all, missedRules, cutByRules: cut.size };
 }
 
 const AGENT_STEPS = 'screens 는 화면 ID 나 { "screen", "reason", "needs", "linkNeeds", "inputs", "expects" } 객체를 하나 이상 차례대로 담은 목록이어야 합니다';

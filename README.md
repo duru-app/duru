@@ -1037,11 +1037,16 @@ listed with that step shown as a screen the map does not have. A candidate file 
 noted with its path and why.
 
 The `candidateSkipScreens` rules apply each time the list is made, and the candidate file keeps the order it was
-found in, so changing or removing a rule shows the candidate again as found. Candidates whose orders become the same
-are one candidate, and a candidate left with no screen is not listed. The page shows the found order folded under
-「원래 순서 N」 with each step taken out marked 「설정 규칙」. A candidate is told apart by its order after the rules,
-so changing a rule moves a comment on a candidate it changes under 「떨어져 나감」. `rebuild` counts the candidates
-the rules cut and names a rule screen that is neither on the map nor an address a candidate went through.
+found in, so changing or removing a rule shows the candidate again as found. A rule added later lists a discarded
+candidate again, and an accepted one from a trace, since its order after the rule is one no file holds. Candidates
+whose orders become the same are one candidate, and a candidate left with no screen is not listed. Such a candidate
+with a test in the current results names only the tests there, so a test known only from a stored file is not named.
+Only the first of them keeps its found order in a file, so the found order of another comes back only while its
+record or trace is there, and its test titles stay on the first one's file. The page shows the found order folded
+under 「원래 순서 N」 with each step taken out marked 「설정 규칙」. A candidate is told apart by its order after the
+rules, so changing a rule moves a comment on a candidate it changes under 「떨어져 나감」. `rebuild` counts every found
+order the rules took a screen out of, on the list or not, so accepting or discarding a candidate does not lower the
+count. It also names a rule screen that is neither on the map nor an address a candidate went through.
 
 **Candidates from a comment.** A coding agent that answers a comment on a screen order (see **Comments on a screen
 order**) posts the story it found with `candidate <config> <comment ID> <candidate.json>`, or `-` in place of the
