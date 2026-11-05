@@ -1778,6 +1778,19 @@ test('a candidate that replaces another cannot keep a step the reviewer took out
       { message: /2 번째 단계는 검토자가 ✕ 로 뺐으므로 빠진 것으로 봅니다/ });
     assert.throws(() => post(id, { name: '없음', screens: [{ screen: LAB, reason: '넣습니다' }], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }, { step: 3, reason: '뺍니다' }] }] }),
       { message: /단계를 모두 뺄 수는 없습니다\. 2 번째 단계는 검토자가 ✕ 로 뺐습니다/ });
+    assert.throws(() => post(id, { name: '이유를 달아 되살림', screens: [{ screen: HOME, reason: '다시 넣습니다' }, HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }] }] }),
+      { message: new RegExp(`2 번째 단계 ${HOME} 는 검토자가 ✕ 로 뺐습니다`) });
+  });
+});
+
+test('a value typed on a step the reviewer took out with ✕ stays out of the candidate that replaces it, and dropped may be empty when ✕ took out all that goes', () => {
+  const records = { 'visits/a.json': [{ url: '/home', inputs: [{ box: { label: '메모' }, value: '뺀 칸' }] }, { url: '/lab' }, { url: '/help' }] };
+  withReplaceable(records, ({ cfg, comment, post, listed, stored }) => {
+    const a = [HOME, LAB, HELP];
+    pickCandidateStep(cfg.storiesDir, listed().list.find((c) => c.name === 'a')!, { step: 1, on: false });
+    const posted = post(comment({ candidate: a.join(' > ') }), { name: '실험실부터', screens: [LAB, HELP], replaces: [{ screens: a, dropped: [] }] });
+    assert.deepEqual(stored(posted).source.replaces[0].dropped, [{ step: 1, reason: '검토자가 ✕ 로 뺐습니다' }]);
+    assert.ok(!JSON.stringify(stored(posted).stepFields ?? []).includes('뺀 칸'));
   });
 });
 
