@@ -1713,6 +1713,11 @@ that `any` takes out and the `start` or `end` screen it uncovers both go in one 
 discarded candidate would list a second candidate through which nothing ever walked. Candidates that come from a
 comment or a story keep every screen, because a person or an agent named those screens for that candidate
 (driver's decision in #530, 2026-11-02).
+`rebuild` counts every found order the rules took a screen out of, on the list or not, and accepting or discarding a
+candidate does not lower the count (driver's decision in #538, 2026-11-03). The number answers how many candidates a
+rule touched, so someone changing a rule can see a candidate that left the list because of it. Leaving out what a
+reviewer already handled was tried across five review rounds; it needed the source of each candidate matched against
+each story and discarded candidate, and the rule for what counts kept changing.
 A candidate joining a test in the current results with a test only in a stored file names only the current test,
 because a test missing from this run cannot be told apart from a deleted one. Writing both titles into the file was
 tried: a renamed or tagged test kept its old title in the source, and the joined title stayed in the file after the
