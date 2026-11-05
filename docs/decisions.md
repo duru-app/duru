@@ -1698,7 +1698,13 @@ found in, and a candidate is told apart by its order after the rules.**
 A rule says a screen that a reviewer never needs to see, such as the login screen at the front of every test, and a
 person will get it wrong at first: the rule has to be fixable without rewriting the records, the traces or the files
 already stored. Applying the rules on every listing keeps the found order in the file, so changing or removing a rule
-shows the candidate as it was found, and the page can show the steps the rules took out beside the order it kept.
+shows the candidate as it was found, and the page can show the steps the rules took out beside the order it kept. A
+discarded file keeps that found order too, because it stores the order the reviewer saw: bringing the candidate back
+from only that order would store a second file through which nothing ever walked.
+Accepting a candidate a rule cut stores its found order for the same reason, and undoing writes no file when a stored
+one of the same source already leaves the story's order under the rules. A file of another source is not counted: it
+may be hidden by another story, and the undone candidate would then be listed nowhere. A file of another source holding
+exactly the story's order still stops the write, because `candidates/` keeps one file per order.
 Applying them once, when a candidate is stored, would bake one version of the rules into every file, and a rule added
 later could not reach the candidates that were already stored. The cost is that the key is the order after the rules,
 so changing a rule moves a comment written on a candidate under 「떨어져 나감」: a comment is attached to the screens a
@@ -2234,6 +2240,8 @@ Working out at each listing which file became the story, from the steps left and
 split the candidate in two on undo, brought the order back when a test was retitled and hid a candidate on a mere ✕.
 Writing the found order into the story file was compared too; it would survive deleting the candidate file, but it
 adds a key to a file people and agents read, for a case that needs someone to delete that file by hand.
+A story accepted whole has no `acceptedAs`, so the undo finds its file by the source and the order the rules leave;
+storing the story's order instead would write a file through which nothing ever walked.
 Undoing a story whose steps were edited after it was accepted also keeps the edited order as a candidate, beside the
 one found, because dropping it would lose what the reviewer wrote.
 

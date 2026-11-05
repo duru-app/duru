@@ -1016,7 +1016,9 @@ follow the limits of reading traces:
   by the part after `#`, or a modal or tab that opens without changing the address, does not show as a step.
 
 On the review page a candidate is accepted, which writes a story file into `storiesDir`, or discarded with a
-reason, which writes a file into `discarded/` in `storiesDir` so the same order does not come back. Undoing an
+reason, which writes a file into `discarded/` in `storiesDir` so the same order does not come back. Accepting a
+candidate that `candidateSkipScreens` shortened can also write its found order into `candidates/`, under the
+candidate's name. Undoing an
 acceptance deletes that story file, and the candidate is listed again; if `candidates/` has no file for its screen
 order yet, one is written first, under the story's ID, so it comes back even once its record is gone. Undoing a
 discard writes another file into `discarded/`, `{ "screens", "kind": "undo", "author", "date" }`, with no reason, and
@@ -1026,8 +1028,8 @@ the discard kept.
 
 `rebuild` keeps each candidate as a file in `candidates/` in `storiesDir`, one for each screen order that has no
 file there yet, holding the name, the screens, the source and the date it was first seen. Files are only added,
-never deleted, and changed only where the review page keeps the lines switched off on a candidate from a comment
-or the steps taken out of a candidate; keep the folder in git with the stories. If a file cannot be written,
+never deleted, and changed only where the review page keeps the lines switched off on a candidate from a comment,
+the steps taken out of a candidate or the story it became; keep the folder in git with the stories. If a file cannot be written,
 `rebuild` stops storing and prints why under the candidate line. The candidates listed are these files together
 with what the records and traces give now, and for a screen order in both, what they give now is shown. So a candidate stays
 after a `rebuild` whose results have no traces, or once its record is gone. An accepted or discarded candidate keeps
