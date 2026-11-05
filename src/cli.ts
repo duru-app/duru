@@ -488,7 +488,13 @@ if (command === 'tasks') {
     for (const n of needs.notices) console.log(`  need file ${n.file}: ${n.reason}`);
     const candidates = storyCandidates(config, map, path.join(config.outDir, 'map.json'), links.traced);
     const stored = storeCandidates(config.storiesDir, candidates.list);
-    console.log(`story candidates ${candidates.list.length} | from traces ${candidates.list.filter((c) => 'report' in c.source).length} | newly stored ${stored.written} | files skipped ${candidates.notices.length}`);
+    const skipScreens = config.candidateSkipScreens ?? [];
+    console.log(`story candidates ${candidates.list.length} | from traces ${candidates.list.filter((c) => 'report' in c.source).length}${skipScreens.length ? ` | cut by candidateSkipScreens ${candidates.list.filter((c) => c.skippedByRule).length}` : ''} | newly stored ${stored.written} | files skipped ${candidates.notices.length}`);
+    const screenIds = new Set<string>((skipScreens as { screen: string }[]).map((r) => r.screen));
+    const mapped = new Set(map.screens.map((s: any) => s.id));
+    for (const screen of screenIds) {
+      if (!mapped.has(screen)) console.log(`  candidateSkipScreens: ${screen} is not a screen on the map`);
+    }
     for (const n of candidates.notices) console.log(`  ${n.file}: ${n.reason}`);
     if (stored.reason) console.log(`  ${path.relative(config.configDir, path.join(config.storiesDir, CANDIDATES)).split(path.sep).join('/')}: ${stored.reason}`);
   }

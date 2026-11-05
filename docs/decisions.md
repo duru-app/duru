@@ -1693,6 +1693,34 @@ its address by a key, the record file for a visit record and the screen order fo
 come from one report. Since candidates are kept in files, the key is the screen order for both; the entry on
 keeping candidates says why.
 
+**The `candidateSkipScreens` rules are applied each time the list is made, the candidate file keeps the order it was
+found in, and a candidate is told apart by its order after the rules.**
+A rule says a screen that a reviewer never needs to see, such as the login screen at the front of every test, and a
+person will get it wrong at first: the rule has to be fixable without rewriting the records, the traces or the files
+already stored. Applying the rules on every listing keeps the found order in the file, so changing or removing a rule
+shows the candidate as it was found, and the page can show the steps the rules took out beside the order it kept. A
+discarded file keeps that found order too, because it stores the order the reviewer saw: bringing the candidate back
+from only that order would store a second file through which nothing ever walked.
+Accepting a candidate a rule cut stores its found order for the same reason, and undoing writes no file when a stored
+one of the same source already leaves the story's order under the rules. A file of another source is not counted: it
+may be hidden by another story, and the undone candidate would then be listed nowhere. A file of another source holding
+exactly the story's order still stops the write, because `candidates/` keeps one file per order.
+Applying them once, when a candidate is stored, would bake one version of the rules into every file, and a rule added
+later could not reach the candidates that were already stored. The cost is that the key is the order after the rules,
+so changing a rule moves a comment written on a candidate under 「떨어져 나감」: a comment is attached to the screens a
+reviewer judged, and those screens changed. The rules are applied again until nothing more is taken out, so a screen
+that `any` takes out and the `start` or `end` screen it uncovers both go in one pass; without that, bringing back a
+discarded candidate would list a second candidate through which nothing ever walked. Candidates that come from a
+comment or a story keep every screen, because a person or an agent named those screens for that candidate
+(driver's decision in #530, 2026-11-02).
+A candidate joining a test in the current results with a test only in a stored file names only the current test,
+because a test missing from this run cannot be told apart from a deleted one. Writing both titles into the file was
+tried: a renamed or tagged test kept its old title in the source, and the joined title stayed in the file after the
+rule was removed (driver's decision in #530, 2026-11-05).
+Candidates a rule joins write one file, the first one's found order, so the found order of another returns only while
+its record or trace is there. Writing a file for each would only add files and can still be done later; for now the
+limit is written down (the author's call, not yet confirmed by the driver, 2026-11-05).
+
 **`rebuild` writes the screen order of each traced test into `tests.json` as `traced`, and the review page makes
 trace candidates from it instead of reading the reports and traces itself.**
 The candidates then change only at `rebuild`, together with the 「지나간 시험」 links read from the same traces, so
