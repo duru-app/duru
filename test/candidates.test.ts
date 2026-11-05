@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { acceptCandidate, addCommentCandidate, discardCandidate, pickCandidateLine, pickCandidateStep, recordedRequests, saveVisitRecord, storeCandidates, storyCandidates, unacceptStory, undiscardCandidate } from '../src/candidates.ts';
+import { acceptCandidate, addCommentCandidate, backToOriginal, discardCandidate, loadDiscarded, pickCandidateLine, pickCandidateStep, recordedRequests, saveVisitRecord, storeCandidates, storyCandidates, unacceptStory, undiscardCandidate } from '../src/candidates.ts';
 import type { SkipRule } from '../src/candidates.ts';
 import { compare, loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
@@ -1584,6 +1584,82 @@ test('a candidate posted for a comment on a candidate is written with the origin
     assert.deepEqual(names(traced), [['b', [SIGNIN, LAB]]]);
     undiscardCandidate(cfg.storiesDir, [HOME, HELP], { author: 'hit' }, new Date('2026-10-21T04:00:00Z'));
     assert.deepEqual(names(traced), [['b', [SIGNIN, LAB]], ['홈에서 도움말을 연다', [HOME, HELP]]]);
+  });
+});
+
+test('a candidate taken back to its originals lists them again, also after the next rebuild, stays on the discarded list with a reason, keeps its file, lets a new candidate replace them, and when undone returns and hides them', () => {
+  withReplaceable(HELP_VISITS, ({ cfg, comment, post, listed, stored, files }) => {
+    const a = [SIGNIN, HOME, HELP];
+    storeCandidates(cfg.storiesDir, listed().list);
+    const id = comment({ candidate: a.join(' > ') });
+    const posted = post(id, { name: '홈에서 도움말을 연다', screens: [HOME, HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }] }] });
+    const traced = [{ report: 'results/playwright/e2e.json', title: 'logs in and opens help', screens: a }];
+    const orders = () => listed(traced).list.map((c) => c.screens);
+    const keptFile = stored(posted);
+    const kept = files();
+
+    backToOriginal(cfg.storiesDir, listed().list[1], { author: 'hit' }, new Date('2026-10-21T03:00:00Z'));
+    assert.deepEqual(orders(), [a, [SIGNIN, LAB]]);
+    assert.deepEqual(listed().discarded.map((d: any) => [d.screens, d.reason]), [[[HOME, HELP], '원래대로 되돌림']]);
+    assert.deepEqual(stored(posted), keptFile);
+    assert.deepEqual(storeCandidates(cfg.storiesDir, listed().list), { written: 0 });
+    assert.deepEqual(files(), kept);
+    assert.deepEqual(orders(), [a, [SIGNIN, LAB]]);
+
+    assert.throws(() => post(id, { name: '다시', screens: [HOME, HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }] }] }), /버린 후보에 있습니다/);
+    const again = post(comment({ candidate: a.join(' > ') }), { name: '도움말만', screens: [HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }, { step: 2, reason: NO_SIGNIN }] }] });
+    assert.deepEqual(orders(), [[SIGNIN, LAB], [HELP]]);
+    discardCandidate(cfg.storiesDir, listed().list[1], { reason: '안 쓴다', author: 'hit' }, new Date('2026-10-21T04:00:00Z'));
+    assert.deepEqual(stored(again).source.replaces[0].screens, a);
+    assert.deepEqual(orders(), [[SIGNIN, LAB]]);
+
+    undiscardCandidate(cfg.storiesDir, [HOME, HELP], { author: 'hit' }, new Date('2026-10-21T05:00:00Z'));
+    assert.deepEqual(orders(), [[SIGNIN, LAB], [HOME, HELP]]);
+  });
+});
+
+test('a test walking the order of a candidate replacing others is shown under its own name and can still go back to the originals, and the undo brings the same card back', () => {
+  withReplaceable(HELP_VISITS, ({ cfg, comment, post, listed }) => {
+    const a = [SIGNIN, HOME, HELP];
+    storeCandidates(cfg.storiesDir, listed().list);
+    post(comment({ candidate: a.join(' > ') }), { name: '홈에서 도움말을 연다', screens: [HOME, HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }] }] });
+    const traced = [{ report: 'results/playwright/e2e.json', title: 'opens help from home', screens: [HOME, HELP] }];
+    const at = (screens: string[]) => listed(traced).list.find((c) => isDeepStrictEqual(c.screens, screens));
+    assert.deepEqual([at([HOME, HELP])!.name, at([HOME, HELP])!.originals!.map((r: { screens: string[] }) => r.screens)], ['opens help from home', [a]]);
+    assert.equal(at(a), undefined);
+
+    backToOriginal(cfg.storiesDir, at([HOME, HELP])!, { author: 'hit' }, new Date('2026-10-21T03:00:00Z'));
+    assert.equal(at([HOME, HELP]), undefined);
+    assert.equal(at(a)!.name, 'a');
+
+    undiscardCandidate(cfg.storiesDir, [HOME, HELP], { author: 'hit' }, new Date('2026-10-21T04:00:00Z'));
+    assert.equal(at([HOME, HELP])!.name, 'opens help from home');
+    assert.equal(at(a), undefined);
+  });
+});
+
+test('a candidate whose comment already gave a story cannot go back to the originals that story still replaces', () => {
+  withReplaceable(HELP_VISITS, ({ cfg, comment, post, listed }) => {
+    const a = [SIGNIN, HOME, HELP];
+    storeCandidates(cfg.storiesDir, listed().list);
+    const id = comment({ candidate: a.join(' > ') });
+    post(id, { name: '첫 시도', screens: [HOME, HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }] }] });
+    backToOriginal(cfg.storiesDir, listed().list.find((c) => c.name === '첫 시도')!, { author: 'hit' }, new Date('2026-10-21T03:00:00Z'));
+    post(id, { name: '둘째 시도', screens: [HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }, { step: 2, reason: NO_SIGNIN }] }] });
+    acceptCandidate(cfg.storiesDir, listed().list.find((c) => c.name === '둘째 시도')!, { id: 'help', name: '둘째 시도', author: 'hit' });
+    undiscardCandidate(cfg.storiesDir, [HOME, HELP], { author: 'hit' }, new Date('2026-10-21T04:00:00Z'));
+    const walked = listed([{ report: 'results/playwright/e2e.json', title: 'walks it', screens: [HOME, HELP] }]).list.find((c) => isDeepStrictEqual(c.screens, [HOME, HELP]))!;
+    assert.deepEqual([walked.name, walked.originals], ['walks it', undefined]);
+  });
+});
+
+test('only a candidate that replaces others can be taken back to its originals, and a discarded file with a wrong mark is reported', () => {
+  withReplaceable(HELP_VISITS, ({ cfg, listed }) => {
+    assert.throws(() => backToOriginal(cfg.storiesDir, listed().list[0], { author: 'hit' }), { message: '이 후보는 대신하는 원래 후보가 없습니다' });
+    const folder = path.join(cfg.storiesDir, 'discarded');
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(path.join(folder, 'bad.json'), JSON.stringify({ screens: [HOME], reason: 'r', author: 'hit', date: '2026-10-21', backToOriginal: 'yes' }));
+    assert.deepEqual(loadDiscarded(cfg.storiesDir).notices.map((n) => n.reason), ['backToOriginal 은 원래대로 되돌린 기록이면 true 여야 합니다']);
   });
 });
 

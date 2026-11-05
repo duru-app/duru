@@ -417,7 +417,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    `reason` must be that order with the dropped steps taken out, neighbouring steps of one screen joined into one;
    a screen you put in carries `reason` as above. When two listed candidates become the same order, post one
    candidate naming both in `replaces`; if they typed different values into one box, give the value to keep in that
-   step's `inputs`. You may post several candidates for one such comment. The candidates it replaces leave the list. A comment on a screen order takes no `replaces`.
+   step's `inputs`. You may post several candidates for one such comment. The candidates it replaces leave the list. If the reviewer
+   presses `원래대로`, your candidate goes among the discarded ones with the reason `원래대로 되돌림` and those candidates
+   are listed again; that order stays refused, so a new attempt posts another order. A comment on a screen order takes no `replaces`.
    A comment can also be on several targets or on none. Its line then has `targets`, a list of targets in the shapes
    above, in place of `target`, and `wheres`, the `where` of each target in the same order (`null` for one that has
    none or is no longer found). Answer it once, covering every target it names. With an empty `targets` the reviewer

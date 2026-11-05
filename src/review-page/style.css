@@ -353,7 +353,7 @@
   .story-form button { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
   .story-form button.discard { background: var(--panel); color: var(--fail); border-color: var(--fail); }
   .story-form .accepts { display: flex; flex-wrap: wrap; gap: 8px; }
-  .story-form button.accept-edited, .story-form button.unaccept { background: var(--panel); color: var(--text); border-color: var(--line); }
+  .story-form button.accept-edited, .story-form button.unaccept, .story-form button.back-to-original { background: var(--panel); color: var(--text); border-color: var(--line); }
   .discarded-candidates > summary { margin: 16px 0 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
   #discarded-list > li { padding: 6px 0; border-top: 1px solid var(--line); }
   #discarded-list .steps { margin: 2px 0; font-size: 12px; overflow-wrap: anywhere; }

@@ -1023,7 +1023,8 @@ order yet, one is written first, under the story's ID, so it comes back even onc
 discard writes another file into `discarded/`, `{ "screens", "kind": "undo", "author", "date" }`, with no reason, and
 leaves the discard as it is: the latest file of a screen order in `discarded/` is its state, so the order is offered
 again until it is discarded again. If `candidates/` has no file for that order, one is written first under the name
-the discard kept.
+the discard kept. A discard made with 「원래대로」 also has `"backToOriginal": true`, and the candidates its order replaced
+are offered again while it is the latest file of its order.
 
 `rebuild` keeps each candidate as a file in `candidates/` in `storiesDir`, one for each screen order that has no
 file there yet, holding the name, the screens, the source and the date it was first seen. Files are only added,
@@ -1504,7 +1505,10 @@ with the file. The comments left on that story then show under 「떨어져 나�
 made with 「새 스토리」 or written by hand has no such button. Below the candidates, 「버린 후보 N」 opens the discarded
 candidates, newest first, each with its name, its screens, the reason and the date; a screen order discarded more
 than once shows its latest discard. Each has 「되돌리기」: it writes the undo file, without asking, and the
-candidate is listed again and chosen; if the undo is refused, why shows under the list. 「새 스토리」 puts a story together from screens of the map, picked from the list
+candidate is listed again and chosen; if the undo is refused, why shows under the list. A candidate of an order an agent
+posted in place of others has 「원래대로」, also when a test or a record gives its card: without asking, it puts the
+candidate under 「버린 후보」 with the reason `원래대로 되돌림` and lists the originals again, also after the next `rebuild`.
+「되돌리기」 on that entry brings the candidate back and takes the originals off the list. 「새 스토리」 puts a story together from screens of the map, picked from the list
 that takes the place of the stories or from boxes in the flow drawn in the middle.
 
 **Changes to the stories folder.** While the review runs it watches `storiesDir` and every folder in it, such as
