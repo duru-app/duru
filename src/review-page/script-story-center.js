@@ -205,7 +205,8 @@ function renderStoryCenter() {
       ...replacedOrders(c),
       needsFold(c, `candidate\n${c.key}`),
       c.skipped ? h('div', { class: 'muted skipped-inputs', title: '기록에는 있었지만 이 후보의 단계에 입력값으로 옮기지 못한 입력' }, `옮기지 못한 입력 ${c.skipped}개`) : null,
-      ...storyPath(c, c.stepRanges, undefined, byAgent(c) ? c.source.added : [], linePicker(c), (i) => stepOff(c, i))]);
+      ...storyPath(c, c.stepRanges, undefined, byAgent(c) ? c.source.added : [], linePicker(c), (i) => stepOff(c, i)),
+      c.acceptProblem ? h('p', { class: 'error accept-problem', role: 'status' }, c.acceptProblem) : null]);
   }
   const st = storyOf();
   if (!st && state.story) return fill(center, h('h3', {}, state.story), h('p', { class: 'muted', title: '스토리 파일을 읽지 못했거나 맵이 오래되어 경로를 맞춰 보지 못했습니다' }, '경로 판정 없음'), storyErrorLine());
@@ -366,8 +367,8 @@ const candidateActions = (c) => h('fieldset', { class: 'story-form candidate-act
   lineCount(c),
   h('div', { class: 'candidate-buttons' },
     h('div', { class: 'accepts' },
-      h('button', { class: 'accept', title: '이 화면 순서로 스토리 파일을 씁니다.', onclick: acceptChosen }, '스토리로 받기'),
-      h('button', { class: 'accept-edited', title: 'ID 와 이름을 고친 뒤에 받습니다.', onclick: () => askAccept(c, 'button.accept-edited', null) }, '고쳐서 받기')),
+      h('button', { class: 'accept', title: c.acceptProblem ?? '이 화면 순서로 스토리 파일을 씁니다.', disabled: Boolean(c.acceptProblem), onclick: acceptChosen }, '스토리로 받기'),
+      h('button', { class: 'accept-edited', title: c.acceptProblem ?? 'ID 와 이름을 고친 뒤에 받습니다.', disabled: Boolean(c.acceptProblem), onclick: () => askAccept(c, 'button.accept-edited', null) }, '고쳐서 받기')),
     c.originals?.length
       ? h('button', { class: 'back-to-original', title: BACK_TO_ORIGINAL, 'aria-label': BACK_TO_ORIGINAL, onclick: () => goBackToOriginal(c) }, '원래대로')
       : null,

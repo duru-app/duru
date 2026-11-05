@@ -125,6 +125,7 @@ export interface Candidate {
   lines?: AgentLine[];
   offSteps?: number[];
   originals?: ReplacedCandidate[];
+  acceptProblem?: string;
 }
 
 const inputFields = (inputs: StepInput[][] = []) => (inputs.some((i) => i.length) ? inputs.map((i) => (i.length ? { inputs: i } : {})) : undefined);
@@ -424,6 +425,13 @@ function pickedLines({ source, stepFields, lines }: Candidate) {
 }
 
 const stepsLeft = (screens: string[], offSteps: number[]) => sameScreenRuns(screens, screens.flatMap((_, i) => (offSteps.includes(i + 1) ? [] : [i])));
+const orderLeft = (screens: string[], offSteps: number[]) => stepsLeft(screens, offSteps).map((g) => screens[g[0]]);
+
+function stepsLeftProblem(stories: { id: string; screens: string[] }[], { screens, offSteps = [] }: Candidate) {
+  if (!offSteps.length) return undefined;
+  const same = stories.find((s) => isDeepStrictEqual(s.screens, orderLeft(screens, offSteps)));
+  return same && `남은 단계가 이미 스토리 ${same.id} 의 화면 순서입니다. ✕ 를 바꾸거나 이 후보를 버려 주세요`;
+}
 
 export function acceptCandidate(dir: string, candidate: Candidate, { id, name, author }: { id: unknown; name: unknown; author: unknown }, now = new Date()) {
   const { source, stepFields } = pickedLines(candidate);
@@ -434,6 +442,7 @@ export function acceptCandidate(dir: string, candidate: Candidate, { id, name, a
     else storeCandidates(dir, [candidate], now, story.id);
     return story;
   }
+  if (candidate.acceptProblem) throw new Error(candidate.acceptProblem);
   const groups = stepsLeft(candidate.screens, offSteps);
   const fieldsAt = (i: number): StepFields => stepFields?.[i] ?? {};
   const withoutLink = (i: number) => {
@@ -522,7 +531,7 @@ export function unacceptStory(dir: string, id: unknown, rules: SkipRule[] = []) 
     const applied = rulesFor(c.source, rules);
     const off = shownOffSteps(c.screens, c.offSteps, applied) ?? [];
     const shown = shownOrder(c.screens, applied);
-    return JSON.stringify(stepsLeft(shown, off).map((g) => shown[g[0]])) === storyScreens;
+    return JSON.stringify(orderLeft(shown, off)) === storyScreens;
   };
   const back = accepted.find(leavesStory);
   if (!back) {
@@ -617,7 +626,6 @@ function recordSources(config: any) {
   return { sources: [...config.visitRecords, folder], notices: [] };
 }
 
-// 순서를 고치면 코멘트 출처의 단계 번호가 바뀌므로, 코멘트 출처는 코멘트와 대신하는 원래 후보의 순서로만 맞춘다.
 const sourceKey = (source: Candidate['source']) => JSON.stringify('comment' in source ? { comment: source.comment, ...(source.replaces && { replaces: source.replaces.map((r) => r.screens) }) } : source);
 
 const replacedIn = (holders: { source?: unknown }[]): ReplacedCandidate[] => holders.flatMap(({ source }: any) => (isSource(source) && source.replaces) || []);
@@ -739,11 +747,12 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   const onMap = new Set(map.screens.map((s: any) => s.id));
   const missedRules = [...new Set(rules.map((r) => r.screen))].filter((s) => !onMap.has(s) && !found.has(s));
   const replacers = new Map(stored.filter((s) => 'comment' in s.source && s.source.replaces?.length && !taken(s.source)).map((s) => [JSON.stringify(s.screens), s.source.replaces]));
-  const withOriginals = list.map((c) => {
+  const checked = list.map((c): Candidate => {
     const originals = replacers.get(JSON.stringify(c.screens));
-    return originals ? { ...c, originals } : c;
+    const acceptProblem = stepsLeftProblem(stories, c);
+    return { ...c, ...(originals && { originals }), ...(acceptProblem && { acceptProblem }) };
   });
-  return { list: checkStories(map, withOriginals), discarded: shown, gone, notices: all, missedRules, cutByRules: cut.size };
+  return { list: checkStories(map, checked), discarded: shown, gone, notices: all, missedRules, cutByRules: cut.size };
 }
 
 const AGENT_STEPS = 'screens 는 화면 ID 나 { "screen", "reason", "needs", "linkNeeds", "inputs", "expects" } 객체를 하나 이상 차례대로 담은 목록이어야 합니다';
@@ -820,7 +829,6 @@ function replacedCandidates(asked: AskedReplace[], list: Candidate[], kept: stri
 
 type Originals = ReturnType<typeof replacedCandidates>;
 
-// 남긴 단계는 원래 후보들의 칸을 이어받는다. 들어오는 링크 조건은 원래 순서에서 바로 앞이던 단계가 여전히 앞에 올 때만 남긴다.
 function fieldsFromOriginals(originals: Originals, keptAt: (number | undefined)[], i: number): StepFields {
   const k = keptAt[i];
   if (k === undefined) return {};
