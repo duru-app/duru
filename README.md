@@ -1078,7 +1078,9 @@ On the review page each step of a candidate has a ✕. Pressing it strikes the s
 the step back; the last step left cannot be taken out. The steps taken out are kept in the candidate file as
 `offSteps`, `[<step>, …]` numbered from 1 in the order the file holds, which `candidateSkipScreens` can make longer
 than the card, so they stay after a reload, and accepting writes only the steps left into the story file, with steps
-of one screen left side by side as one step. The story keeps the source of the candidate, so the candidate is not offered again.
+of one screen left side by side as one step. While the steps left are the order of a story already there, why shows
+below the steps and both accept buttons are off. The story keeps the source of the candidate, so the candidate is not
+offered again.
 
 ## Review page
 

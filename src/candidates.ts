@@ -124,6 +124,7 @@ export interface Candidate {
   file?: string;
   lines?: AgentLine[];
   offSteps?: number[];
+  acceptProblem?: string;
 }
 
 const inputFields = (inputs: StepInput[][] = []) => (inputs.some((i) => i.length) ? inputs.map((i) => (i.length ? { inputs: i } : {})) : undefined);
@@ -421,6 +422,13 @@ function pickedLines({ source, stepFields, lines }: Candidate) {
 }
 
 const stepsLeft = (screens: string[], offSteps: number[]) => sameScreenRuns(screens, screens.flatMap((_, i) => (offSteps.includes(i + 1) ? [] : [i])));
+const orderLeft = (screens: string[], offSteps: number[]) => stepsLeft(screens, offSteps).map((g) => screens[g[0]]);
+
+function stepsLeftProblem(stories: { id: string; screens: string[] }[], { screens, offSteps = [] }: Candidate) {
+  if (!offSteps.length) return undefined;
+  const same = stories.find((s) => isDeepStrictEqual(s.screens, orderLeft(screens, offSteps)));
+  return same && `남은 단계가 이미 스토리 ${same.id} 의 화면 순서입니다. ✕ 를 바꾸거나 이 후보를 버려 주세요`;
+}
 
 export function acceptCandidate(dir: string, candidate: Candidate, { id, name, author }: { id: unknown; name: unknown; author: unknown }, now = new Date()) {
   const { source, stepFields } = pickedLines(candidate);
@@ -430,6 +438,7 @@ export function acceptCandidate(dir: string, candidate: Candidate, { id, name, a
     if (candidate.skippedByRule && !candidate.file) storeCandidates(dir, [candidate], now);
     return story;
   }
+  if (candidate.acceptProblem) throw new Error(candidate.acceptProblem);
   const groups = stepsLeft(candidate.screens, offSteps);
   const fieldsAt = (i: number): StepFields => stepFields?.[i] ?? {};
   const withoutLink = (i: number) => {
@@ -511,7 +520,7 @@ export function unacceptStory(dir: string, id: unknown, rules: SkipRule[] = []) 
     const applied = rulesFor(c.source, rules);
     const off = shownOffSteps(c.screens, c.offSteps, applied) ?? [];
     const shown = shownOrder(c.screens, applied);
-    return JSON.stringify(stepsLeft(shown, off).map((g) => shown[g[0]])) === storyScreens;
+    return JSON.stringify(orderLeft(shown, off)) === storyScreens;
   };
   const back = [...loadStored(dir).found].sort(byFirstSeen).find((c) => sameSource(c.source, source) && leavesStory(c));
   if (!back) {
@@ -705,7 +714,11 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   }
   const onMap = new Set(map.screens.map((s: any) => s.id));
   const missedRules = [...new Set(rules.map((r) => r.screen))].filter((s) => !onMap.has(s) && !found.has(s));
-  return { list: checkStories(map, list), discarded: shown, gone, notices: all, missedRules };
+  const checked = list.map((c) => {
+    const acceptProblem = stepsLeftProblem(stories, c);
+    return acceptProblem ? { ...c, acceptProblem } : c;
+  });
+  return { list: checkStories(map, checked), discarded: shown, gone, notices: all, missedRules };
 }
 
 const AGENT_STEPS = 'screens 는 화면 ID 나 { "screen", "reason", "needs", "linkNeeds", "inputs", "expects" } 객체를 하나 이상 차례대로 담은 목록이어야 합니다';

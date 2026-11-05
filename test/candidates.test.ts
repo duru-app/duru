@@ -9,7 +9,7 @@ import type { SkipRule } from '../src/candidates.ts';
 import { compare, loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
 import { addMark, addReply } from '../src/marks.ts';
-import { editStory, loadStories, writeStoryFields, writeStorySteps } from '../src/stories.ts';
+import { addStory, editStory, loadStories, writeStoryFields, writeStorySteps } from '../src/stories.ts';
 import type { StepInput } from '../src/stories.ts';
 import { linkTests } from '../src/test-links.ts';
 import { traceLinker } from '../src/trace-links.ts';
@@ -1559,8 +1559,58 @@ test('a stored candidate whose offSteps are not step numbers of its screens from
   });
 });
 
+test('accepting a candidate is refused with why when the steps left are the order of a story, writing no story and keeping the candidate', () => {
+  withFolder(recordsIn({ 'r.json': ['/signin', '/home', '/help'] }), (dir: string) => {
+    const cfg = { ...config, visitRecords: [dir], storiesDir: path.join(dir, 'stories') };
+    const listed = () => storyCandidates(cfg, map, MAP_FILE).list;
+    addStory(cfg.storiesDir, { id: 'home-help', name: '홈에서 도움말', screens: [HOME, HELP], author: 'kim' });
+    pickCandidateStep(cfg.storiesDir, listed()[0], stepOff(1));
+    assert.throws(() => acceptCandidate(cfg.storiesDir, listed()[0], { id: 'again', name: '다시', author: 'kim' }), { message: '남은 단계가 이미 스토리 home-help 의 화면 순서입니다. ✕ 를 바꾸거나 이 후보를 버려 주세요' });
+    assert.deepEqual(loadStories(cfg.storiesDir).stories.map((s) => s.id), ['home-help']);
+    assert.deepEqual(listed().map((c) => c.offSteps), [[1]]);
+    pickCandidateStep(cfg.storiesDir, listed()[0], { step: 1, on: true });
+    assert.equal(listed()[0].acceptProblem, undefined);
+  });
+});
+
+test('a candidate whose steps left, joined where one screen is left side by side, are the order of a story says so and is refused', () => {
+  withFolder(recordsIn({ 'r.json': ['/home', '/help', '/home'] }), (dir: string) => {
+    const cfg = { ...config, visitRecords: [dir], storiesDir: path.join(dir, 'stories') };
+    const listed = () => storyCandidates(cfg, map, MAP_FILE).list;
+    addStory(cfg.storiesDir, { id: 'home', name: '홈', screens: [HOME], author: 'kim' });
+    pickCandidateStep(cfg.storiesDir, listed()[0], stepOff(2));
+    const problem = '남은 단계가 이미 스토리 home 의 화면 순서입니다. ✕ 를 바꾸거나 이 후보를 버려 주세요';
+    assert.equal(listed()[0].acceptProblem, problem);
+    assert.throws(() => acceptCandidate(cfg.storiesDir, listed()[0], { id: 'again', name: '다시', author: 'kim' }), { message: problem });
+  });
+});
+
+test('a candidate cut by a rule whose steps left on the card are the order of a story is refused too', () => {
+  withFolder(recordsIn({ 'r.json': ['/signin', '/lab', '/home', '/help'] }), (dir: string) => {
+    const rules = [{ screen: '/lab#Lab', where: 'any' as const }];
+    const cfg = { ...config, visitRecords: [dir], storiesDir: path.join(dir, 'stories'), candidateSkipScreens: rules };
+    const listed = () => storyCandidates(cfg, map, MAP_FILE).list;
+    addStory(cfg.storiesDir, { id: 'to-home', name: '홈까지', screens: [SIGNIN, HOME], author: 'kim' });
+    pickCandidateStep(cfg.storiesDir, listed()[0], stepOff(3), rules);
+    assert.match(listed()[0].acceptProblem!, /스토리 to-home/);
+    assert.throws(() => acceptCandidate(cfg.storiesDir, listed()[0], { id: 'again', name: '다시', author: 'kim' }), /스토리 to-home/);
+  });
+});
+
+test('a candidate from a comment whose steps left are the order of a story is refused too', () => {
+  withOrderComment({ screens: LAB_ORDER }, ({ cfg, post }) => {
+    post({});
+    const listed = () => storyCandidates(cfg, map, MAP_FILE).list;
+    addStory(cfg.storiesDir, { id: 'signin-lab', name: '로그인 뒤 실험', screens: LAB_ORDER, author: 'kim' });
+    const step = listed()[0].screens.findIndex((s) => !LAB_ORDER.includes(s)) + 1;
+    pickCandidateStep(cfg.storiesDir, listed()[0], stepOff(step));
+    assert.match(listed()[0].acceptProblem!, /스토리 signin-lab/);
+  });
+});
+
 test('accepting a candidate with steps taken out writes only the steps left into the story file, with the source of the candidate, and the candidate does not come back, also after the candidates are stored again', () => {
   withStoryCopy((dir: string) => {
+    fs.rmSync(path.join(dir, 'help-from-home.json'));
     pickCandidateStep(dir, helpOf(dir), stepOff(3));
     acceptCandidate(dir, helpOf(dir), { id: 'open-help', name: '홈에서 도움말을 연다', author: 'reviewer' }, new Date('2026-10-03T01:02:03Z'));
     const written = readJson(path.join(dir, 'open-help.json'));
