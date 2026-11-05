@@ -1713,6 +1713,10 @@ that `any` takes out and the `start` or `end` screen it uncovers both go in one 
 discarded candidate would list a second candidate through which nothing ever walked. Candidates that come from a
 comment or a story keep every screen, because a person or an agent named those screens for that candidate
 (driver's decision in #530, 2026-11-02).
+A candidate joining a test in the current results with a test only in a stored file names only the current test,
+because a test missing from this run cannot be told apart from a deleted one. Writing both titles into the file was
+tried: a renamed or tagged test kept its old title in the source, and the joined title stayed in the file after the
+rule was removed (driver's decision in #530, 2026-11-05).
 
 **`rebuild` writes the screen order of each traced test into `tests.json` as `traced`, and the review page makes
 trace candidates from it instead of reading the reports and traces itself.**
