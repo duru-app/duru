@@ -2157,7 +2157,7 @@ one file per screen order that has none, holding the name, the screens, the sour
 like `discarded/`, never changes or deletes one, so files written on two computers merge in git without a conflict
 (two files with the same order are listed once). A file is named by the date and eight letters of a random ID; it
 has no author, as no one chose it. The list is the files together with what the records and traces give now, and
-when both have an order the fresh one is shown, so its name follows the current test titles. Accepting or
+when both have an order the fresh one is shown, so its name follows the current test titles. A stored test candidate of that order and report still adds its title to the source, so what a rule makes one candidate shows every test behind it whichever of them runs now. Accepting or
 discarding leaves the file, and the story or the discarded file keeps the order out of the list. A candidate whose
 screen has left the map stays listed with that step off the map, as a candidate from a record already did when an
 address matched no screen.

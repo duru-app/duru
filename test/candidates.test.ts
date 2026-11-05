@@ -1262,6 +1262,17 @@ const skipStart: SkipRule[] = [{ screen: SIGNIN, where: 'start' }];
 const shownWith = (dir: string, candidateSkipScreens: object[], traced: Parameters<typeof storyCandidates>[3] = []) =>
   storyCandidates({ ...config, visitRecords: [dir], storiesDir: path.join(dir, 'stories'), candidateSkipScreens }, map, MAP_FILE, traced);
 
+test('a stored test candidate of the same order as a test in the report keeps its title on the listed candidate, within one report', () => {
+  withFolder({}, (dir: string) => {
+    const report = 'results/playwright/e2e.json';
+    const a = { report, title: 'A', screens: [SIGNIN, HOME, HELP] };
+    const b = { report, title: 'B', screens: [HOME, HELP] };
+    storeCandidates(path.join(dir, 'stories'), shownWith(dir, [], [a, b]).list);
+    const tests = (traced: Parameters<typeof storyCandidates>[3]) => shownWith(dir, [{ screen: SIGNIN, where: 'start' }], traced).list.map((c) => (c.source as { tests: string[] }).tests);
+    assert.deepEqual(tests([a]), [['A', 'B']]);
+  });
+});
+
 test('candidateSkipScreens defaults to none, and each rule names a screen and where it is taken out of the candidates, start, end or any', () => {
   assert.deepEqual(config.candidateSkipScreens, []);
   const rules = [{ screen: SIGNIN, where: 'start' }, { screen: HELP, where: 'end' }, { screen: HOME, where: 'any' }];

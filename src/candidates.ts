@@ -586,7 +586,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
     const candidate = 'comment' in source ? base : ruled(base, rules);
     if (!candidate) continue;
     const key = JSON.stringify(candidate.screens);
-    const titles = storedTests.get(key);
+    const titles = storedTests.get(key) ?? fromTraces.get(key);
     if (titles && 'tests' in source && titles.report === source.report && !taken.has(sourceKey(candidate.source))) {
       titles.tests.push(...source.tests.filter((title: string) => !titles.tests.includes(title)));
       continue;
