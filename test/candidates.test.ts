@@ -1759,13 +1759,13 @@ test('a candidate that replaces another takes over the steps the reviewer took o
     const a = [SIGNIN, HOME, HELP];
     pickCandidateStep(cfg.storiesDir, listed().list.find((c) => c.name === 'a')!, { step: 2, on: false });
     const posted = post(comment({ candidate: a.join(' > ') }), { name: '도움말만', screens: [HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }] }] });
-    assert.deepEqual(stored(posted).source.replaces[0].dropped, [{ step: 1, reason: NO_SIGNIN }, { step: 2, reason: '검토자가 ✕ 로 뺐습니다' }]);
+    assert.deepEqual(stored(posted).source.replaces[0].dropped, [{ step: 1, reason: NO_SIGNIN }, { step: 2, reason: '검토자 제외' }]);
   });
   withReplaceable(HELP_VISITS, ({ cfg, comment, post, listed, stored }) => {
     const a = [SIGNIN, HOME, HELP];
     pickCandidateStep(cfg.storiesDir, listed().list.find((c) => c.name === 'a')!, { step: 2, on: false });
     const posted = post(comment({ candidate: a.join(' > ') }), { name: '도움말만', screens: [HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }, { step: 2, reason: '제가 판단했습니다', judged: true }] }] });
-    assert.deepEqual(stored(posted).source.replaces[0].dropped[1], { step: 2, reason: '검토자가 ✕ 로 뺐습니다' });
+    assert.deepEqual(stored(posted).source.replaces[0].dropped[1], { step: 2, reason: '검토자 제외' });
   });
 });
 
@@ -1788,7 +1788,7 @@ test('an agent may put a screen the reviewer took out with ✕ back in with a re
     const posted = post(comment({ candidate: a.join(' > ') }), { name: '홈을 다시 넣음', screens: [{ screen: HOME, reason: '검토자가 코멘트로 부탁했습니다' }, HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }] }] });
     const { source } = stored(posted);
     assert.deepEqual(source.added, [{ step: 1, reason: '검토자가 코멘트로 부탁했습니다' }]);
-    assert.deepEqual(source.replaces[0].dropped[1], { step: 2, reason: '검토자가 ✕ 로 뺐습니다' });
+    assert.deepEqual(source.replaces[0].dropped[1], { step: 2, reason: '검토자 제외' });
   });
 });
 
@@ -1798,7 +1798,7 @@ test('a value typed on a step the reviewer took out with ✕ stays out of the ca
     const a = [HOME, LAB, HELP];
     pickCandidateStep(cfg.storiesDir, listed().list.find((c) => c.name === 'a')!, { step: 1, on: false });
     const posted = post(comment({ candidate: a.join(' > ') }), { name: '실험실부터', screens: [LAB, HELP], replaces: [{ screens: a, dropped: [] }] });
-    assert.deepEqual(stored(posted).source.replaces[0].dropped, [{ step: 1, reason: '검토자가 ✕ 로 뺐습니다' }]);
+    assert.deepEqual(stored(posted).source.replaces[0].dropped, [{ step: 1, reason: '검토자 제외' }]);
     assert.ok(!JSON.stringify(stored(posted).stepFields ?? []).includes('뺀 칸'));
   });
 });

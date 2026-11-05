@@ -785,7 +785,7 @@ function leftProblem(where: string, left: string[], groups: number[][], kept: st
   return `이유를 적지 않은 단계는 ${where} 에서 dropped 의 단계를 뺀 순서 ${orderKey(left)} 그대로여야 합니다. 에이전트가 넣은 화면에는 reason 에 이유를 적습니다`;
 }
 
-const DROPPED_BY_REVIEWER = '검토자가 ✕ 로 뺐습니다';
+const DROPPED_BY_REVIEWER = '검토자 제외';
 
 function replacedCandidates(asked: AskedReplace[], list: Candidate[], kept: string[]) {
   return asked.map((r, i) => {
