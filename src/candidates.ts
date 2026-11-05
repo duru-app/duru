@@ -619,7 +619,7 @@ function recordSources(config: any) {
   return { sources: [...config.visitRecords, folder], notices: [] };
 }
 
-// 순서를 고치면 코멘트 출처의 단계 번호가 바뀌므로, 코멘트 출처는 코멘트와 대신하는 원래 후보의 순서로만 맞춘다.
+// 순서를 고치면 코멘트 출처의 단계 번호가 바뀐다.
 const sourceKey = (source: Candidate['source']) => JSON.stringify('comment' in source ? { comment: source.comment, ...(source.replaces && { replaces: source.replaces.map((r) => r.screens) }) } : source);
 
 const replacedIn = (holders: { source?: unknown }[]): ReplacedCandidate[] => holders.flatMap(({ source }: any) => (isSource(source) && source.replaces) || []);
@@ -659,7 +659,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
     return after;
   };
   const stories = loadStories(config.storiesDir).stories;
-  // 고친 후보가 목록에 있거나 받았거나 버린 동안, 그것이 대신하는 원래 후보는 기록과 시험에서 다시 나와도 올리지 않는다.
+  // 고친 후보를 받거나 버린 뒤에도 원래 후보는 목록에 올리지 않는다.
   const replaced = replacedIn([...stored, ...stories, ...current]);
   const seen = new Set([...stories, ...current, ...replaced].map((s) => JSON.stringify(s.screens)));
   const replacedSource = takenBy(replaced.filter((r) => !('comment' in r.source)));
@@ -817,7 +817,6 @@ function replacedCandidates(asked: AskedReplace[], list: Candidate[], kept: stri
 
 type Originals = ReturnType<typeof replacedCandidates>;
 
-// 남긴 단계는 원래 후보들의 칸을 이어받는다. 들어오는 링크 조건은 원래 순서에서 바로 앞이던 단계가 여전히 앞에 올 때만 남긴다.
 function fieldsFromOriginals(originals: Originals, keptAt: (number | undefined)[], i: number): StepFields {
   const k = keptAt[i];
   if (k === undefined) return {};
