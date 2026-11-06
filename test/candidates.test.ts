@@ -1123,7 +1123,7 @@ test('a candidate for a comment is refused when its screen order is already a st
     assert.throws(() => post({ name: '다시' }), { message: '이미 후보 「로그인해 실험을 연다」의 화면 순서입니다' });
     const [candidate] = storyCandidates(cfg, map, path.join(config.outDir, 'map.json')).list;
     discardCandidate(cfg.storiesDir, candidate, { reason: '버림', author: 'hit' }, new Date('2026-10-21T03:00:00Z'));
-    assert.throws(() => post({}), { message: '이 화면 순서는 버린 후보에 있습니다. 검토자가 「되돌리기」를 누른 뒤에 올릴 수 있습니다' });
+    assert.throws(() => post({}), { message: '이 화면 순서는 버린 후보에 있습니다. 검토자가 「복원」을 누른 뒤에 올릴 수 있습니다' });
     undiscardCandidate(cfg.storiesDir, candidate.screens, { author: 'hit' }, new Date('2026-10-21T04:00:00Z'));
     acceptCandidate(cfg.storiesDir, storyCandidates(cfg, map, path.join(config.outDir, 'map.json')).list[0], { id: 'lab', name: 'x', author: 'hit' });
     assert.throws(() => post({}), { message: '이미 스토리 lab 의 화면 순서입니다' });

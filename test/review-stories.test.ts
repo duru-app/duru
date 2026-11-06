@@ -688,7 +688,7 @@ test('in a browser, the candidates are followed by 「버린 후보 N」, shut u
   );
 });
 
-test('in a browser, 「되돌리기」 on a discarded candidate writes one undo record beside the discard even when double-clicked, offers the candidate again picked and drops it from 「버린 후보 N」, and a refused undo says why under the list', { skip: browserMissing || ((process.getuid?.() === 0 || process.platform === 'win32') && 'permissions do not stop this user from writing into the folder') }, async () => {
+test('in a browser, 「복원」 on a discarded candidate writes one undo record beside the discard even when double-clicked, offers the candidate again picked and drops it from 「버린 후보 N」, and a refused undo says why under the list', { skip: browserMissing || ((process.getuid?.() === 0 || process.platform === 'win32') && 'permissions do not stop this user from writing into the folder') }, async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
@@ -991,7 +991,7 @@ test('in a browser, when an agent replaces the candidate a reviewer has open, th
   );
 });
 
-test('in a browser, a visit record walking the order an agent posted shows the order it replaces on its own card and 「원래대로」 lists that order again', { skip: browserMissing }, async () => {
+test('in a browser, a visit record walking the order an agent posted shows the order it replaces on its own card and 「되돌리기」 lists that order again', { skip: browserMissing }, async () => {
   await withRebuiltFixture(CANDIDATES, (config, copy) =>
     withServer(config, 'reviewer', async (base) => {
       const comment = await (await postMark(base, { target: { candidate: HELP_KEY }, note: '로그인 단계를 빼 줘' })).json();
@@ -1011,7 +1011,7 @@ test('in a browser, a visit record walking the order an agent posted shows the o
   );
 });
 
-test('in a browser, 「원래대로」 on a candidate an agent posted in place of another lists and opens the original again, and 「되돌리기」 under 「버린 후보」 brings the agent\'s candidate back', { skip: browserMissing }, async () => {
+test('in a browser, 「되돌리기」 on a candidate an agent posted in place of another lists and opens the original again, and 「복원」 under 「버린 후보」 brings the agent\'s candidate back', { skip: browserMissing }, async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', async (base) => {
       const comment = await (await postMark(base, { target: { candidate: HELP_KEY }, note: '로그인 단계를 빼 줘' })).json();
@@ -1025,6 +1025,7 @@ test('in a browser, 「원래대로」 on a candidate an agent posted in place o
         assert.equal(await listed('open-help').count(), 0);
         await listed(FIXED).click();
         await p.waitForFunction((name) => document.querySelector('#center h3')?.textContent === name, FIXED);
+        assert.equal(await p.textContent('#center button.back-to-original'), '되돌리기');
         assert.equal(await p.getAttribute('#center button.back-to-original', 'aria-label'), await p.getAttribute('#center button.back-to-original', 'title'));
 
         await p.fill('#right-dock textarea', '쓰던 코멘트');
@@ -1036,6 +1037,7 @@ test('in a browser, 「원래대로」 on a candidate an agent posted in place o
         assert.equal(await p.locator('#center button.back-to-original').count(), 0);
 
         await p.click('details:has(button.undiscard) > summary');
+        assert.equal(await p.textContent(`li:has(button.undiscard):has-text("${FIXED}") button.undiscard`), '복원');
         await p.click(`li:has(button.undiscard):has-text("${FIXED}") button.undiscard`);
         await p.waitForFunction((name) => document.querySelector('#center h3')?.textContent === name, FIXED);
         assert.equal(await listed('open-help').count(), 0);
@@ -1061,7 +1063,7 @@ const bringFixedBack = async (p: Page) => {
   await p.waitForFunction((n) => document.querySelector('#center h3')?.textContent === n, FIXED_NAME);
 };
 
-test('in a browser, 「원래대로」 leaves a comment already being written on the original in its box and keeps the one on the fixed candidate for when that candidate comes back', { skip: browserMissing }, async () => {
+test('in a browser, 「되돌리기」 leaves a comment already being written on the original in its box and keeps the one on the fixed candidate for when that candidate comes back', { skip: browserMissing }, async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', async (base) => {
       await withPage(base, async (p, errors) => {
@@ -1089,7 +1091,7 @@ test('in a browser, 「원래대로」 leaves a comment already being written on
 });
 
 for (const [where, taken] of [['another candidate opens', [HELP_KEY]], ['no candidate is left', [HELP_KEY, PUBLISH_KEY]]] as const) {
-  test(`in a browser, when the original cannot come back and ${where}, 「원래대로」 keeps the comment for the fixed candidate instead of moving it`, { skip: browserMissing }, async () => {
+  test(`in a browser, when the original cannot come back and ${where}, 「되돌리기」 keeps the comment for the fixed candidate instead of moving it`, { skip: browserMissing }, async () => {
     await withRebuiltFixture(CANDIDATES, (config) =>
       withServer(config, 'reviewer', async (base) => {
         await postFixedCandidate(base);

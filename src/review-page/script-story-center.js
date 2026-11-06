@@ -361,7 +361,7 @@ const lineCount = (c) => (c.lines?.length
   ? h('span', { class: 'line-count', title: '에이전트가 적은 줄 가운데 받을 때 스토리 파일에 넣을 줄 수' }, `${c.lines.filter((l) => lineOn(c, l)).length} / ${c.lines.length}`)
   : null);
 
-const BACK_TO_ORIGINAL = '고친 후보를 내리고 원래 후보를 다시 올립니다. 「버린 후보」에서 되돌릴 수 있습니다';
+const BACK_TO_ORIGINAL = '고친 후보를 내리고 원래 후보를 다시 올립니다. 「버린 후보」에서 복원할 수 있습니다';
 
 const candidateActions = (c) => h('fieldset', { class: 'story-form candidate-acts', disabled: state.storyWriting },
   lineCount(c),
@@ -370,7 +370,7 @@ const candidateActions = (c) => h('fieldset', { class: 'story-form candidate-act
       h('button', { class: 'accept', title: c.acceptProblem ?? '이 화면 순서로 스토리 파일을 씁니다.', disabled: Boolean(c.acceptProblem), onclick: acceptChosen }, '스토리로 받기'),
       h('button', { class: 'accept-edited', title: c.acceptProblem ?? 'ID 와 이름을 고친 뒤에 받습니다.', disabled: Boolean(c.acceptProblem), onclick: () => askAccept(c, 'button.accept-edited', null) }, '고쳐서 받기')),
     c.originals?.length
-      ? h('button', { class: 'back-to-original', title: BACK_TO_ORIGINAL, 'aria-label': BACK_TO_ORIGINAL, onclick: () => goBackToOriginal(c) }, '원래대로')
+      ? h('button', { class: 'back-to-original', title: BACK_TO_ORIGINAL, 'aria-label': BACK_TO_ORIGINAL, onclick: () => goBackToOriginal(c) }, '되돌리기')
       : null,
     h('button', { class: 'discard', title: '버린 후보 파일을 남기고, 같은 화면 순서는 다시 후보로 내지 않습니다. 이유를 적어야 합니다', onclick: () => askDiscard(c) }, '버리기')));
 
