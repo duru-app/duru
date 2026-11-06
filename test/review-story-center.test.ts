@@ -634,7 +634,7 @@ test('a need write is refused with its reason when the file name is wrong or tak
 test('story writes that are not JSON requests are refused', async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', async (base) => {
-      for (const url of ['/api/candidates/accept', '/api/candidates/discard', '/api/candidates/undiscard', '/api/stories/edit', '/api/stories/fields', '/api/stories/steps', '/api/stories/unaccept', '/api/needs/add', '/api/needs/edit']) {
+      for (const url of ['/api/candidates/accept', '/api/candidates/name', '/api/candidates/discard', '/api/candidates/undiscard', '/api/stories/edit', '/api/stories/fields', '/api/stories/steps', '/api/stories/unaccept', '/api/needs/add', '/api/needs/edit']) {
         const res = await fetch(`${base}${url}`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: '{}' });
         assert.equal(res.status, 415, url);
       }
@@ -851,7 +851,7 @@ test('in a browser, a story shows its conversation unfolded at the top of the ri
   );
 });
 
-test('in a browser, a candidate has 「스토리로 받기」, 「고쳐서 받기」 and 「버리기」 at the right end of its title row beside its verdict chip and its folded 「사전 조건 N」 under the line it came from, while its conversation is unfolded at the top of the right pane', { skip: browserMissing }, async () => {
+test('in a browser, a candidate has 「스토리로 받기」 and 「버리기」 at the right end of its title row beside its verdict chip and its folded 「사전 조건 N」 under the line it came from, while its conversation is unfolded at the top of the right pane', { skip: browserMissing }, async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
@@ -862,7 +862,7 @@ test('in a browser, a candidate has 「스토리로 받기」, 「고쳐서 받�
         assert.equal(await p.locator('#right :is(.story-form, .verdict, details, button.accept)').count(), 0);
         assert.deepEqual(await storyStack(p), ['title', 'source', 'needs', 'steps']);
         assert.deepEqual(await p.locator('#center .title-row .chip.verdict').allTextContents(), ['판정 못 함 · 화면 없음']);
-        assert.deepEqual(await p.locator('#center .title-row > :last-child button').allTextContents(), ['스토리로 받기', '고쳐서 받기', '버리기']);
+        assert.deepEqual(await p.locator('#center .title-row > :last-child button').allTextContents(), ['스토리로 받기', '버리기']);
         const [row, acts] = await Promise.all([p.locator('#center .title-row').boundingBox(), p.locator('#center .title-row > :last-child').boundingBox()]);
         assert.ok(row!.x + row!.width - (acts!.x + acts!.width) < 2, 'the buttons end at the right edge of the row');
         assert.deepEqual(await p.locator('#center details.story-needs').evaluate((d: HTMLDetailsElement) => [d.querySelector('summary')!.textContent, d.open]), ['사전 조건 0', false]);
@@ -980,7 +980,7 @@ test('in a browser, a story accepted from a candidate has 「받기 되돌리기
         assert.equal(await p.locator('#story-list li:has-text("open-help")').count(), 0);
         assert.deepEqual(await p.locator('#candidate-list li .name > span:first-child').allTextContents(), ['open-help', 'publish-document']);
         assert.equal(await p.textContent('#center h3'), 'open-help');
-        assert.deepEqual(await p.locator('#center .accepts button').allTextContents(), ['스토리로 받기', '고쳐서 받기']);
+        assert.deepEqual(await p.locator('#center .candidate-buttons button').allTextContents(), ['스토리로 받기', '버리기']);
         assert.deepEqual(await p.locator('#left .detached li').evaluateAll((items) => items.map((li) => [li.querySelector('code')!.textContent, li.querySelector('div')!.textContent])), [
           ['open-help', 'is the beta inbox needed?'],
         ]);

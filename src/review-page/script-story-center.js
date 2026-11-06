@@ -198,7 +198,7 @@ function renderStoryCenter() {
   const c = candidateOf();
   if (c) {
     return fillStoryCenter(center, c, [
-      h('div', { class: 'title-row' }, h('h3', {}, c.name), byAgent(c) ? agentChip('candidate') : null, walkChip(c), ...reachChips(c), candidateActions(c)),
+      h('div', { class: 'title-row' }, h('h3', {}, c.name), c.storyId ? storyIdTag(c.storyId) : null, nameButton(c), byAgent(c) ? agentChip('candidate') : null, walkChip(c), ...reachChips(c), candidateActions(c)),
       storyErrorLine(),
       sourceView(c.source, '후보가 나온'),
       foundOrder(c),
@@ -362,13 +362,26 @@ const lineCount = (c) => (c.lines?.length
   : null);
 
 const BACK_TO_ORIGINAL = '고친 후보를 내리고 원래 후보를 다시 올립니다. 「버린 후보」에서 복원할 수 있습니다';
+const NAME_EDIT = 'ID와 이름 고치기';
+
+const nameButton = (c) => h('button', {
+  type: 'button',
+  class: 'edit-name',
+  title: c.acceptProblem ?? NAME_EDIT,
+  'aria-label': NAME_EDIT,
+  disabled: Boolean(c.acceptProblem) || state.storyWriting,
+  onclick: () => askAccept(c, 'button.edit-name', null, 'name'),
+}, '✎');
+
+function storyIdTag(id) {
+  const problem = storyIdProblem(id);
+  return h('span', { class: problem ? 'story-id mono taken' : 'story-id mono muted', title: problem ?? '스토리로 받을 때 쓸 ID' }, id);
+}
 
 const candidateActions = (c) => h('fieldset', { class: 'story-form candidate-acts', disabled: state.storyWriting },
   lineCount(c),
   h('div', { class: 'candidate-buttons' },
-    h('div', { class: 'accepts' },
-      h('button', { class: 'accept', title: c.acceptProblem ?? '이 화면 순서로 스토리 파일을 씁니다.', disabled: Boolean(c.acceptProblem), onclick: acceptChosen }, '스토리로 받기'),
-      h('button', { class: 'accept-edited', title: c.acceptProblem ?? 'ID 와 이름을 고친 뒤에 받습니다.', disabled: Boolean(c.acceptProblem), onclick: () => askAccept(c, 'button.accept-edited', null) }, '고쳐서 받기')),
+    h('button', { class: 'accept', title: c.acceptProblem ?? '이 화면 순서로 스토리 파일을 씁니다.', disabled: Boolean(c.acceptProblem), onclick: acceptChosen }, '스토리로 받기'),
     c.originals?.length
       ? h('button', { class: 'back-to-original', title: BACK_TO_ORIGINAL, 'aria-label': BACK_TO_ORIGINAL, onclick: () => goBackToOriginal(c) }, '되돌리기')
       : null,
@@ -444,17 +457,31 @@ function takeStoryError() {
   return refused;
 }
 
+async function nameAs(c, id, name) {
+  await lineWrites;
+  await stepWrites;
+  if (!(await writeStories('/api/candidates/name', { key: c.key, id, name }))) return false;
+  render();
+  return true;
+}
+
+const idOf = (c) => c.storyId ?? slugOf(c.name);
+
 async function acceptChosen() {
   const c = candidateOf();
   if (!c) return;
-  if (storyIdProblem(slugOf(c.name))) return askAccept(c, 'button.accept', null);
-  if (await acceptAs(c, slugOf(c.name), c.name)) return;
+  if (storyIdProblem(idOf(c))) return askAccept(c, 'button.accept', null);
+  if (await acceptAs(c, idOf(c), c.name)) return;
   if (state.candidate === c.key) askAccept(c, 'button.accept', takeStoryError());
 }
 
 const acceptDialog = /** @type {HTMLDialogElement} */ (document.getElementById('accept-ask'));
 const acceptPart = (selector) => acceptDialog.querySelector(selector);
 let acceptJob = null;
+const ACCEPT_MODES = {
+  accept: { title: 'ID 와 이름을 정해 스토리로 받습니다', button: '스토리로 받기', write: acceptAs },
+  name: { title: '스토리로 받을 때 쓸 ID 와 이름을 정합니다', button: '저장', write: nameAs },
+};
 
 function drawAccept() {
   const { busy, error } = acceptJob;
@@ -469,10 +496,12 @@ function drawAccept() {
   acceptPart('.error').hidden = !error;
 }
 
-function askAccept(candidate, opener, error) {
-  acceptJob = { candidate, opener, busy: false, error };
+function askAccept(candidate, opener, error, mode = 'accept') {
+  acceptJob = { candidate, opener, busy: false, error, mode };
+  acceptPart('h2').textContent = ACCEPT_MODES[mode].title;
+  acceptPart('button.accept').textContent = ACCEPT_MODES[mode].button;
   fill(acceptPart('.candidate'), h('span', { class: 'muted' }, '후보 '), candidate.name);
-  acceptPart('#accept-id').value = slugOf(candidate.name);
+  acceptPart('#accept-id').value = idOf(candidate);
   acceptPart('#accept-name').value = candidate.name;
   drawAccept();
   acceptDialog.showModal();
@@ -490,7 +519,7 @@ async function confirmAccept() {
   const job = acceptJob;
   Object.assign(job, { busy: true, error: null });
   drawAccept();
-  if (await acceptAs(job.candidate, acceptPart('#accept-id').value, acceptPart('#accept-name').value.trim())) return closeAccept();
+  if (await ACCEPT_MODES[job.mode].write(job.candidate, acceptPart('#accept-id').value, acceptPart('#accept-name').value.trim())) return closeAccept();
   Object.assign(job, { busy: false, error: takeStoryError() });
   drawAccept();
   acceptPart('#accept-id').focus();
