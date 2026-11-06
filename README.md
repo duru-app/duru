@@ -1017,8 +1017,7 @@ follow the limits of reading traces:
 
 On the review page a candidate is accepted, which writes a story file into `storiesDir`, or discarded with a
 reason, which writes a file into `discarded/` in `storiesDir` so the same order does not come back. Accepting a
-candidate that `candidateSkipScreens` shortened can also write its found order into `candidates/`, under the
-candidate's name. Undoing an
+candidate with no file also writes its found order into `candidates/`, under the candidate's name. Undoing an
 acceptance deletes that story file, and the candidate is listed again; if `candidates/` has no file for its screen
 order yet, one is written first, under the story's ID, so it comes back even once its record is gone. Undoing a
 discard writes another file into `discarded/`, `{ "screens", "kind": "undo", "author", "date" }`, with no reason, and
@@ -1028,8 +1027,8 @@ the discard kept.
 
 `rebuild` keeps each candidate as a file in `candidates/` in `storiesDir`, one for each screen order that has no
 file there yet, holding the name, the screens, the source and the date it was first seen. Files are only added,
-never deleted, and changed only where the review page keeps the lines switched off on a candidate from a comment
-or the steps taken out of a candidate; keep the folder in git with the stories. If a file cannot be written,
+never deleted, and changed only where the review page keeps the lines switched off on a candidate from a comment,
+the steps taken out of a candidate or the story it became; keep the folder in git with the stories. If a file cannot be written,
 `rebuild` stops storing and prints why under the candidate line. The candidates listed are these files together
 with what the records and traces give now, and for a screen order in both, what they give now is shown. So a candidate stays
 after a `rebuild` whose results have no traces, or once its record is gone. An accepted or discarded candidate keeps
@@ -1084,8 +1083,10 @@ the step back; the last step left cannot be taken out. The steps taken out are k
 `offSteps`, `[<step>, …]` numbered from 1 in the order the file holds, which `candidateSkipScreens` can make longer
 than the card, so they stay after a reload, and accepting writes only the steps left into the story file, with steps
 of one screen left side by side as one step. While the steps left are the order of a story already there, why shows
-below the steps and both accept buttons are off. The story keeps the source of the candidate, so the candidate is not
-offered again.
+below the steps and both accept buttons are off. Accepting any candidate writes the story's ID into its candidate file as
+`acceptedAs`, making the file if there is none. While that story exists, the order the candidate was found in is not
+offered from any source, but any other order of the same test is, until it is discarded. Undoing the acceptance removes
+`acceptedAs`, and the candidate comes back with its steps taken out.
 
 ## Review page
 
