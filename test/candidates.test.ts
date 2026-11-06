@@ -1803,6 +1803,21 @@ test('a value typed on a step the reviewer took out with ✕ stays out of the ca
   });
 });
 
+test('the agent skill says how to answer a comment that asks for steps to be taken out, with the command and setting names the usage guide uses', () => {
+  const readme = fs.readFileSync(path.join(import.meta.dirname, '../README.md'), 'utf8');
+  const skill = fs.readFileSync(path.join(import.meta.dirname, '../skills/duru/SKILL.md'), 'utf8');
+  const part = skill.slice(skill.indexOf('When a comment asks for steps to be taken out'));
+  assert.ok(part.length < skill.length);
+  assert.match(part, /take out only the steps nobody needs/);
+  assert.match(part, /signing in again under another role/);
+  assert.match(part, /every dropped step its\s+`reason`[^]*`judged: true`/);
+  assert.match(part, /comment with no target[^]*`candidates\.list`[^]*`GET <review page address>\/api\/data`/);
+  assert.match(part, /answer with `duru reply`, saying\s+what you took out/);
+  assert.match(part, /same screen out of several candidates[^]*`candidateSkipScreens`[^]*after the reviewer agrees/);
+  assert.match(readme, /`candidateSkipScreens`/);
+  assert.match(readme, /duru reply <config>/);
+});
+
 test('the usage guide and the agent skill give duru candidate the same replaces input, each original with screens and its dropped steps with step, reason and judged, and the guide says the originals stay out of the list while the new candidate is listed, accepted or discarded', () => {
   const readme = fs.readFileSync(path.join(import.meta.dirname, '../README.md'), 'utf8');
   const skill = fs.readFileSync(path.join(import.meta.dirname, '../skills/duru/SKILL.md'), 'utf8');
