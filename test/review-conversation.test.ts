@@ -25,6 +25,87 @@ test('in a browser, an entry under 「떨어져 나감」 with a comment and an 
   });
 });
 
+test('in a browser, a comment shows 대기, then 응답 중 once an agent connection takes it, then 답변 완료 once it is answered, in 「전체」 and in its conversation, and a mark with a status shows none of them', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config, copy) => {
+    const comment = addMark(config.marksDir, { target: { node: '/lab#Lab' }, note: 'is it tested?', author: 'reviewer' }, new Date('2026-10-12T01:00:00Z'));
+    addMark(config.marksDir, { target: { node: '/lab#Lab' }, status: 'missing', note: 'no table test', author: 'reviewer' }, new Date('2026-10-12T02:00:00Z'));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await chooseScreen(p, '/lab');
+        const inThread = p.locator('#right-info .history > li', { hasText: 'is it tested?' }).locator('> .talk-state');
+        assert.equal(await inThread.textContent(), '대기');
+        assert.equal(await p.locator('#right-info .history > li', { hasText: 'no table test' }).locator('> .talk-state').count(), 0);
+
+        await p.fill('#right-dock textarea', 'half');
+        await p.locator('#right-info .talk-scope button').nth(1).click();
+        const inList = p.locator('#right-info .talk-line', { hasText: 'is it tested?' }).locator('.talk-state');
+        assert.equal(await inList.textContent(), '대기');
+        assert.equal(await inList.getAttribute('aria-label'), '아직 아무 세션도 이 코멘트를 가져가지 않았습니다');
+        assert.equal(await p.locator('#right-info .talk-filters button', { hasText: '남은 것' }).textContent(), '남은 것 1');
+
+        await fetch(`${base}/api/events?unanswered`);
+        await inList.locator('.hops').waitFor();
+        assert.equal(await inList.textContent(), '응답 중');
+        assert.equal(await p.locator('#right-info .talk-filters button', { hasText: '남은 것' }).textContent(), '남은 것 1');
+
+        await reply(copy, comment.id, 'not yet', '--server', `${base}/`);
+        await inList.locator('text=답변 완료').waitFor();
+        assert.equal(await inList.locator('.hops').count(), 0);
+        assert.equal(await p.locator('#right-info .talk-filters button', { hasText: '남은 것' }).textContent(), '남은 것 0');
+
+        await p.locator('#right-info .talk-scope button').first().click();
+        assert.equal(await inThread.textContent(), '답변 완료');
+        assert.equal(await p.locator('#right-info .history .replies .talk-state').count(), 0);
+        assert.equal(await p.inputValue('#right-dock textarea'), 'half');
+        assert.deepEqual(errors, []);
+      }),
+    );
+  });
+});
+
+test('in a browser, 취소 in the comment form clears the text and the status back to where they were, and stays off when nothing was written', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await chooseScreen(p, '/lab');
+        const cancel = p.locator('#right-dock button.cancel');
+        assert.equal(await cancel.isDisabled(), true);
+        await p.fill('#right-dock textarea', 'half a thought');
+        await p.locator('#right-dock .statuses button').first().click();
+        assert.equal(await cancel.isDisabled(), false);
+        await cancel.click();
+        assert.equal(await p.inputValue('#right-dock textarea'), '');
+        assert.equal(await p.locator('#right-dock .statuses button.on').count(), 0);
+        assert.equal(await cancel.isDisabled(), true);
+        assert.deepEqual(loadMarks(config.marksDir), []);
+        assert.deepEqual(errors, []);
+      }),
+    ),
+  );
+});
+
+test('in a browser, the comment form is a dark rounded card in both themes with a pill save button, and a comment and its answer are rounded cards', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    const comment = addMark(config.marksDir, { target: { node: '/lab#Lab' }, note: 'is it tested?', author: 'reviewer' }, new Date('2026-10-12T01:00:00Z'));
+    addReply(config.marksDir, { replyTo: comment.id, note: 'not yet' }, new Date('2026-10-12T02:00:00Z'));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await chooseScreen(p, '/lab');
+        const style = (selector: string, ...names: string[]) => p.locator(selector).first().evaluate((e, want) => want.map((n) => getComputedStyle(e).getPropertyValue(n)), names);
+        for (const colorScheme of ['light', 'dark'] as const) {
+          await p.emulateMedia({ colorScheme });
+          assert.deepEqual(await style('#right-dock > .mark-form', 'background-color', 'border-top-left-radius', 'color'), ['rgb(26, 26, 26)', '16px', 'rgb(255, 255, 255)']);
+          assert.deepEqual(await style('#right-dock textarea', 'border-top-left-radius', 'resize'), ['8px', 'none']);
+          assert.deepEqual(await style('#right-dock button.save', 'background-color', 'border-top-left-radius'), ['rgb(60, 130, 247)', '999px']);
+          assert.equal((await style('#right-dock .tag-label', 'font-style'))[0], 'italic');
+          assert.equal((await style('#right-info .history > li', 'border-top-left-radius'))[0], '16px');
+          assert.equal((await style('#right-info .history li.reply', 'border-top-left-radius'))[0], '16px');
+        }
+      }),
+    );
+  });
+});
+
 const bubbleOnEdge = async (box: Locator, hoverOn: Locator = box) => {
   await box.page().mouse.move(0, 0);
   const bubble = box.locator('.bubble').first();
@@ -328,8 +409,8 @@ test('in a browser, 「전체」 groups every attached comment by its screen, ca
         ]);
         assert.match((await p.textContent('#right-info .talk-line:has-text("why pending?") .meta'))!, /테스트 「opens the lab」.*· 답 1/);
         const filter = (label: string) => p.locator('#right-info .talk-filters button', { hasText: label });
-        assert.equal(await filter('미답변').textContent(), '미답변 4');
-        await filter('미답변').click();
+        assert.equal(await filter('남은 것').textContent(), '남은 것 4');
+        await filter('남은 것').click();
         assert.deepEqual((await groups()).map(([, lines]) => lines).flat(), ['one more step?', 'home first?', 'and the API?', 'is this paged?']);
         await filter('테스트 필요').click();
         assert.deepEqual(await groups(), [['/lab', ['no table test']]]);
@@ -557,12 +638,12 @@ test('in a browser, 「변경 기록」 under 「전체」 lists each case kind 
         await chooseScreen(p, '/help');
         assert.deepEqual(await scope.allTextContents(), ['이 화면 0', '전체 1']);
         await scope.nth(1).click();
-        assert.deepEqual(await p.locator('#right-info .talk-filters button').allTextContents(), ['모두', '미답변 1', '테스트 필요', '충분', '변경 기록']);
+        assert.deepEqual(await p.locator('#right-info .talk-filters button').allTextContents(), ['모두', '남은 것 1', '테스트 필요', '충분', '변경 기록']);
         assert.deepEqual(await groups(), [['/lab', ['is the lab done?']]]);
 
         await filter('변경 기록').click();
         assert.equal(await filter('변경 기록').getAttribute('aria-pressed'), 'true');
-        assert.equal(await filter('미답변').textContent(), '미답변 1');
+        assert.equal(await filter('남은 것').textContent(), '남은 것 1');
         assert.deepEqual(await groups(), []);
         assert.deepEqual(await changes(), [
           ['끔', `경우 ${CASE_KINDS.boundary}`, '/lab', 'no input here'],
@@ -593,7 +674,7 @@ test('in a browser, 「변경 기록」 under 「전체」 lists each case kind 
       withPage(base, async (p) => {
         await chooseScreen(p, '/lab');
         await p.locator('#right-info .talk-scope button').nth(1).click();
-        assert.deepEqual(await p.locator('#right-info .talk-filters button').allTextContents(), ['모두', '미답변 0', '테스트 필요', '충분']);
+        assert.deepEqual(await p.locator('#right-info .talk-filters button').allTextContents(), ['모두', '남은 것 0', '테스트 필요', '충분']);
       })));
 });
 

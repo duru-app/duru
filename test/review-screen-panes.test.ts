@@ -403,8 +403,9 @@ test('in a browser, the status buttons and the save button stay in view at the b
 });
 
 test('in a browser, the status buttons and the save button stay in view at the bottom of the right pane for a story', { skip: browserMissing }, async () => {
-  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
-    withServer(config, 'reviewer', (base) =>
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) => {
+    for (const note of ['one more step?', 'and another?', 'and a third?']) addMark(config.marksDir, { target: { story: 'run-lab' }, note, author: 'reviewer' });
+    return withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.setViewportSize({ width: 1440, height: 360 });
@@ -414,8 +415,8 @@ test('in a browser, the status buttons and the save button stay in view at the b
         await assertDockStaysPut(p);
         assert.equal(await p.locator('#right-info .mark-form').count(), 0);
       }),
-    ),
-  );
+    );
+  });
 });
 
 test('in a browser, the conversation of a screen is open from the start with no fold, fills the pane above the form, and a long answer scrolls inside it without being cut', { skip: browserMissing }, async () => {

@@ -1535,7 +1535,7 @@ records a status, a note, the author and the date. The status buttons are 「테
 `missing` by an older duru shows and counts as 「테스트 필요」. A mark left with text and no
 status is a comment: it shows in the conversation with no status, keeps the current status as it was, and in the task list
 follows the open mark it was written after. Pressing a picked status again lets it go, so a comment can be left on
-a target that already has one. In the comment box Enter saves the mark as 「남기기」 does and Shift+Enter starts a new
+a target that already has one. 「취소」 clears what was typed and chosen in the comment box. In the comment box Enter saves the mark as 「남기기」 does and Shift+Enter starts a new
 line. An Enter pressed while the list of tags typed after `@` is shown, or one that ends a Korean syllable, does not
 save. Each mark and each judgment
 is its own new file, `<marksDir>/<node>/<date>-<author>-<short ID>.json`, so marks made on two machines merge in
@@ -1652,7 +1652,11 @@ attached anywhere; N counts those, leaving out replies and marks that carry only
 only the case kinds picked or taken out are listed, under 「변경 기록」. 「전체」 groups them by the
 screen, call, story or candidate they were left on, the group with the latest entry first and the latest entry first
 in each group; a line shows the status, the tag, who wrote it and when, the number of replies and the first line of
-the text. 「미답변」 keeps the comments without a status that have no reply yet, and 「테스트 필요」 and 「충분」 keep, for a
+the text. A comment without a status carries one chip, here and in its conversation: 「대기」 when no session has
+taken it, 「응답 중」 once `duru wait` or a message to a Claude Code session has carried it to an agent and it has no
+reply yet, and 「답변 완료」 once it has one. The review remembers what was taken only while it runs, so after a restart a
+comment without a reply shows 「대기」 until `duru wait` brings it again, and a session that stopped without replying
+leaves 「응답 중」 until then. 「남은 것」 keeps the comments without a status that have no reply yet, and 「테스트 필요」 and 「충분」 keep, for a
 place whose current status is that one, the latest mark with that status and text. With `caseKinds` set, the last
 filter, 「변경 기록」, lists instead every case kind picked or taken out, as one list by time, the latest first, not
 grouped: a line shows 켬 or 끔, the kind, the screen or call, who pressed it and when. Pressing one opens that screen or

@@ -2430,7 +2430,7 @@ later carries a reason stays out of the conversation as well.
 「변경 기록」 is the last button of 「전체」's filter row, shown only when `caseKinds` is set. It lists every pick on its own
 line, latest first, across screens and calls rather than grouped like the other filters, because what it answers is
 who changed which kind and when; each line names its screen or call, 켬 or 끔, the kind, and always its author, even on
-a page only one reviewer has signed, where other lines leave the author out. 「미답변 N」 keeps counting the
+a page only one reviewer has signed, where other lines leave the author out. 「남은 것 N」 keeps counting the
 comments while 「변경 기록」 is chosen. Pressing a line opens the screen or call, opens the fold that holds
 「경우별 테스트」 and scrolls the middle pane to it, since that is where the pick lives now.
 Alternatives compared:
@@ -5521,6 +5521,35 @@ Compared:
   losing the PC lost them.
 - A private repository: less to change, but the public `CLAUDE.md` would point at files others cannot read, and the
   script would still get no review here.
+
+**A comment shows 「대기」, 「응답 중」 or 「답변 완료」, and the review server decides 「응답 중」 from what it handed to an
+agent.** Chosen by the driver for #554 (2026-11-07), with the same names as the check page and difit, so a reviewer
+sees at a glance whether anyone has picked a comment up. The server is the only place that sees both ways a comment
+reaches an agent: `duru wait` connects to `/api/events?unanswered`, and a Claude Code session gets a message through
+its socket. It keeps the taken comments in memory, because a restart ends those connections and `duru wait` brings
+every comment without a reply again; the state describes this run, so nothing goes in the marks folder that reviewers
+commit. A session that stops without replying leaves 「응답 중」 until the review restarts or another `duru wait` runs.
+Compared:
+- Storing the taken comments in the marks folder: they would survive a restart but go into git and say an agent is
+  working on something no running agent holds.
+- A timeout that returns a comment to 「대기」: an agent can take longer than any fixed time on a real answer, and the
+  chip would then say nobody took it when one did.
+- One 「응답 중」 chip, with nothing until a comment is taken: the driver chose two states on the check page, and without
+  「대기」 a review with no agent running looks the same as one that has not started.
+
+**The comment list stays in the right pane instead of becoming a panel of its own.** Chosen by the driver for #554
+(2026-11-07) from a mockup of both. 「전체」 already gathers, filters and jumps to comments, so it gets the chips and the
+look.
+Compared:
+- A separate panel as in difit: the screen details stay visible beside the list, but the middle pane loses the panel's
+  width (from 740px to 440px at a 1400px window with a 300px panel) and the page would hold two lists of the same
+  comments.
+
+**The comment box and the conversation follow the check page, and the page's colors, font and buttons lean on difit.**
+Driver for #554 (2026-11-07): "코멘트는 또 pr check에서 도입한 거 디자인 써야되는데?" and "서로 맞출 거 있으면 맞춰 difit은 fork한 거라
+그쪽에 더 맞추긴 하겠지만". The values come from Inte-H/pr-check-page#15. Text in the accent color has its own value,
+because difit's dark green is too faint for small text on a dark panel. Colors with no match in difit keep their
+meaning and value, except that passing and failing take difit's green and light red.
 
 **The comparison runs on every pull request that can change the map; a verifier runs on a new feature or a reported
 difference, and any failure on the pull request's side holds the merge until a second run clears it.**

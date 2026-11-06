@@ -29,6 +29,7 @@ export type Story = { id: string; name: string; screens: string[]; links: { verd
 export type Mark = { key: string; target: unknown; current: { status: string; note: string; author: string } };
 export type AppData = { url: string; signedOutUrl: string; roles: { role: string; account: string; error: string | null; url: string }[]; settings: { overrides: object[] } };
 export type PageData = {
+  takenComments: string[];
   map: { screens: MapScreen[]; calls: { id: string; server?: object }[] };
   flow: { roots: FlowNode[]; unreached: FlowNode[]; groups: { name: string; screens: string[] }[]; folding: boolean };
   tests: {
