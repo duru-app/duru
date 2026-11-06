@@ -2326,6 +2326,18 @@ Alternatives compared:
   to another source needed its own exception. The fresh one stays on the card, and the list says on any candidate of that
   order which originals it replaces.
 
+**✎ on a candidate stores the ID and name it will be accepted under in the candidate file, as `storyId` and `name`, and
+writes no story.** Driver's decision in #552 (2026-11-06): ✎ sits beside the title and only edits, and 「스토리로 받기」
+accepts under what it stored. The edit lives in the candidate file the way taking a step out does, and a candidate from
+a record or a test gets a file the same way, so the edit survives a reload and a rebuild and merges like any other
+candidate file. The name overwrites `name`, which the list already reads; the ID is a new field because a candidate
+had none, and a record or test candidate takes its name from the file only when `storyId` is there, so its list name
+is otherwise what the record or test says, as before. The dialog is the accept dialog in another mode, since the fields,
+checks and errors are the same.
+Alternatives compared:
+- Keeping the edit on the page only: nothing written, but a reload loses it.
+- Accepting on save, as 「고쳐서 받기」 did: one step fewer, but the driver wanted editing and accepting apart.
+
 **A story picked in the flow is drawn as its steps alone, left to right on one line, with the link verdict on the
 line between each two; the stories are picked from a list left of the drawing.**
 Driver's decision in #250. The story view of #131 kept the main flow and cut away every screen that was neither a
