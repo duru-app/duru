@@ -2311,6 +2311,21 @@ Alternatives compared:
 - A separate `restored/` folder: leaves `discarded/` alone, but the latest record of an order would have to be found
   across two folders, and there would be one more folder to read.
 
+**「되돌리기」 is a discard record marked `"backToOriginal": true`, not a deletion or a new `kind`.** From
+#533. Candidate files are never deleted, so the agent's candidate keeps its file and its order has to stay off
+the list some other way; a discard already does that, and its 「복원」 already brings a candidate back. The mark only
+changes what the record hides: a plain discard keeps the originals off the list as well, so that an order the reviewer
+threw away does not come back with its steps, while this record hides the agent's order alone.
+Alternatives compared:
+- Deleting the agent's candidate file: the originals come back with nothing more to read, but files in `candidates/`
+  are never deleted, and 「복원」 would have nothing left to bring back.
+- A new `kind`: says what the record is, but a duru older than this reports any other `kind` as a broken file, while it
+  reads an unknown field as a plain discard and keeps the agent's order off its list.
+- Letting the agent's candidate win over a test or a record of the same order, so the button stays on its card: the name
+  and reasons it wrote stay in view, but a test no longer shows on a card for an order it walks, and each way a file loses
+  to another source needed its own exception. The fresh one stays on the card, and the list says on any candidate of that
+  order which originals it replaces.
+
 **A story picked in the flow is drawn as its steps alone, left to right on one line, with the link verdict on the
 line between each two; the stories are picked from a list left of the drawing.**
 Driver's decision in #250. The story view of #131 kept the main flow and cut away every screen that was neither a

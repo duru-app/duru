@@ -688,7 +688,7 @@ test('in a browser, the candidates are followed by 「버린 후보 N」, shut u
   );
 });
 
-test('in a browser, 「되돌리기」 on a discarded candidate writes one undo record beside the discard even when double-clicked, offers the candidate again picked and drops it from 「버린 후보 N」, and a refused undo says why under the list', { skip: browserMissing || ((process.getuid?.() === 0 || process.platform === 'win32') && 'permissions do not stop this user from writing into the folder') }, async () => {
+test('in a browser, 「복원」 on a discarded candidate writes one undo record beside the discard even when double-clicked, offers the candidate again picked and drops it from 「버린 후보 N」, and a refused undo says why under the list', { skip: browserMissing || ((process.getuid?.() === 0 || process.platform === 'win32') && 'permissions do not stop this user from writing into the folder') }, async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
@@ -990,6 +990,136 @@ test('in a browser, when an agent replaces the candidate a reviewer has open, th
     }),
   );
 });
+
+test('in a browser, a visit record walking the order an agent posted shows the order it replaces on its own card and 「되돌리기」 lists that order again', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config, copy) =>
+    withServer(config, 'reviewer', async (base) => {
+      const comment = await (await postMark(base, { target: { candidate: HELP_KEY }, note: '로그인 단계를 빼 줘' })).json();
+      const res = await postJson(base, '/api/candidates/add', { comment: comment.id, name: '에이전트가 고친 후보', screens: ['/home#Home', '/help#Help'], replaces: [{ screens: HELP_KEY.split(' > '), dropped: [{ step: 1, reason: '로그인은 뺀다' }, { step: 3, reason: '실험 화면은 뺀다' }] }] });
+      assert.equal(res.status, 201, await res.clone().text());
+      fs.writeFileSync(path.join(copy, 'example-visits', 'home-help.json'), JSON.stringify([{ url: '/home' }, { url: '/help' }]));
+      await withPage(base, async (p) => {
+        await p.waitForSelector('#view-story:not(:disabled)');
+        await p.click(storiesTab);
+        await p.click('#candidate-list li:has-text("home-help")');
+        await p.waitForSelector('#center button.back-to-original');
+        assert.equal(await p.locator('#center .replaced-order').count(), 1);
+        await p.click('#center button.back-to-original');
+        await p.waitForFunction(() => document.querySelector('#center h3')?.textContent === 'open-help');
+      });
+    }),
+  );
+});
+
+test('in a browser, 「되돌리기」 on a candidate an agent posted in place of another lists and opens the original again, and 「복원」 under 「버린 후보」 brings the agent\'s candidate back', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const comment = await (await postMark(base, { target: { candidate: HELP_KEY }, note: '로그인 단계를 빼 줘' })).json();
+      const FIXED = '홈에서 도움말을 연다';
+      const res = await postJson(base, '/api/candidates/add', { comment: comment.id, name: FIXED, screens: ['/home#Home', '/help#Help'], replaces: [{ screens: HELP_KEY.split(' > '), dropped: [{ step: 1, reason: '로그인은 뺀다' }, { step: 3, reason: '실험 화면은 뺀다' }] }] });
+      assert.equal(res.status, 201, await res.clone().text());
+      await withPage(base, async (p, errors) => {
+        await p.waitForSelector('#view-story:not(:disabled)');
+        await p.click(storiesTab);
+        const listed = (name: string) => p.locator(`#candidate-list li:has-text("${name}")`);
+        assert.equal(await listed('open-help').count(), 0);
+        await listed(FIXED).click();
+        await p.waitForFunction((name) => document.querySelector('#center h3')?.textContent === name, FIXED);
+        assert.equal(await p.textContent('#center button.back-to-original'), '되돌리기');
+        assert.equal(await p.getAttribute('#center button.back-to-original', 'aria-label'), await p.getAttribute('#center button.back-to-original', 'title'));
+        const wide = p.viewportSize();
+        await p.setViewportSize({ width: 900, height: 800 });
+        const heights = await p.$$eval('#center .candidate-buttons button', (bs) => bs.map((b) => Math.round(b.getBoundingClientRect().height)));
+        assert.deepEqual([heights.length, new Set(heights).size], [4, 1], `buttons wrap inside on a narrow page: ${heights}`);
+        if (wide) await p.setViewportSize(wide);
+
+        await p.fill('#right-dock textarea', '쓰던 코멘트');
+        await p.click('#center button.back-to-original');
+        await p.waitForFunction(() => document.querySelector('#center h3')?.textContent === 'open-help');
+        assert.equal(await p.inputValue('#right-dock textarea'), '쓰던 코멘트');
+        await p.fill('#right-dock textarea', '');
+        assert.equal(await listed(FIXED).count(), 0);
+        assert.equal(await p.locator('#center button.back-to-original').count(), 0);
+
+        await p.click('details:has(button.undiscard) > summary');
+        assert.equal(await p.textContent(`li:has(button.undiscard):has-text("${FIXED}") button.undiscard`), '복원');
+        await p.click(`li:has(button.undiscard):has-text("${FIXED}") button.undiscard`);
+        await p.waitForFunction((name) => document.querySelector('#center h3')?.textContent === name, FIXED);
+        assert.equal(await listed('open-help').count(), 0);
+        assert.deepEqual(errors, []);
+      });
+    }),
+  );
+});
+
+const FIXED_NAME = '에이전트가 고친 후보';
+const postFixedCandidate = async (base: string) => {
+  const comment = await (await postMark(base, { target: { candidate: HELP_KEY }, note: '로그인 단계를 빼 줘' })).json();
+  const res = await postJson(base, '/api/candidates/add', { comment: comment.id, name: FIXED_NAME, screens: ['/home#Home', '/help#Help'], replaces: [{ screens: HELP_KEY.split(' > '), dropped: [{ step: 1, reason: '로그인은 뺀다' }, { step: 3, reason: '실험 화면은 뺀다' }] }] });
+  assert.equal(res.status, 201, await res.clone().text());
+};
+const pickCandidate = async (p: Page, name: string) => {
+  await p.click(`#candidate-list li:has-text("${name}")`);
+  await p.waitForFunction((n) => document.querySelector('#center h3')?.textContent === n, name);
+};
+const bringFixedBack = async (p: Page) => {
+  await p.click('details:has(button.undiscard) > summary');
+  await p.click(`li:has(button.undiscard):has-text("${FIXED_NAME}") button.undiscard`);
+  await p.waitForFunction((n) => document.querySelector('#center h3')?.textContent === n, FIXED_NAME);
+};
+
+test('in a browser, 「되돌리기」 leaves a comment already being written on the original in its box and keeps the one on the fixed candidate for when that candidate comes back', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      await withPage(base, async (p, errors) => {
+        await p.waitForSelector('#view-story:not(:disabled)');
+        await p.click(storiesTab);
+        await pickCandidate(p, 'open-help');
+        await p.fill('#right-dock textarea', '원래 후보에 쓰던 글');
+        await pickCandidate(p, 'publish-document');
+        await postFixedCandidate(base);
+        await p.waitForSelector(`#candidate-list li:has-text("${FIXED_NAME}")`);
+        await pickCandidate(p, FIXED_NAME);
+        await p.fill('#right-dock textarea', '고친 후보에 쓰던 글');
+        await p.click('#center button.back-to-original');
+        await p.waitForFunction(() => document.querySelector('#center h3')?.textContent === 'open-help');
+        assert.equal(await p.inputValue('#right-dock textarea'), '원래 후보에 쓰던 글');
+        await bringFixedBack(p);
+        assert.equal(await p.inputValue('#right-dock textarea'), '고친 후보에 쓰던 글');
+        await pickCandidate(p, 'publish-document');
+        await pickCandidate(p, FIXED_NAME);
+        assert.equal(await p.inputValue('#right-dock textarea'), '고친 후보에 쓰던 글');
+        await p.click('#center button.back-to-original');
+        await p.waitForFunction(() => document.querySelector('#center h3')?.textContent === 'open-help');
+        assert.equal(await p.inputValue('#right-dock textarea'), '원래 후보에 쓰던 글');
+        assert.deepEqual(errors, []);
+      });
+    }),
+  );
+});
+
+for (const [where, taken] of [['another candidate opens', [HELP_KEY]], ['no candidate is left', [HELP_KEY, PUBLISH_KEY]]] as const) {
+  test(`in a browser, when the original cannot come back and ${where}, 「되돌리기」 keeps the comment for the fixed candidate instead of moving it`, { skip: browserMissing }, async () => {
+    await withRebuiltFixture(CANDIDATES, (config) =>
+      withServer(config, 'reviewer', async (base) => {
+        await postFixedCandidate(base);
+        taken.forEach((key, i) => fs.writeFileSync(path.join(config.storiesDir, `taken-${i}.json`), JSON.stringify({ name: `taken-${i}`, screens: key.split(' > '), author: 'a', date: '2026-10-02' })));
+        await withPage(base, async (p, errors) => {
+          await p.waitForSelector('#view-story:not(:disabled)');
+          await p.click(storiesTab);
+          await pickCandidate(p, FIXED_NAME);
+          await p.fill('#right-dock textarea', '쓰던 코멘트');
+          await p.click('#center button.back-to-original');
+          await p.waitForFunction((n) => document.querySelector('#center h3')?.textContent !== n, FIXED_NAME);
+          assert.notEqual(await p.locator('#right-dock textarea').count() && await p.inputValue('#right-dock textarea'), '쓰던 코멘트');
+          await bringFixedBack(p);
+          assert.equal(await p.inputValue('#right-dock textarea'), '쓰던 코멘트');
+          assert.deepEqual(errors, []);
+        });
+      }),
+    );
+  });
+}
 
 test('in a browser, a candidate an agent posted in place of another shows under its comment line the order it replaces folded under 「원래 순서 N」 with where that order came from, each step dropped struck through with why under it, and 「판단」 on a step the agent dropped on its own judgment', { skip: browserMissing }, async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>

@@ -361,12 +361,17 @@ const lineCount = (c) => (c.lines?.length
   ? h('span', { class: 'line-count', title: '에이전트가 적은 줄 가운데 받을 때 스토리 파일에 넣을 줄 수' }, `${c.lines.filter((l) => lineOn(c, l)).length} / ${c.lines.length}`)
   : null);
 
+const BACK_TO_ORIGINAL = '고친 후보를 내리고 원래 후보를 다시 올립니다. 「버린 후보」에서 복원할 수 있습니다';
+
 const candidateActions = (c) => h('fieldset', { class: 'story-form candidate-acts', disabled: state.storyWriting },
   lineCount(c),
   h('div', { class: 'candidate-buttons' },
     h('div', { class: 'accepts' },
       h('button', { class: 'accept', title: c.acceptProblem ?? '이 화면 순서로 스토리 파일을 씁니다.', disabled: Boolean(c.acceptProblem), onclick: acceptChosen }, '스토리로 받기'),
       h('button', { class: 'accept-edited', title: c.acceptProblem ?? 'ID 와 이름을 고친 뒤에 받습니다.', disabled: Boolean(c.acceptProblem), onclick: () => askAccept(c, 'button.accept-edited', null) }, '고쳐서 받기')),
+    c.originals?.length
+      ? h('button', { class: 'back-to-original', title: BACK_TO_ORIGINAL, 'aria-label': BACK_TO_ORIGINAL, onclick: () => goBackToOriginal(c) }, '되돌리기')
+      : null,
     h('button', { class: 'discard', title: '버린 후보 파일을 남기고, 같은 화면 순서는 다시 후보로 내지 않습니다. 이유를 적어야 합니다', onclick: () => askDiscard(c) }, '버리기')));
 
 function storyEdit(st) {
@@ -502,6 +507,24 @@ acceptDialog.addEventListener('keydown', (e) => {
   acceptPart(send ? 'button.accept' : 'button.cancel').click();
 });
 
+async function goBackToOriginal(c) {
+  await stepWrites;
+  await lineWrites;
+  const at = state.data.candidates.list.findIndex((x) => x.key === c.key);
+  const draft = state.candidateTalk;
+  if (!(await writeStories('/api/candidates/original', { key: c.key })) || state.storyError) return redrawStory();
+  const { list } = state.data.candidates;
+  const back = c.originals.map((r) => r.screens.join(' > ')).find((key) => list.some((x) => x.key === key));
+  const note = back && !parkedDrafts.has(parkKey('candidateTalk', { candidate: back })) ? draft?.note : null;
+  state.candidateTalk = note ? null : draft;
+  parkDraft('candidateTalk');
+  selectCandidate(back ?? (list[at] ?? list[at - 1])?.key ?? null);
+  if (note) {
+    state.candidateTalk = { status: null, note };
+    render();
+  }
+}
+
 function askDiscard(c) {
   let at = -1;
   askReason({
@@ -598,7 +621,7 @@ function toggleReplaced(e, at) {
   else state.replacedOpen.delete(at);
 }
 
-const replacedOrders = (c) => (byAgent(c) ? c.source.replaces ?? [] : []).map((r, i) => {
+const replacedOrders = (c) => (c.originals ?? []).map((r, i) => {
   const at = `${c.key}\n${i}`;
   const dropped = new Map(r.dropped.map((d) => [d.step, d]));
   return h('details', { class: 'found-order replaced-order', open: state.replacedOpen.has(at), ontoggle: (e) => toggleReplaced(e, at) },

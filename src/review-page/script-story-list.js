@@ -100,7 +100,7 @@ function discardedGroup(discarded) {
       h('div', {}, d.name),
       h('div', { class: 'steps mono' }, d.screens.map(screenLabel).join(' → ')),
       judgmentMeta(d, '이유'),
-      h('button', { class: 'undiscard', disabled: state.storyWriting, title: '되돌린 기록을 버린 기록 옆에 남기고, 이 화면 순서를 후보 목록에 다시 올립니다.', onclick: () => undiscard(d) }, '되돌리기')))),
+      h('button', { class: 'undiscard', disabled: state.storyWriting, title: '복원한 기록을 버린 기록 옆에 남기고, 이 화면 순서를 후보 목록에 다시 올립니다.', onclick: () => undiscard(d) }, '복원')))),
     state.undiscardError ? h('p', { class: 'error undiscard-error' }, state.undiscardError) : null);
 }
 

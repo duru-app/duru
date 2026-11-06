@@ -417,8 +417,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    `reason` must be that order with the dropped steps taken out, neighbouring steps of one screen joined into one;
    a screen you put in carries `reason` as above. When two listed candidates become the same order, post one
    candidate naming both in `replaces`; if they typed different values into one box, give the value to keep in that
-   step's `inputs`. You may post several candidates for one such comment. The candidates it replaces leave the list.
-   A comment on a screen order takes no `replaces`.
+   step's `inputs`. You may post several candidates for one such comment. The candidates it replaces leave the list. If the reviewer
+   presses `되돌리기` on your candidate, it goes among the discarded ones with the reason `원래대로 되돌림` and those candidates
+   are listed again; that order stays refused, so a new attempt posts another order. A comment on a screen order takes no `replaces`.
    When a comment asks for steps to be taken out of a candidate, take out only the steps nobody needs. Keep a step
    that means something in the story, such as signing in again under another role. Give every dropped step its
    `reason`, and set `judged: true` on a step you took out without being asked. For a comment with no target, read

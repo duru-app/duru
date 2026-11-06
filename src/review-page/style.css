@@ -353,7 +353,7 @@
   .story-form button { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
   .story-form button.discard { background: var(--panel); color: var(--fail); border-color: var(--fail); }
   .story-form .accepts { display: flex; flex-wrap: wrap; gap: 8px; }
-  .story-form button.accept-edited, .story-form button.unaccept { background: var(--panel); color: var(--text); border-color: var(--line); }
+  .story-form button.accept-edited, .story-form button.unaccept, .story-form button.back-to-original { background: var(--panel); color: var(--text); border-color: var(--line); }
   .discarded-candidates > summary { margin: 16px 0 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
   #discarded-list > li { padding: 6px 0; border-top: 1px solid var(--line); }
   #discarded-list .steps { margin: 2px 0; font-size: 12px; overflow-wrap: anywhere; }
@@ -394,7 +394,8 @@
   .path-head .story-form { flex-direction: row; align-items: center; }
   .path-head .story-form button:not(.drop-draft) { padding: 2px 10px; font-size: 12px; }
   .title-row .candidate-acts { margin-left: auto; }
-  .candidate-buttons { display: flex; align-items: center; gap: 8px; }
+  .candidate-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .candidate-buttons button { white-space: nowrap; }
   .title-row .skipped { font-size: 12px; }
   .story-save { margin: 12px 0; padding: 8px 12px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
   .story-save h2 { margin: 6px 0; }

@@ -124,6 +124,7 @@ export interface Candidate {
   file?: string;
   lines?: AgentLine[];
   offSteps?: number[];
+  originals?: ReplacedCandidate[];
   acceptProblem?: string;
 }
 
@@ -257,6 +258,7 @@ function discardedProblemOf(d: any) {
   if (!isScreenList(d.screens)) return 'screens 는 화면을 하나 이상 차례대로 담은 목록이어야 합니다';
   if (d.kind !== undefined && d.kind !== 'undo') return 'kind 는 버린 기록이면 적지 않고, 되돌린 기록이면 "undo" 여야 합니다';
   if (d.kind === undefined && !isText(d.reason)) return 'reason 에 버린 이유를 적어야 합니다';
+  if (d.backToOriginal !== undefined && d.backToOriginal !== true) return 'backToOriginal 은 원래대로 되돌린 기록이면 true 여야 합니다';
   if (!isText(d.author)) return 'author 에 작성자를 적어야 합니다';
   if (!isDate(d.date)) return 'date 는 2026-10-02 같은 날짜여야 합니다';
   return null;
@@ -541,7 +543,12 @@ export function unacceptStory(dir: string, id: unknown, rules: SkipRule[] = []) 
   return { id: story.id, screens: story.screens, file: story.file, key: shownOrder(back?.screens ?? story.screens, rulesFor(source, rules)).join(' > ') };
 }
 
-export function discardCandidate(dir: string, candidate: Candidate, { reason, author }: { reason: unknown; author: unknown }, now = new Date()) {
+export function backToOriginal(dir: string, candidate: Candidate, { author }: { author: unknown }, now = new Date()) {
+  if (!candidate.originals?.length) throw new Error('이 후보는 대신하는 원래 후보가 없습니다');
+  return discardCandidate(dir, candidate, { reason: '원래대로 되돌림', author }, now, { backToOriginal: true });
+}
+
+export function discardCandidate(dir: string, candidate: Candidate, { reason, author }: { reason: unknown; author: unknown }, now = new Date(), mark?: { backToOriginal: true }) {
   if (!isText(reason)) throw new Error('버리는 이유가 필요합니다');
   if (!isText(author)) throw new Error('작성자가 필요합니다');
   writableStoriesFolder(dir);
@@ -549,7 +556,7 @@ export function discardCandidate(dir: string, candidate: Candidate, { reason, au
   if (fs.existsSync(folder) && !fs.statSync(folder).isDirectory()) throw new Error(`스토리 폴더 안 ${DISCARDED} 가 파일이라 버린 후보를 쓸 수 없습니다`);
   const byRule = candidate.skippedByRule;
   const beforeRule = byRule && { skippedByRule: byRule, foundStepFields: foundStepFields.get(byRule) };
-  const discarded = { name: candidate.name, screens: candidate.screens, reason: reason.trim(), author: author.trim(), date: now.toISOString(), source: candidate.source, ...carried(candidate), ...beforeRule };
+  const discarded = { name: candidate.name, screens: candidate.screens, reason: reason.trim(), author: author.trim(), date: now.toISOString(), source: candidate.source, ...carried(candidate), ...beforeRule, ...mark };
   const file = recordName({ ...discarded, id: crypto.randomUUID() });
   writeNewRecord(path.join(folder, file), discarded);
   return { ...discarded, file: path.join(DISCARDED, file) };
@@ -619,10 +626,13 @@ function recordSources(config: any) {
   return { sources: [...config.visitRecords, folder], notices: [] };
 }
 
-// 순서를 고치면 코멘트 출처의 단계 번호가 바뀐다.
 const sourceKey = (source: Candidate['source']) => JSON.stringify('comment' in source ? { comment: source.comment, ...(source.replaces && { replaces: source.replaces.map((r) => r.screens) }) } : source);
 
 const replacedIn = (holders: { source?: unknown }[]): ReplacedCandidate[] => holders.flatMap(({ source }: any) => (isSource(source) && source.replaces) || []);
+function replacedNow(stored: { screens: string[] }[], stories: { source?: unknown }[], current: any[]) {
+  const back = new Set(current.filter((d) => d.backToOriginal).map((d) => JSON.stringify(d.screens)));
+  return replacedIn([...stored.filter((s) => !back.has(JSON.stringify(s.screens))), ...stories, ...current.filter((d) => !d.backToOriginal)]);
+}
 
 function sameSource(a: Candidate['source'], b: Candidate['source']) {
   if ('report' in a && 'report' in b) return a.report === b.report && a.tests.some((title) => b.tests.includes(title));
@@ -659,8 +669,8 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
     return after;
   };
   const stories = loadStories(config.storiesDir).stories;
-  // 고친 후보를 받거나 버린 뒤에도 원래 후보는 목록에 올리지 않는다.
-  const replaced = replacedIn([...stored, ...stories, ...current]);
+  // 고친 후보를 받거나 버린 뒤에도 원래 후보는 목록에 올리지 않는다. 원래대로 되돌린 후보만 예외다.
+  const replaced = replacedNow(stored, stories, current);
   const seen = new Set([...stories, ...current, ...replaced].map((s) => JSON.stringify(s.screens)));
   const replacedSource = takenBy(replaced.filter((r) => !('comment' in r.source)));
   const taken = takenBy(stories.filter((s) => s.source && !('tests' in s.source)));
@@ -736,9 +746,11 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   }
   const onMap = new Set(map.screens.map((s: any) => s.id));
   const missedRules = [...new Set(rules.map((r) => r.screen))].filter((s) => !onMap.has(s) && !found.has(s));
-  const checked = list.map((c) => {
+  const replacers = new Map(stored.filter((s) => 'comment' in s.source && s.source.replaces?.length && !taken(s.source)).map((s) => [JSON.stringify(s.screens), s.source.replaces]));
+  const checked = list.map((c): Candidate => {
+    const originals = replacers.get(JSON.stringify(c.screens));
     const acceptProblem = stepsLeftProblem(stories, c);
-    return acceptProblem ? { ...c, acceptProblem } : c;
+    return { ...c, ...(originals && { originals }), ...(acceptProblem && { acceptProblem }) };
   });
   return { list: checkStories(map, checked), discarded: shown, gone, notices: all, missedRules, cutByRules: cut.size };
 }
@@ -894,11 +906,11 @@ export function addCommentCandidate(config: any, map: any, mapFile: string, trac
   if (acceptedAs) throw new Error(`이미 스토리 ${acceptedAs} 로 받은 화면 순서입니다. 검토자가 받기를 되돌린 뒤에 올릴 수 있습니다`);
   const listed = storyCandidates(config, map, mapFile, traced);
   const originals = askedReplace && replacedCandidates(askedReplace, listed.list, kept.map((i) => steps[i].screen));
-  if (listed.discarded.some((d) => JSON.stringify(d.screens) === key)) throw new Error('이 화면 순서는 버린 후보에 있습니다. 검토자가 「되돌리기」를 누른 뒤에 올릴 수 있습니다');
+  if (listed.discarded.some((d) => JSON.stringify(d.screens) === key)) throw new Error('이 화면 순서는 버린 후보에 있습니다. 검토자가 「복원」을 누른 뒤에 올릴 수 있습니다');
   const same = listed.list.find((c) => JSON.stringify(c.screens) === key);
   if (same) throw new Error(`이미 후보 「${same.name}」의 화면 순서입니다`);
-  const holders = [...loadStored(config.storiesDir).found, ...stories, ...discardedNow(loadDiscarded(config.storiesDir).discarded)];
-  if (replacedIn(holders).some((r) => JSON.stringify(r.screens) === key)) throw new Error('이 화면 순서는 다른 후보가 이미 대신한 원래 후보의 순서입니다');
+  const replaced = replacedNow(loadStored(config.storiesDir).found, stories, discardedNow(loadDiscarded(config.storiesDir).discarded));
+  if (replaced.some((r) => JSON.stringify(r.screens) === key)) throw new Error('이 화면 순서는 다른 후보가 이미 대신한 원래 후보의 순서입니다');
 
   const added = steps.flatMap((s, i) => (s.reason === undefined ? [] : [{ step: i + 1, reason: s.reason }]));
   const keptAt = steps.map((_, i) => (kept.includes(i) ? kept.indexOf(i) : undefined));
