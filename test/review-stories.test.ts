@@ -1027,6 +1027,11 @@ test('in a browser, 「되돌리기」 on a candidate an agent posted in place o
         await p.waitForFunction((name) => document.querySelector('#center h3')?.textContent === name, FIXED);
         assert.equal(await p.textContent('#center button.back-to-original'), '되돌리기');
         assert.equal(await p.getAttribute('#center button.back-to-original', 'aria-label'), await p.getAttribute('#center button.back-to-original', 'title'));
+        const wide = p.viewportSize();
+        await p.setViewportSize({ width: 900, height: 800 });
+        const heights = await p.$$eval('#center .candidate-buttons button', (bs) => bs.map((b) => Math.round(b.getBoundingClientRect().height)));
+        assert.deepEqual([heights.length, new Set(heights).size], [4, 1], `buttons wrap inside on a narrow page: ${heights}`);
+        if (wide) await p.setViewportSize(wide);
 
         await p.fill('#right-dock textarea', '쓰던 코멘트');
         await p.click('#center button.back-to-original');
