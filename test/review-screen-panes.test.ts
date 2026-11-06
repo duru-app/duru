@@ -354,8 +354,11 @@ test('in a browser, choosing another depth or option row of the same node keeps 
 });
 
 test('in a browser, selecting another story opens the right pane at its top', { skip: browserMissing }, async () => {
-  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
-    withServer(config, 'reviewer', (base) =>
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) => {
+    for (const file of fs.readdirSync(config.storiesDir)) {
+      for (const note of ['one more step?', 'and another?', 'and a third?']) addMark(config.marksDir, { target: { story: path.basename(file, '.json') }, note, author: 'reviewer' });
+    }
+    return withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.setViewportSize({ width: 1440, height: 360 });
@@ -370,9 +373,10 @@ test('in a browser, selecting another story opens the right pane at its top', { 
         await p.click('#right .statuses button:has-text("테스트 필요")');
         assert.equal(await rightScroll(p), kept);
       }),
-    ),
-  );
+    );
+  });
 });
+
 const topOf = (p: Page, selector: string) => p.locator(selector).evaluate((e) => e.getBoundingClientRect().top);
 
 async function assertDockStaysPut(p: Page) {

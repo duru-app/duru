@@ -448,7 +448,10 @@ function commentsTaken(event) {
 const events = new EventSource('/api/events');
 let eventsOpened = false;
 events.addEventListener('open', () => {
-  if (eventsOpened) reloadLive();
+  if (eventsOpened) {
+    takenHeard.clear();
+    reloadLive();
+  }
   eventsOpened = true;
 });
 events.addEventListener('message', heard);

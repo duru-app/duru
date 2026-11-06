@@ -1,6 +1,6 @@
   :root {
     --bg: #f6f8fa; --panel: #ffffff; --text: #24292f; --muted: #656d76; --line: #d1d9e0; --accent: #1f883d; --accent-text: #1a7f37;
-    --selected: #dafbe1; --pass: #1a7f37; --fail: #cf222e; --pending: #a86a00; --limit: #2f7d8c;
+    --selected: #dafbe1; --pass: #1a7f37; --fail: #cf222e; --pending: #9a6700; --limit: #2f7d8c;
     --more: #b3541e; --missing: #cf222e; --fine: #1a7f37; --changed: #7c3aed; --changed-bg: #f3ecff;
     --written: #0f766e; --written-bg: #e6f4f1;
     --agent: #7c3aed; --agent-bg: #f6f8fa;
@@ -10,8 +10,8 @@
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #0d1117; --panel: #161b22; --text: #f0f6fc; --muted: #8b949e; --line: #30363d; --accent: #238636; --accent-text: #3fb950;
-      --selected: #12261e; --pass: #3fb950; --fail: #ff7b6b; --pending: #e0b050; --limit: #63c6d6;
-      --more: #f0935a; --missing: #ff7b6b; --fine: #3fb950; --changed: #b18cff; --changed-bg: #2a2140;
+      --selected: #12261e; --pass: #3fb950; --fail: #f85149; --pending: #e0b050; --limit: #63c6d6;
+      --more: #f0935a; --missing: #f85149; --fine: #3fb950; --changed: #b18cff; --changed-bg: #2a2140;
       --written: #4fd1c0; --written-bg: #12302c;
       --agent: #b18cff; --agent-bg: #1c2128;
       --shadow: 0 4px 24px rgba(0, 0, 0, .4), 0 0 0 1px rgba(255, 255, 255, .08); --state-taken: #3fb950; --state-answered: #3c82f7;
@@ -350,7 +350,7 @@
   .mark-form textarea::placeholder { color: var(--pop-muted); }
   .mark-form textarea:focus { border-color: var(--pop-blue); outline: none; }
   .mark-form .tag-pick { color: var(--text); }
-  .mark-form .error { color: #ff7b6b; }
+  .mark-form .error { color: #f85149; }
   .mark-form .save-row { justify-content: flex-end; gap: 6px; }
   .mark-form .save-row button { padding: 5px 14px; border-radius: 999px; font: inherit; cursor: pointer; }
   .mark-form .save-row button:disabled { opacity: .5; cursor: default; }
@@ -663,7 +663,7 @@
   .views.side button { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; gap: 3px; min-width: 0; padding: 4px 1px; white-space: nowrap; }
   .views.side .tab-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .views.side .tab-count { flex: none; position: relative; top: .5px; padding: 0 4px; border-radius: 8px; background: var(--line); font-size: 11px; font-weight: 600; line-height: 16px; }
-  .views.side button.on .tab-count { background: var(--accent); color: var(--panel); }
+  .views.side button.on .tab-count { background: var(--accent); color: #fff; }
   .chip.part-pass { color: var(--pending); border-style: dashed; } .chip.walk-unknown { color: var(--muted); border-style: dotted; }
   .chip.l-open, .chip.l-configured { color: var(--pass); } .chip.l-conditioned { color: var(--accent-text); } .chip.l-broken { color: var(--fail); } .chip.l-off-map, .chip.l-unknown { color: var(--more); }
   .story-path { margin-top: 8px; }

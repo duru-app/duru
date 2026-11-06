@@ -5549,7 +5549,7 @@ Compared:
 Driver for #554 (2026-11-07): "코멘트는 또 pr check에서 도입한 거 디자인 써야되는데?" and "서로 맞출 거 있으면 맞춰 difit은 fork한 거라
 그쪽에 더 맞추긴 하겠지만". The values come from Inte-H/pr-check-page#15. Text in the accent color has its own value,
 because difit's dark green is too faint for small text on a dark panel. Colors with no match in difit keep their
-meaning and value, except that passing and failing take difit's green and light red.
+meaning and value, except that passing, failing and pending take the values the check page uses.
 
 **The comparison runs on every pull request that can change the map; a verifier runs on a new feature or a reported
 difference, and any failure on the pull request's side holds the merge until a second run clears it.**

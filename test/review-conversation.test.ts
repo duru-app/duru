@@ -1,13 +1,16 @@
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import type { Locator } from 'playwright-core';
 import { addMark, addReply, loadMarks } from '../src/marks.ts';
 import { startReviewServer } from '../src/review.ts';
 import { taskList } from '../src/tasks.ts';
-import { withRebuiltFixture, signer, withServer, postMark, CASE_KINDS, browserMissing, withPage, toList, reply, openScreenInfo, openLinkGroups, screenBox, chooseScreen, TRACED, postJson, CANDIDATES, HELP_KEY, storiesTab, discardCandidate } from './review-helpers.ts';
+import { CLI, withRebuiltFixture, signer, withServer, postMark, CASE_KINDS, browserMissing, withPage, toList, reply, openScreenInfo, openLinkGroups, screenBox, chooseScreen, TRACED, postJson, CANDIDATES, HELP_KEY, storiesTab, discardCandidate } from './review-helpers.ts';
 import type { PageData } from './review-helpers.ts';
 
 test('in a browser, an entry under 「떨어져 나감」 with a comment and an answer shows the comment, not the answer', { skip: browserMissing }, async () => {
@@ -104,6 +107,66 @@ test('in a browser, the comment form is a dark rounded card in both themes with 
       }),
     );
   });
+});
+
+test('in a browser, a page left open through a restart of the review on the same port shows a taken comment as 대기 again once it reconnects', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, async (config, copy) => {
+    addMark(config.marksDir, { target: { node: '/lab#Lab' }, note: 'is it tested?', author: 'reviewer' }, new Date('2026-10-12T01:00:00Z'));
+    const free = net.createServer().listen(0, '127.0.0.1');
+    await once(free, 'listening');
+    const port = (free.address() as AddressInfo).port;
+    free.close();
+    const { CLAUDE_CODE_MESSAGING_SOCKET, CLAUDE_CODE_MESSAGING_TOKEN, ...env } = process.env;
+    const start = async () => {
+      const child = spawn(process.execPath, [CLI, 'review', path.join(copy, 'config.json'), '--port', String(port)], { stdio: 'ignore', env });
+      for (const end = Date.now() + 10_000; ; await new Promise((resolve) => setTimeout(resolve, 50))) {
+        try {
+          if ((await fetch(`http://127.0.0.1:${port}/api/data`)).ok) return child;
+        } catch {
+          if (Date.now() > end) throw new Error('the review did not start');
+        }
+      }
+    };
+    let child = await start();
+    try {
+      await withPage(`http://127.0.0.1:${port}`, async (p, errors) => {
+        await chooseScreen(p, '/lab');
+        const chip = p.locator('#right-info .history > li', { hasText: 'is it tested?' }).locator('> .talk-state');
+        await fetch(`http://127.0.0.1:${port}/api/events?unanswered`);
+        await chip.locator('.hops').waitFor();
+
+        const stopped = once(child, 'exit');
+        child.kill('SIGTERM');
+        await stopped;
+        child = await start();
+        await chip.locator('text=대기').waitFor();
+        assert.equal(await chip.locator('.hops').count(), 0);
+        assert.deepEqual(errors.filter((e) => !/Failed to load resource/.test(e)), []);
+        errors.length = 0;
+      });
+    } finally {
+      child.kill('SIGKILL');
+    }
+  });
+});
+
+test('in a browser, 취소 is on when only the tags of a comment changed, and puts them back', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await chooseScreen(p, '/lab');
+        const cancel = p.locator('#right-dock button.cancel');
+        assert.equal(await cancel.isDisabled(), true);
+        await p.locator('#right-dock .tag button').first().click();
+        assert.equal(await p.locator('#right-dock .tag').count(), 0);
+        assert.equal(await cancel.isDisabled(), false);
+        await cancel.click();
+        assert.equal(await p.locator('#right-dock .tag').count(), 1);
+        assert.equal(await cancel.isDisabled(), true);
+        assert.deepEqual(errors, []);
+      }),
+    ),
+  );
 });
 
 const bubbleOnEdge = async (box: Locator, hoverOn: Locator = box) => {

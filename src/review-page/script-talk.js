@@ -232,7 +232,7 @@ function markForm(target, draftKey, label) {
   const tags = (draft.tags ?? [target]).map((t) => (t.screens !== undefined && target.screens !== undefined ? target : t));
   const statusOn = onlyTag(tags, target) && target.candidate === undefined && target.screens === undefined;
   const savable = () => draft.note.trim() !== '' || (statusOn && !!draft.status);
-  const cancelable = () => draft.note !== '' || draft.status !== (mark?.current?.status ?? null);
+  const cancelable = () => draft.note !== '' || draft.status !== (mark?.current?.status ?? null) || draft.tags !== undefined;
   const cancel = h('button', { type: 'button', class: 'cancel', title: '쓰던 코멘트를 지웁니다', disabled: !cancelable(), onclick: () => {
     state[draftKey] = null;
     state.error = null;
