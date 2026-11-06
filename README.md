@@ -1084,7 +1084,7 @@ the step back; the last step left cannot be taken out. The steps taken out are k
 `offSteps`, `[<step>, …]` numbered from 1 in the order the file holds, which `candidateSkipScreens` can make longer
 than the card, so they stay after a reload, and accepting writes only the steps left into the story file, with steps
 of one screen left side by side as one step. While the steps left are the order of a story already there, why shows
-below the steps and both accept buttons are off. Accepting any candidate writes the story's ID into its candidate file as
+below the steps and 「스토리로 받기」 and ✎ are off. Accepting any candidate writes the story's ID into its candidate file as
 `acceptedAs`, making the file if there is none. While that story exists, the order the candidate was found in is not
 offered from any source, but any other order of the same test is, until it is discarded. Undoing the acceptance removes
 `acceptedAs`, and the candidate comes back with its steps taken out.
@@ -1488,7 +1488,7 @@ asks first, naming what goes with it, with 「제외」 and 「취소」. The ve
 file changed elsewhere is refused with
 「새로 읽기」 and 「덮어쓰기」 as in the table. While the order is open the pencils wait, and while a table is open
 「순서 고치기」 waits. A comment on a step whose number no longer holds its screen then shows under 「떨어져 나감」. Candidates are
-listed below; a chosen one has 「스토리로 받기」, 「고쳐서 받기」 and 「버리기」 at the right end of its title row; the
+listed below; a chosen one has ✎ right after its name and 「스토리로 받기」 and 「버리기」 at the right end of its title row; the
 address of a chosen candidate holds its screen order, as `#story?candidate=/home#Home+>+/help#Help`. A candidate
 posted with `candidate` has a purple 「에이전트」 chip beside its name in the list and in the title, and under the title,
 in place of the record file, the first line of the comment that asked for it, who left it and the day; pressing that
@@ -1497,8 +1497,13 @@ and, below its ID, 「이유」 in bold with the reason. The screens and lines t
 the agent wrote, an input, a condition of the link into a step, a condition or an expected result, has a box in
 front of it, on at first. A line switched off is struck through, and above 「스토리로 받기」 the number of lines on
 shows out of all the agent's lines, as 「3 / 4」. Each press is saved into the candidate file, so a line switched off
-stays off after a reload or when the page is opened again. 「스토리로 받기」 and 「고쳐서 받기」 then write into the
-story file only the lines on, together with the reviewer's lines, which have no box. A screen the agent put in is
+stays off after a reload or when the page is opened again. 「스토리로 받기」 then writes into the
+story file only the lines on, together with the reviewer's lines, which have no box. ✎ opens a window with the story
+ID and the name the candidate is accepted under; 「저장」 there writes no story file but keeps both in the candidate file,
+as `storyId` and `name`, making the file if there is none, so the title shows the new name with the ID beside it, also
+after a reload. 「스토리로 받기」 accepts under them; without them it takes the ID from the name. When that ID breaks the
+story ID rule or a story already has it, it asks for another in the same window, and an ID kept with ✎ that a story
+takes later shows red beside the name. A screen the agent put in is
 taken out after accepting, with 「순서 고치기」. A story accepted from it shows the same comment line under its name. 「버리기」 opens
 the window that 「제외」 opens, naming the candidate and its screen order, and the candidate is discarded only once a
 reason is written there. 「버리기」 in the window or Ctrl+Enter saves it and moves on to the next candidate; 「취소」 or

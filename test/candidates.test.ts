@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { acceptCandidate, addCommentCandidate, backToOriginal, discardCandidate, loadDiscarded, pickCandidateLine, pickCandidateStep, recordedRequests, saveVisitRecord, storeCandidates, storyCandidates, unacceptStory, undiscardCandidate } from '../src/candidates.ts';
+import { acceptCandidate, addCommentCandidate, backToOriginal, discardCandidate, loadDiscarded, nameCandidate, pickCandidateLine, pickCandidateStep, recordedRequests, saveVisitRecord, storeCandidates, storyCandidates, unacceptStory, undiscardCandidate } from '../src/candidates.ts';
 import type { SkipRule } from '../src/candidates.ts';
 import { compare, loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
@@ -1952,6 +1952,58 @@ test('taking a step out of a candidate is refused with why for a step the candid
     assert.throws(() => pickCandidateStep(dir, helpOf(dir), stepOff(4)), { message: '후보 「open-help」의 마지막 남은 단계는 뺄 수 없습니다' });
     assert.equal(fs.readFileSync(path.join(dir, 'candidates', name), 'utf8'), before);
   });
+});
+
+const helpRecordOf = (dir: string) => candidatesOf({ storiesDir: dir }).list.find((c) => (c.source as { record?: string }).record === 'example-visits/open-help.json')!;
+
+test('an ID and a name saved for a candidate are written into its candidate file as storyId and name, the file written first for a candidate from a visit record, and read back on the candidate from the record or from the file alone, also after a step is taken out', () => {
+  withStoryCopy((dir: string) => {
+    const named = nameCandidate(dir, helpRecordOf(dir), { id: 'help-path', name: ' 도움말까지 간다 ' });
+    assert.match(named.file, /^candidates\/\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\.json$/);
+    assert.deepEqual([named.name, named.storyId], ['도움말까지 간다', 'help-path']);
+    const file = path.join(dir, named.file);
+    const { date, ...stored } = readJson(file);
+    assert.deepEqual(stored, { name: '도움말까지 간다', screens: helpRecordOf(dir).screens, source: { record: 'example-visits/open-help.json', steps: [1, 5] }, storyId: 'help-path' });
+    assert.deepEqual([helpRecordOf(dir).name, helpRecordOf(dir).storyId], ['도움말까지 간다', 'help-path']);
+
+    nameCandidate(dir, helpRecordOf(dir), { id: 'help', name: '도움말' });
+    pickCandidateStep(dir, helpRecordOf(dir), stepOff(3));
+    assert.deepEqual(readJson(file), { ...stored, date, name: '도움말', storyId: 'help', offSteps: [3] });
+    assert.equal(fs.readdirSync(path.join(dir, 'candidates')).length, 1);
+    assert.deepEqual([helpRecordOf(dir).name, helpRecordOf(dir).storyId, helpRecordOf(dir).offSteps], ['도움말', 'help', [3]]);
+    assert.deepEqual(leftOnlyStored(dir).list.map((c) => [c.name, c.storyId]), [['도움말', 'help']]);
+    assert.deepEqual(candidatesOf({ storiesDir: dir }).notices.map((n) => n.file), ['example-visits/broken-record.json']);
+
+    addStory(dir, { id: 'help', name: '먼저 받은 도움말', screens: [HELP], author: 'Kim Min' });
+    assert.equal(helpRecordOf(dir).storyId, 'help');
+  });
+});
+
+test('saving an ID and a name for a candidate is refused with why for an ID outside the story ID rule or one a story file already uses, readable or not, and an empty name, and writes nothing', () => {
+  withStoryCopy((dir: string) => {
+    const refusals: [Record<string, unknown>, string][] = [
+      [{ id: 'Help Path', name: '도움말' }, '스토리 ID 는 영문 소문자 · 숫자 · - · _ 로만 씁니다'],
+      [{ id: '', name: '도움말' }, '스토리 ID 는 영문 소문자 · 숫자 · - · _ 로만 씁니다'],
+      [{ name: '도움말' }, '스토리 ID 는 영문 소문자 · 숫자 · - · _ 로만 씁니다'],
+      [{ id: 'help-path', name: ' ' }, '스토리 이름이 필요합니다'],
+      [{ id: 'run-lab', name: '도움말' }, '스토리 ID run-lab 는 run-lab.json 이 이미 씁니다'],
+      [{ id: 'lab-shortcut', name: '도움말' }, '스토리 ID lab-shortcut 는 lab-shortcut.json 이 이미 씁니다'],
+    ];
+    for (const [input, message] of refusals) assert.throws(() => nameCandidate(dir, helpRecordOf(dir), input), { message });
+    assert.equal(fs.existsSync(path.join(dir, 'candidates')), false);
+    assert.deepEqual([helpRecordOf(dir).name, helpRecordOf(dir).storyId], ['open-help', undefined]);
+  });
+});
+
+test('a stored candidate whose storyId breaks the story ID rule is noted with the candidates', () => {
+  for (const storyId of ['Help', '', 3]) {
+    withStoryCopy((dir: string) => {
+      fs.mkdirSync(path.join(dir, 'candidates'));
+      fs.writeFileSync(path.join(dir, 'candidates', '2026-10-01-aaaaaaaa.json'), JSON.stringify({ name: 'old', screens: HOME_HELP, source: { report: 'results/old.json', tests: ['old'] }, date: '2026-10-01', storyId }));
+      const { list, notices } = leftOnlyStored(dir);
+      assert.deepEqual([list, notices.map((n) => n.reason)], [[], ['storyId 는 받을 때 쓸 스토리 ID 로, 영문 소문자 · 숫자 · - · _ 로만 씁니다']], JSON.stringify(storyId));
+    });
+  }
 });
 
 test('a stored candidate whose offSteps are not step numbers of its screens from the smallest, each once, leaving one step or more, is noted with the candidates, and one that fits is listed with them', () => {

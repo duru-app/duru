@@ -248,7 +248,7 @@ test('in a browser, a candidate an agent sends with duru candidate --server show
         assert.equal(await p.getAttribute('#right .talk-scope button:has-text("전체")', 'aria-pressed'), 'true');
 
         await p.click('#candidate-list li:has-text("로그인해 실험을 연다")');
-        await p.click('#center button.accept-edited');
+        await p.click('#center button.accept');
         await p.fill('#accept-id', 'lab');
         await p.keyboard.press('Enter');
         await p.waitForSelector('#story-list li.selected:has-text("로그인해 실험을 연다")');
@@ -291,14 +291,14 @@ test('in a browser, a candidate an agent posted has a box on each line the agent
           ['실험 목록이 보인다', null, false],
         ]);
         assert.equal(await p.textContent('#center .candidate-acts .line-count'), '4 / 4');
-        assert.deepEqual(await p.locator('#center .candidate-acts button').allTextContents(), ['스토리로 받기', '고쳐서 받기', '버리기']);
+        assert.deepEqual(await p.locator('#center .candidate-acts button').allTextContents(), ['스토리로 받기', '버리기']);
         const [count, accept] = await Promise.all([p.locator('#center .line-count').boundingBox(), p.locator('#center button.accept').boundingBox()]);
         assert.ok(count!.y + count!.height <= accept!.y, 'the count sits above the buttons');
         const tops = await p.locator('#center .candidate-acts button').evaluateAll((buttons) => buttons.map((b) => b.getBoundingClientRect().top));
-        assert.ok(Math.max(...tops) - Math.min(...tops) < 1, 'the three buttons stand on one line');
-        const [edited, discard, row] = await Promise.all(['button.accept-edited', 'button.discard', '.title-row'].map((s) => p.locator(`#center ${s}`).boundingBox()));
-        const between = discard!.x - (edited!.x + edited!.width);
-        assert.ok(between >= 0 && between <= 9, 'nothing but the gap stands between 「고쳐서 받기」 and 「버리기」');
+        assert.ok(Math.max(...tops) - Math.min(...tops) < 1, 'the buttons stand on one line');
+        const [discard, row] = await Promise.all(['button.discard', '.title-row'].map((s) => p.locator(`#center ${s}`).boundingBox()));
+        const between = discard!.x - (accept!.x + accept!.width);
+        assert.ok(between >= 0 && between <= 9, 'nothing but the gap stands between 「스토리로 받기」 and 「버리기」');
         assert.ok(Math.abs(row!.x + row!.width - (discard!.x + discard!.width)) < 1, `「버리기」 ends where the name's row ends (${discard!.x + discard!.width} / ${row!.x + row!.width})`);
         const countLeft = await p.locator('#center .line-count').evaluate((el) => { const r = document.createRange(); r.selectNodeContents(el); return r.getBoundingClientRect().left; });
         assert.ok(Math.abs(countLeft - accept!.x) < 1, 'the count starts above 「스토리로 받기」');
@@ -327,8 +327,8 @@ test('in a browser, a candidate an agent posted has a box on each line the agent
   );
 });
 
-test('in a browser, 「스토리로 받기」 and 「고쳐서 받기」 write into the story file only the lines of the agent switched on, and the reviewer\'s lines as they were', { skip: browserMissing }, async () => {
-  for (const [button, id] of [['button.accept', 'lab-path'], ['button.accept-edited', 'lab-edited']]) {
+test('in a browser, 「스토리로 받기」, also under an ID saved with ✎, writes into the story file only the lines of the agent switched on, and the reviewer\'s lines as they were', { skip: browserMissing }, async () => {
+  for (const [button, id] of [['button.accept', 'lab-path'], ['button.edit-name', 'lab-edited']]) {
     await withRebuiltFixture(CANDIDATES, (config) =>
       withServer(config, 'reviewer', (base) =>
         withPage(base, async (p) => {
@@ -336,11 +336,13 @@ test('in a browser, 「스토리로 받기」 and 「고쳐서 받기」 write i
           await openAgentCandidate(p, 'lab-path');
           await p.click('#center input[name="line-2-expects-1"]');
           await p.click('#center input[name="line-3-linkNeeds-1"]');
-          await p.click(`#center ${button}`);
-          if (button === 'button.accept-edited') {
+          if (button === 'button.edit-name') {
+            await p.click(`#center ${button}`);
             await p.fill('#accept-id', id);
             await p.keyboard.press('Enter');
+            await p.waitForSelector('#center .story-id');
           }
+          await p.click('#center button.accept');
           await p.waitForSelector('#story-list li.selected:has-text("lab-path")');
           const story = JSON.parse(fs.readFileSync(path.join(config.storiesDir, `${id}.json`), 'utf8'));
           assert.deepEqual(story.screens, [
@@ -421,7 +423,7 @@ test('in a browser, a candidate whose steps left are the order of a story says w
     addStory(config.storiesDir, { id: 'help-direct', name: '바로 도움말', screens: ['/signin#SignIn', '/home#Home', '/help#Help'], author: 'Kim Min' });
     return withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
-        const acceptOff = () => p.evaluate(() => ['button.accept', 'button.accept-edited'].map((b) => (document.querySelector(`#center ${b}`) as HTMLButtonElement).disabled));
+        const acceptOff = () => p.evaluate(() => ['button.accept', 'button.edit-name'].map((b) => (document.querySelector(`#center ${b}`) as HTMLButtonElement).disabled));
         await openHelpCandidate(p);
         assert.deepEqual(await acceptOff(), [false, false]);
         assert.equal(await p.locator('#center .accept-problem').count(), 0);
@@ -434,7 +436,8 @@ test('in a browser, a candidate whose steps left are the order of a story says w
         assert.equal(await p.textContent('#center .accept-problem'), REASON);
         assert.deepEqual(await acceptOff(), [true, true]);
         assert.equal(await p.getAttribute('#center button.accept', 'title'), REASON);
-        assert.equal(await p.getAttribute('#center button.accept-edited', 'title'), REASON);
+        assert.equal(await p.getAttribute('#center button.edit-name', 'title'), REASON);
+        assert.equal(await p.getAttribute('#center button.edit-name', 'aria-label'), 'ID와 이름 고치기');
         assert.equal(await p.isDisabled('#center button.discard'), false);
         assert.deepEqual(await place(), placeBefore);
 
@@ -517,7 +520,7 @@ test('in a browser, a ✕ keeps the focus and its state when the page draws the 
 
 const chipsIn = (p: Page, list: string) => p.locator(`${list} li`).evaluateAll((items) => items.map((li) => [...li.querySelectorAll('.chip')].map((c) => c.textContent)));
 
-test('in a browser, the story list has a group of candidates, a chosen candidate shows its path like a story with the record steps behind each screen, and accepting it writes a story file under the name of the record, or under an ID and a name changed in a window, and moves it to the story list', { skip: browserMissing }, async () => {
+test('in a browser, the story list has a group of candidates, a chosen candidate shows its path like a story with the record steps behind each screen, and accepting it writes a story file under the name of the record and moves it to the story list', { skip: browserMissing }, async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -540,7 +543,7 @@ test('in a browser, the story list has a group of candidates, a chosen candidate
         assert.equal(await p.textContent('#center .story-needs > summary'), '사전 조건 0');
         assert.deepEqual(await p.locator('#right-info h2').allTextContents(), ['에이전트와 대화']);
         assert.equal(await p.textContent('#right-dock .mark-form .tags .tag-label'), '후보');
-        assert.deepEqual(await p.locator('#center .story-form button').allTextContents(), ['스토리로 받기', '고쳐서 받기', '버리기']);
+        assert.deepEqual(await p.locator('#center .story-form button').allTextContents(), ['스토리로 받기', '버리기']);
         assert.equal(await p.locator('#center .story-form :is(input, textarea)').count(), 0);
         assert.equal(await p.locator('#center :is(.line-pick, .line-count, .line-off)').count(), 0);
         assert.equal(await p.textContent('#center button.accept'), '스토리로 받기');
@@ -552,26 +555,100 @@ test('in a browser, the story list has a group of candidates, a chosen candidate
         assert.match((await p.textContent('#center .source'))!, /^example-visits\/open-help\.json · 단계 1–5$/);
         const saved = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'open-help.json'), 'utf8'));
         assert.deepEqual([saved.name, saved.author, saved.screens.length], ['open-help', 'reviewer', 4]);
+      }),
+    ),
+  );
+});
 
+const PUBLISH_FILE = (storiesDir: string) => {
+  const dir = path.join(storiesDir, 'candidates');
+  const name = fs.existsSync(dir) ? fs.readdirSync(dir).find((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')).screens.join(' > ') === PUBLISH_KEY) : undefined;
+  return name ? JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8')) : null;
+};
+
+test('in a browser, ✎ right after a candidate\'s name opens a window for the ID and the name it is accepted under; 「저장」 keeps them in the candidate file without writing a story, the title shows them at once and after a reload, and 「스토리로 받기」 then writes the story file under them', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        const edit = '#center .title-row > button.edit-name';
+        const ask = '#accept-ask';
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
         await p.click('#candidate-list li:has-text("publish-document")');
-        assert.deepEqual(await p.locator('#center .accepts button').allTextContents(), ['스토리로 받기', '고쳐서 받기']);
-        await p.click('#center button.accept-edited');
-        await p.waitForSelector('#accept-ask[open]');
-        assert.deepEqual([await p.inputValue('#accept-id'), await p.inputValue('#accept-name')], ['publish-document', 'publish-document']);
-        assert.equal(await p.isVisible('#accept-ask .invalid'), false);
-        await p.keyboard.press('Escape');
-        assert.equal(await p.isVisible('#accept-ask'), false);
-        assert.equal(await p.evaluate(() => document.activeElement!.className), 'accept-edited');
+        assert.deepEqual(await p.locator(edit).evaluate((b: HTMLButtonElement) => [b.textContent, b.title, b.getAttribute('aria-label'), b.previousElementSibling!.tagName, b.disabled]),
+          ['✎', 'ID와 이름 고치기', 'ID와 이름 고치기', 'H3', false]);
+        assert.equal(await p.locator('#center .candidate-acts button.edit-name').count(), 0);
+        assert.deepEqual(await p.locator('#center .candidate-acts button').allTextContents(), ['스토리로 받기', '버리기']);
+        assert.equal(await p.locator('#center .story-id').count(), 0);
 
-        await p.click('#center button.accept-edited');
+        await p.click(edit);
+        await p.waitForSelector(`${ask}[open]`);
+        assert.deepEqual([await p.textContent(`${ask} h2`), await p.textContent(`${ask} button.accept`)], ['스토리로 받을 때 쓸 ID 와 이름을 정합니다', '저장']);
+        assert.deepEqual([await p.inputValue('#accept-id'), await p.inputValue('#accept-name')], ['publish-document', 'publish-document']);
+        await p.keyboard.press('Escape');
+        assert.equal(await p.isVisible(ask), false);
+        assert.equal(await p.evaluate(() => document.activeElement!.className), 'edit-name');
+
+        await p.click(edit);
         await p.fill('#accept-name', ' ');
-        assert.equal(await p.isDisabled('#accept-ask button.accept'), true);
-        await p.fill('#accept-id', 'publish');
+        assert.equal(await p.isDisabled(`${ask} button.accept`), true);
         await p.fill('#accept-name', '문서를 발행한다');
+        await p.fill('#accept-id', 'run-lab');
+        assert.equal(await p.textContent(`${ask} .invalid`), '같은 ID 의 스토리가 이미 있습니다.');
+        assert.equal(await p.isDisabled(`${ask} button.accept`), true);
+        await p.fill('#accept-id', 'lab-shortcut');
+        await p.click(`${ask} button.accept`);
+        await p.waitForFunction(() => /저장하지 못했습니다: 스토리 ID lab-shortcut 는 lab-shortcut\.json 이 이미 씁니다/.test(document.querySelector('#accept-ask .error')!.textContent!));
+        assert.deepEqual(errors.splice(0), [BAD_REQUEST]);
+        assert.equal(await p.locator('#center .story-error').count(), 0);
+        await p.fill('#accept-id', 'publish');
         await p.keyboard.press('Enter');
+        await p.waitForFunction(() => document.querySelector('#center h3')!.textContent === '문서를 발행한다');
+        assert.equal(await p.isVisible(ask), false);
+        assert.equal(await p.evaluate(() => document.activeElement!.className), 'edit-name');
+        assert.equal(await p.textContent('#center .title-row .story-id'), 'publish');
+        assert.equal(await p.textContent('#candidate-list li.selected .name > span:first-child'), '문서를 발행한다');
+        assert.equal(fs.existsSync(path.join(config.storiesDir, 'publish.json')), false);
+        const { name, storyId } = PUBLISH_FILE(config.storiesDir);
+        assert.deepEqual([name, storyId], ['문서를 발행한다', 'publish']);
+
+        await p.reload();
+        await p.waitForSelector('#center .story-id');
+        assert.deepEqual([await p.textContent('#center h3'), await p.textContent('#center .story-id')], ['문서를 발행한다', 'publish']);
+        await p.click(edit);
+        assert.deepEqual([await p.inputValue('#accept-id'), await p.inputValue('#accept-name')], ['publish', '문서를 발행한다']);
+        await p.keyboard.press('Escape');
+
+        await p.click('#center button.accept');
         await p.waitForSelector('#story-list li.selected:has-text("문서를 발행한다")');
-        assert.equal(await p.isVisible('#accept-ask'), false);
-        assert.equal(JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'publish.json'), 'utf8')).name, '문서를 발행한다');
+        const saved = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'publish.json'), 'utf8'));
+        assert.deepEqual([saved.name, saved.screens.length], ['문서를 발행한다', 4]);
+        assert.deepEqual(errors, []);
+      }),
+    ),
+  );
+});
+
+test('in a browser, an ID saved with ✎ that a story takes afterwards shows as taken beside the name, and 「스토리로 받기」 asks for another ID in a window instead of using it', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        assert.equal((await postJson(base, '/api/candidates/name', { key: HELP_KEY, id: 'help-path', name: '도움말까지' })).status, 200);
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#candidate-list li:has-text("도움말까지")');
+        assert.equal(await p.getAttribute('#center .story-id', 'title'), '스토리로 받을 때 쓸 ID');
+        addStory(config.storiesDir, { id: 'help-path', name: '먼저 받은 도움말', screens: ['/help#Help'], author: 'Kim Min' });
+        await p.waitForSelector('#center .story-id.taken');
+        assert.equal(await p.getAttribute('#center .story-id', 'title'), '같은 ID 의 스토리가 이미 있습니다.');
+
+        await p.click('#center button.accept');
+        await p.waitForSelector('#accept-ask[open]');
+        assert.deepEqual([await p.textContent('#accept-ask h2'), await p.textContent('#accept-ask button.accept')], ['ID 와 이름을 정해 스토리로 받습니다', '스토리로 받기']);
+        assert.deepEqual([await p.inputValue('#accept-id'), await p.inputValue('#accept-name')], ['help-path', '도움말까지']);
+        assert.equal(await p.textContent('#accept-ask .invalid'), '같은 ID 의 스토리가 이미 있습니다.');
+        assert.equal(await p.isDisabled('#accept-ask button.accept'), true);
+        assert.equal(JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'help-path.json'), 'utf8')).name, '먼저 받은 도움말');
       }),
     ),
   );
@@ -1030,7 +1107,7 @@ test('in a browser, 「되돌리기」 on a candidate an agent posted in place o
         const wide = p.viewportSize();
         await p.setViewportSize({ width: 900, height: 800 });
         const heights = await p.$$eval('#center .candidate-buttons button', (bs) => bs.map((b) => Math.round(b.getBoundingClientRect().height)));
-        assert.deepEqual([heights.length, new Set(heights).size], [4, 1], `buttons wrap inside on a narrow page: ${heights}`);
+        assert.deepEqual([heights.length, new Set(heights).size], [3, 1], `buttons wrap inside on a narrow page: ${heights}`);
         if (wide) await p.setViewportSize(wide);
 
         await p.fill('#right-dock textarea', '쓰던 코멘트');

@@ -8,7 +8,7 @@ import { compare, isPlainObject } from './config.ts';
 import { jsonFiles } from './json-files.ts';
 import { loadMarks, orderKey, recordKind, recordName, targetsOf, writeNewRecord } from './marks.ts';
 import type { SentRequests } from './request-options.ts';
-import { addStory, CANDIDATES, DISCARDED, inputsProblem, joinedFields, keptSteps, RECORDS, isDate, isScreenList, isSource, isText, loadStories, sameBox, sourceAfterSteps, SOURCE_SHAPES, STEP_FIELDS, stepProblem, writableStoriesFolder } from './stories.ts';
+import { addStory, CANDIDATES, checkFreeStoryId, DISCARDED, inputsProblem, joinedFields, keptSteps, RECORDS, isDate, isScreenList, isSource, isText, loadStories, sameBox, sourceAfterSteps, SOURCE_SHAPES, STEP_FIELDS, stepProblem, STORY_ID, writableStoriesFolder } from './stories.ts';
 import type { CommentSource, ReplacedCandidate, StepFields, StepInput, StorySource } from './stories.ts';
 import { checkStories, linksFromOldDuru, staleMapMessage } from './story-paths.ts';
 import { titleWithoutTags } from './verdict.ts';
@@ -124,6 +124,7 @@ export interface Candidate {
   file?: string;
   lines?: AgentLine[];
   offSteps?: number[];
+  storyId?: string;
   originals?: ReplacedCandidate[];
   acceptProblem?: string;
 }
@@ -299,6 +300,7 @@ function storedProblemOf(c: any) {
       && off.every((s: unknown, i: number) => Number.isInteger(s) && (s as number) >= 1 && (s as number) <= c.screens.length && (i === 0 || (off[i - 1] as number) < (s as number)));
     if (!fits) return 'offSteps 는 받을 때 뺄 단계의 번호를 1 부터 세어 작은 것부터 하나씩 적은 목록이어야 하고, 단계를 하나 이상 남겨야 합니다';
   }
+  if (c.storyId !== undefined && !(typeof c.storyId === 'string' && STORY_ID.test(c.storyId))) return 'storyId 는 받을 때 쓸 스토리 ID 로, 영문 소문자 · 숫자 · - · _ 로만 씁니다';
   if (c.acceptedAs !== undefined && !isText(c.acceptedAs)) return 'acceptedAs 는 받은 스토리의 ID 여야 합니다';
   return c.offLines === undefined ? null : offLinesProblem(c.offLines, c.source);
 }
@@ -481,6 +483,34 @@ export function pickCandidateLine(dir: string, candidate: Candidate, { step, fie
   return { file: candidate.file, offLines };
 }
 
+function candidateFile(dir: string, candidate: Candidate) {
+  if (candidate.file) return candidate.file;
+  const folder = path.join(dir, CANDIDATES);
+  if (fs.existsSync(folder) && !isFolder(folder)) throw new Error(`스토리 폴더 안 ${CANDIDATES} 가 파일이라 후보 파일을 쓸 수 없습니다`);
+  const date = new Date().toISOString();
+  const name = `${date.slice(0, 10)}-${crypto.randomUUID().slice(0, 8)}.json`;
+  const { name: candidateName, source, skipped } = candidate;
+  const { screens, stepFields } = foundOrder(candidate);
+  try {
+    writeNewRecord(path.join(folder, name), { name: candidateName, screens, source, date, ...carried({ stepFields, skipped }) });
+  } catch (err: any) {
+    throw new Error(`후보 파일을 쓰지 못했습니다: ${err.message}`);
+  }
+  return path.join(CANDIDATES, name);
+}
+
+export function nameCandidate(dir: string, candidate: Candidate, { id, name }: Record<string, unknown>) {
+  if (typeof id !== 'string' || !STORY_ID.test(id)) throw new Error('스토리 ID 는 영문 소문자 · 숫자 · - · _ 로만 씁니다');
+  if (!isText(name)) throw new Error('스토리 이름이 필요합니다');
+  writableStoriesFolder(dir);
+  checkFreeStoryId(dir, id);
+  const file = candidateFile(dir, candidate);
+  const at = path.join(dir, file);
+  const stored = JSON.parse(fs.readFileSync(at, 'utf8'));
+  fs.writeFileSync(at, JSON.stringify({ ...stored, name: name.trim(), storyId: id }, null, 2) + '\n');
+  return { file, name: name.trim(), storyId: id };
+}
+
 export function pickCandidateStep(dir: string, candidate: Candidate, input: object, rules: SkipRule[] = []) {
   const { step, on } = input as Record<string, unknown>;
   if (!Number.isInteger(step) || (step as number) < 1 || (step as number) > candidate.screens.length) throw new Error(`후보 「${candidate.name}」에는 ${step} 번째 단계가 없습니다`);
@@ -488,22 +518,7 @@ export function pickCandidateStep(dir: string, candidate: Candidate, input: obje
   const others = (candidate.offSteps ?? []).filter((s) => s !== step);
   const offSteps = on ? others : [...others, step as number].sort((a, b) => a - b);
   if (offSteps.length >= candidate.screens.length) throw new Error(`후보 「${candidate.name}」의 마지막 남은 단계는 뺄 수 없습니다`);
-  let picked = candidate.file;
-  if (!picked) {
-    const folder = path.join(dir, CANDIDATES);
-    if (fs.existsSync(folder) && !isFolder(folder)) throw new Error(`스토리 폴더 안 ${CANDIDATES} 가 파일이라 후보 파일을 쓸 수 없습니다`);
-    const date = new Date().toISOString();
-    const name = `${date.slice(0, 10)}-${crypto.randomUUID().slice(0, 8)}.json`;
-    const { name: candidateName, source, skipped } = candidate;
-    const { screens, stepFields } = foundOrder(candidate);
-    try {
-      writeNewRecord(path.join(folder, name), { name: candidateName, screens, source, date, ...carried({ stepFields, skipped }) });
-    } catch (err: any) {
-      throw new Error(`후보 파일을 쓰지 못했습니다: ${err.message}`);
-    }
-    picked = path.join(CANDIDATES, name);
-  }
-  const file = picked!;
+  const file = candidateFile(dir, candidate);
   const at = path.join(dir, file);
   const { offSteps: before = [], ...rest } = JSON.parse(fs.readFileSync(at, 'utf8'));
   const groups = shownGroups(rest.screens, rulesFor(candidate.source, rules));
@@ -682,7 +697,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   const fromFirstOfOrder = (key: string) => {
     const entry = firstOfOrder.get(key);
     const offSteps = entry && shownOffSteps(entry.screens, entry.offSteps, rulesFor(entry.source, rules));
-    return { ...(entry?.file && { file: entry.file }), ...(offSteps && { offSteps }) };
+    return { ...(entry?.file && { file: entry.file }), ...(offSteps && { offSteps }), ...(entry?.storyId && { name: entry.name, storyId: entry.storyId }) };
   };
   const accepted = acceptedOrders(stored, stories, rules);
   const list: Candidate[] = [];
@@ -723,7 +738,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   for (const key of fromTraces.keys()) seen.add(key);
   const byFirstSeenStored = stored.sort(byFirstSeen);
   const storedTests = new Map<string, TestsSource>();
-  for (const { name, screens, source, file, offLines, offSteps, ...rest } of byFirstSeenStored) {
+  for (const { name, screens, source, file, offLines, offSteps, storyId, ...rest } of byFirstSeenStored) {
     const base = { key: screens.join(' > '), name, screens, source, ...carried(rest) } as Candidate;
     if (!('comment' in source)) for (const screen of screens) found.add(screen);
     const candidate = 'comment' in source ? base : ruledOrCut(base);
@@ -742,7 +757,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
     if ('tests' in source) storedTests.set(key, source);
     const picks = 'comment' in candidate.source && { lines: agentLines(candidate.source, rest.stepFields, offLines) };
     const shownOff = shownOffSteps(screens, offSteps, rulesFor(source, rules));
-    list.push({ ...candidate, ...picks, file, ...(shownOff && { offSteps: shownOff }) });
+    list.push({ ...candidate, ...picks, file, ...(shownOff && { offSteps: shownOff }), ...(storyId && { storyId }) });
   }
   const onMap = new Set(map.screens.map((s: any) => s.id));
   const missedRules = [...new Set(rules.map((r) => r.screen))].filter((s) => !onMap.has(s) && !found.has(s));

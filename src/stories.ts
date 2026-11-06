@@ -286,6 +286,11 @@ export function writableStoriesFolder(dir: string) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
+export function checkFreeStoryId(dir: string, id: string) {
+  const taken = storyFiles(dir).files.find((f) => path.basename(f.file) === `${id}.json`);
+  if (taken) throw new Error(`스토리 ID ${id} 는 ${taken.file} 이 이미 씁니다`);
+}
+
 const filled = (list: unknown) => (Array.isArray(list) && !list.length ? undefined : list);
 
 export function addStory(dir: string, { id, name, needs, screens, expects, memo = '', author, source }: NewStory, now = new Date()) {
@@ -293,8 +298,7 @@ export function addStory(dir: string, { id, name, needs, screens, expects, memo 
   if (!isText(name)) throw new Error('스토리 이름이 필요합니다');
   if (!isText(author)) throw new Error('작성자가 필요합니다');
   writableStoriesFolder(dir);
-  const taken = storyFiles(dir).files.find((f) => path.basename(f.file) === `${id}.json`);
-  if (taken) throw new Error(`스토리 ID ${id} 는 ${taken.file} 이 이미 씁니다`);
+  checkFreeStoryId(dir, id);
   const story = { name: name.trim(), screens, needs: filled(needs), expects: filled(expects), memo, author: author.trim(), date: now.toISOString(), ...(source && { source }) };
   const problem = problemOf(story);
   if (problem) throw new Error(problem);
