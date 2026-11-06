@@ -1096,7 +1096,7 @@ test('a candidate for a comment is refused with why, writing nothing, when a scr
       [{ screens: screens((s) => s.with(1, { ...s[1], screen: '/nowhere' })) }, 'screens 의 2 번째 단계의 /nowhere 는 맵에 없는 화면입니다'],
       [{ screens: screens((s) => [s[0], s[1], { screen: '/home#Home', reason: 'x' }, s[2]]) }, 'screens 의 2 번째와 3 번째가 같은 화면입니다'],
       [{ comment: 'no-such-id' }, '코멘트 no-such-id 가 없습니다'],
-      [{ comment: nodeComment }, `코멘트 ${nodeComment} 는 화면 순서에 단 코멘트가 아닙니다`],
+      [{ comment: nodeComment }, `코멘트 ${nodeComment} 는 화면 순서나 후보에 단 코멘트도, 대상 없는 코멘트도 아닙니다`],
       [{ comment: replied }, `코멘트 ${replied} 가 없습니다`],
       [{ screens: screens((s) => s.with(2, { ...s[2], expects: ['실험이 보인다'] })) }, 'screens 의 3 번째 단계 /lab#Lab 의 expects 는 검토자가 적은 줄이라 바꿀 수 없습니다'],
       [{ screens: screens((s) => s.with(0, { ...s[0], inputs: [EMAIL_INPUT, MEMO_INPUT] })) }, 'screens 의 1 번째 단계 /signin#SignIn 의 inputs 는 검토자가 적은 줄이라 바꿀 수 없습니다'],
@@ -1525,6 +1525,295 @@ test('steps that the rules leave side by side become one step that keeps the nee
       {},
     ]]);
   });
+});
+
+const LAB = '/lab#Lab';
+const NO_SIGNIN = '검토자가 모든 후보에서 로그인을 빼라고 했습니다';
+const SEARCH_INPUT = { box: { label: '검색' }, value: '도움말' };
+type Posted = ReturnType<typeof addCommentCandidate>;
+
+function withReplaceable(records: Record<string, unknown>, fn: (ctx: {
+  cfg: typeof config;
+  comment: (target?: object) => string;
+  post: (comment: string, input: Record<string, unknown>) => Posted;
+  listed: (traced?: Parameters<typeof storyCandidates>[3]) => ReturnType<typeof storyCandidates>;
+  stored: (posted: Posted) => any;
+  files: () => string[];
+}) => void) {
+  withFolder(records, (dir: string) => {
+    const cfg = { ...config, configDir: dir, visitRecords: [path.join(dir, 'visits')], storiesDir: path.join(dir, 'stories'), marksDir: path.join(dir, 'marks') };
+    const comment = (target?: object) => addMark(cfg.marksDir, { ...(target ? { target } : { targets: [] }), note: '필요 없는 로그인 단계를 빼 줘', author: 'hit' }, new Date('2026-10-20T01:00:00Z')).id;
+    const post = (id: string, input: Record<string, unknown>) => addCommentCandidate(cfg, map, MAP_FILE, [], { comment: id, ...input }, new Date('2026-10-21T02:00:00Z'));
+    const listed = (traced: Parameters<typeof storyCandidates>[3] = []) => storyCandidates(cfg, map, MAP_FILE, traced);
+    const stored = (posted: Posted) => JSON.parse(fs.readFileSync(path.join(dir, posted.file), 'utf8'));
+    const folder = path.join(cfg.storiesDir, 'candidates');
+    const files = () => (fs.existsSync(folder) ? fs.readdirSync(folder).sort() : []);
+    fn({ cfg, comment, post, listed, stored, files });
+  });
+}
+
+const HELP_VISITS = recordsIn({ 'visits/a.json': ['/signin', '/home', '/help'], 'visits/b.json': ['/signin', '/lab'] });
+
+test('a candidate posted for a comment on a candidate is written with the originals it replaces, each with its order, the steps dropped with why and its own source, and those originals leave the list while it is listed, accepted or discarded, also when the records, the traces and the stored files give them again', () => {
+  withReplaceable(HELP_VISITS, ({ cfg, comment, post, listed, stored }) => {
+    const a = [SIGNIN, HOME, HELP];
+    assert.deepEqual(storeCandidates(cfg.storiesDir, listed().list), { written: 2 });
+    const id = comment({ candidate: a.join(' > ') });
+    const posted = post(id, { name: '홈에서 도움말을 연다', screens: [HOME, HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }] }] });
+    assert.deepEqual(stored(posted).source, {
+      comment: id,
+      added: [],
+      written: [],
+      replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }], source: { record: 'visits/a.json', steps: [1, 3] } }],
+    });
+    const report = 'results/playwright/e2e.json';
+    const traced = [{ report, title: 'logs in and opens help', screens: a }];
+    const names = (traced: Parameters<typeof storyCandidates>[3] = []) => listed(traced).list.map((c) => [c.name, c.screens]);
+    assert.deepEqual(names(), [['b', [SIGNIN, LAB]], ['홈에서 도움말을 연다', [HOME, HELP]]]);
+    assert.deepEqual(names(traced), names());
+    assert.equal(listed().gone![a.join(' > ')], 'a');
+    assert.deepEqual(storeCandidates(cfg.storiesDir, listed().list), { written: 0 });
+    assert.deepEqual(names(), [['b', [SIGNIN, LAB]], ['홈에서 도움말을 연다', [HOME, HELP]]]);
+
+    const replacement = listed().list[1];
+    acceptCandidate(cfg.storiesDir, replacement, { id: 'help', name: replacement.name, author: 'hit' });
+    assert.deepEqual(loadStories(cfg.storiesDir).stories.find((s) => s.id === 'help')!.source, stored(posted).source);
+    assert.deepEqual(names(traced), [['b', [SIGNIN, LAB]]]);
+    unacceptStory(cfg.storiesDir, 'help');
+    discardCandidate(cfg.storiesDir, listed().list[1], { reason: '도움말은 따로 본다', author: 'hit' }, new Date('2026-10-21T03:00:00Z'));
+    assert.deepEqual(names(traced), [['b', [SIGNIN, LAB]]]);
+    undiscardCandidate(cfg.storiesDir, [HOME, HELP], { author: 'hit' }, new Date('2026-10-21T04:00:00Z'));
+    assert.deepEqual(names(traced), [['b', [SIGNIN, LAB]], ['홈에서 도움말을 연다', [HOME, HELP]]]);
+  });
+});
+
+test('one candidate may replace two originals that become the same order, keeping on each kept step the lines of the steps of both originals behind it, steps of one screen left side by side merged, and only the agent\'s own lines in written', () => {
+  const records = {
+    'visits/a.json': [{ url: '/signin' }, { url: '/home', inputs: [MEMO_INPUT] }, { url: '/help' }],
+    'visits/c.json': [{ url: '/home' }, { url: '/signin' }, { url: '/home', inputs: [SEARCH_INPUT] }, { url: '/help' }],
+  };
+  withReplaceable(records, ({ comment, post, listed, stored }) => {
+    const id = comment();
+    const a = [SIGNIN, HOME, HELP];
+    const c = [HOME, SIGNIN, HOME, HELP];
+    const posted = post(id, {
+      name: '홈에서 도움말을 연다',
+      screens: [{ screen: HOME, inputs: [MEMO_INPUT] }, { screen: HELP, expects: ['도움말이 보인다'] }],
+      replaces: [
+        { screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }] },
+        { screens: c, dropped: [{ step: 2, reason: '홈 사이의 로그인은 시험 준비입니다', judged: true }] },
+      ],
+    });
+    const file = stored(posted);
+    assert.deepEqual(file.source.replaces.map((r: any) => [r.screens, r.dropped, r.source.record]), [
+      [a, [{ step: 1, reason: NO_SIGNIN }], 'visits/a.json'],
+      [c, [{ step: 2, reason: '홈 사이의 로그인은 시험 준비입니다', judged: true }], 'visits/c.json'],
+    ]);
+    assert.deepEqual(file.stepFields, [{ inputs: [MEMO_INPUT, SEARCH_INPUT] }, { expects: ['도움말이 보인다'] }]);
+    assert.deepEqual(file.source.written, [{ step: 2, expects: ['도움말이 보인다'] }]);
+    assert.deepEqual(listed().list.map((x) => [x.name, x.screens]), [['홈에서 도움말을 연다', [HOME, HELP]]]);
+    assert.deepEqual(listed().list[0].lines, [{ step: 2, field: 'expects', line: 1, row: 0, on: true }]);
+  });
+});
+
+test('several candidates may answer one comment with no target, and once one of them is accepted the others stay listed and another may still be posted', () => {
+  withReplaceable(recordsIn({ 'visits/a.json': ['/signin', '/home', '/help'], 'visits/b.json': ['/signin', '/lab'], 'visits/d.json': ['/signin', '/home', '/lab'] }), ({ cfg, comment, post, listed, files }) => {
+    const id = comment();
+    const drop = (screens: string[]) => [{ screens, dropped: [{ step: 1, reason: NO_SIGNIN }] }];
+    post(id, { name: '도움말', screens: [HOME, HELP], replaces: drop([SIGNIN, HOME, HELP]) });
+    post(id, { name: '실험', screens: [LAB], replaces: drop([SIGNIN, LAB]) });
+    const help = listed().list.find((c) => c.name === '도움말')!;
+    acceptCandidate(cfg.storiesDir, help, { id: 'help', name: '도움말', author: 'hit' });
+    assert.deepEqual(listed().list.map((c) => c.name), ['d', '실험']);
+    post(id, { name: '홈에서 실험', screens: [HOME, LAB], replaces: drop([SIGNIN, HOME, LAB]) });
+    assert.deepEqual(listed().list.map((c) => c.name), ['홈에서 실험', '실험']);
+    assert.equal(files().length, 3);
+  });
+});
+
+test('a candidate for a comment on a candidate or on nothing is refused with why, writing nothing, without the originals it replaces, with an original not listed, a step left out without a reason, the steps in another order, dropped steps that do not fit or an order already listed, while a candidate for a comment on a screen order takes no originals', () => {
+  withReplaceable(HELP_VISITS, ({ cfg, comment, post, files }) => {
+    const a = [SIGNIN, HOME, HELP];
+    const where = `replaces 의 1 번째 원래 후보 ${a.join(' > ')}`;
+    const id = comment({ candidate: a.join(' > ') });
+    const general = comment();
+    const order = comment({ screens: [SIGNIN, HELP] });
+    const onNode = comment({ node: HOME });
+    const replace = (dropped: unknown[], screens: string[] = a) => ({ screens, dropped });
+    const signinOut = [{ step: 1, reason: NO_SIGNIN }];
+    const refusals: [string, Record<string, unknown>, string][] = [
+      [id, { screens: [HOME, HELP] }, `코멘트 ${id} 는 후보에 단 코멘트라 replaces 에 이 후보가 대신하는 원래 후보를 적어야 합니다`],
+      [general, { screens: [HOME, HELP] }, `코멘트 ${general} 는 대상 없는 코멘트라 replaces 에 이 후보가 대신하는 원래 후보를 적어야 합니다`],
+      [order, { screens: [SIGNIN, HELP], replaces: [replace(signinOut)] }, `코멘트 ${order} 는 화면 순서에 단 코멘트라 replaces 를 적지 않습니다`],
+      [onNode, { screens: [HOME, HELP], replaces: [replace(signinOut)] }, `코멘트 ${onNode} 는 화면 순서나 후보에 단 코멘트도, 대상 없는 코멘트도 아닙니다`],
+      [id, { screens: [HELP], replaces: [replace(signinOut, [SIGNIN, HELP])] }, `replaces 의 1 번째 원래 후보 ${SIGNIN} > ${HELP} 는 지금 후보 목록에 없습니다`],
+      [id, { screens: [HELP], replaces: [replace(signinOut)] }, `${where} 의 2 번째 단계 ${HOME} 가 이유 없이 빠졌습니다. 뺀 단계는 dropped 에 step 과 reason 으로 적습니다`],
+      [id, { screens: [HELP, HOME], replaces: [replace(signinOut)] }, `이유를 적지 않은 단계의 차례가 ${where} 에서 dropped 의 단계를 뺀 순서 ${HOME} > ${HELP} 와 다릅니다. 원래 후보의 단계는 차례를 바꾸지 않습니다`],
+      [id, { screens: [HOME, LAB], replaces: [replace(signinOut)] }, `이유를 적지 않은 단계는 ${where} 에서 dropped 의 단계를 뺀 순서 ${HOME} > ${HELP} 그대로여야 합니다. 에이전트가 넣은 화면에는 reason 에 이유를 적습니다`],
+      [id, { screens: a, replaces: [replace([])] }, '이미 후보 「a」의 화면 순서입니다'],
+      [id, { screens: [HELP], replaces: [replace([{ step: 4, reason: 'x' }])] }, 'replaces 의 1 번째 원래 후보의 dropped 의 1 번째의 step 은 원래 순서의 1 번째부터 3 번째까지의 단계 번호여야 합니다'],
+      [id, { screens: [HOME, HELP], replaces: [replace([{ step: 1 }])] }, 'replaces 의 1 번째 원래 후보의 dropped 의 1 번째의 reason 에 이 단계를 뺀 이유를 적어야 합니다'],
+      [id, { screens: [HOME, HELP], replaces: [replace([{ step: 1, reason: 'x', judged: false }])] }, 'replaces 의 1 번째 원래 후보의 dropped 의 1 번째의 judged 는 검토자가 시키지 않았는데 뺀 단계에만 true 로 적습니다'],
+      [id, { screens: [HOME, HELP], replaces: [replace([...signinOut, ...signinOut])] }, 'replaces 의 1 번째 원래 후보의 dropped 에 1 번째 단계가 두 번 있습니다'],
+      [id, { screens: [HOME, HELP], replaces: [replace([1, 2, 3].map((step) => ({ step, reason: 'x' })))] }, 'replaces 의 1 번째 원래 후보의 단계를 모두 뺄 수는 없습니다'],
+      [id, { screens: [HOME, HELP], replaces: [replace(signinOut), replace(signinOut)] }, `replaces 에 원래 후보 ${a.join(' > ')} 가 두 번 있습니다`],
+      [id, { screens: [HOME, HELP], replaces: [] }, 'replaces 는 이 후보가 대신하는 원래 후보를 { "screens": 지금 목록에 있는 그 후보의 화면 순서, "dropped": [{ "step", "reason", "judged" }, ...] } 로 하나 이상 담은 목록이어야 합니다'],
+      [id, { screens: [HOME, HELP], replaces: [{ screens: a }] }, 'replaces 는 이 후보가 대신하는 원래 후보를 { "screens": 지금 목록에 있는 그 후보의 화면 순서, "dropped": [{ "step", "reason", "judged" }, ...] } 로 하나 이상 담은 목록이어야 합니다'],
+    ];
+    for (const [comment, input, message] of refusals) assert.throws(() => post(comment, { name: '홈에서 도움말을 연다', ...input }), { message }, message);
+    assert.deepEqual(files(), []);
+    assert.ok(fs.existsSync(cfg.marksDir));
+  });
+});
+
+test('a story file whose comment source names originals that do not fit is noted with the shapes a source may take, and read once they fit', () => {
+  const source = { comment: 'c1', added: [], written: [], replaces: [{ screens: [SIGNIN, HOME], dropped: [{ step: 3, reason: 'x' }], source: { record: 'visits/a.json', steps: [1, 2] } }] };
+  withFolder({ 'stories/help.json': { name: '도움말', screens: [HOME], memo: '', author: 'hit', date: '2026-10-01', source } }, (dir: string) => {
+    const [notice] = loadStories(path.join(dir, 'stories')).notices;
+    assert.match(notice.reason, /"replaces": \[\{ "screens", "dropped": \[\{ "step", "reason", "judged" \}, \.\.\.\], "source" \}, \.\.\.\]/);
+    const fits = { ...source, replaces: [{ ...source.replaces[0], dropped: [{ step: 1, reason: 'x', judged: true }] }] };
+    fs.writeFileSync(path.join(dir, 'stories/help.json'), JSON.stringify({ name: '도움말', screens: [HOME], memo: '', author: 'hit', date: '2026-10-01', source: fits }));
+    assert.deepEqual(loadStories(path.join(dir, 'stories')).notices, []);
+  });
+});
+
+test('a candidate may not take the order of an original another candidate replaces, because it would hide itself and the one it replaces', () => {
+  withReplaceable(HELP_VISITS, ({ comment, post, listed, files }) => {
+    const a = [SIGNIN, HOME, HELP];
+    post(comment({ candidate: a.join(' > ') }), { name: '홈에서 도움말을 연다', screens: [HOME, HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }] }] });
+    const asked = comment({ candidate: [HOME, HELP].join(' > ') });
+    assert.throws(() => post(asked, { name: '로그인부터', screens: [{ screen: SIGNIN, reason: '로그인이 필요합니다' }, HOME, HELP], replaces: [{ screens: [HOME, HELP], dropped: [] }] }),
+      { message: '이 화면 순서는 다른 후보가 이미 대신한 원래 후보의 순서입니다' });
+    assert.equal(files().length, 1);
+    assert.deepEqual(listed().list.map((c) => c.name), ['b', '홈에서 도움말을 연다']);
+  });
+});
+
+test('a candidate that replaces an agent\'s candidate leaves out the lines the reviewer turned off and keeps the other lines of that agent as lines the reviewer can turn off', () => {
+  withReplaceable(HELP_VISITS, ({ cfg, comment, post, listed, stored }) => {
+    post(comment({ screens: [HOME, LAB] }), { name: '실험', screens: [HOME, { screen: LAB, expects: ['틀린 줄', '맞는 줄'] }] });
+    const agents = () => listed().list.find((c) => c.name === '실험')!;
+    pickCandidateLine(cfg.storiesDir, agents(), { step: 2, field: 'expects', line: 1, on: false });
+    const posted = post(comment({ candidate: [HOME, LAB].join(' > ') }), { name: '실험만', screens: [LAB], replaces: [{ screens: [HOME, LAB], dropped: [{ step: 1, reason: '시험 준비입니다' }] }] });
+    const file = stored(posted);
+    assert.deepEqual(file.stepFields, [{ expects: ['맞는 줄'] }]);
+    assert.deepEqual(file.source.written, [{ step: 1, expects: ['맞는 줄'] }]);
+    assert.deepEqual(listed().list.find((c) => c.name === '실험만')!.lines, [{ step: 1, field: 'expects', line: 1, row: 0, on: true }]);
+  });
+});
+
+test('a candidate that replaces others carries how many inputs each of them could not move', () => {
+  const records = {
+    'visits/a.json': [{ url: '/signin' }, { url: '/home', skipped: 2 }, { url: '/help' }],
+    'visits/c.json': [{ url: '/lab' }, { url: '/home', skipped: 1 }, { url: '/help' }],
+  };
+  withReplaceable(records, ({ comment, post, listed, stored }) => {
+    const drop = (screens: string[]) => ({ screens, dropped: [{ step: 1, reason: '시험 준비입니다' }] });
+    const posted = post(comment(), { name: '홈에서 도움말을 연다', screens: [HOME, HELP], replaces: [drop([SIGNIN, HOME, HELP]), drop([LAB, HOME, HELP])] });
+    assert.equal(stored(posted).skipped, 3);
+    assert.equal(listed().list[0].skipped, 3);
+  });
+});
+
+test('originals that typed different values into one box are refused until the agent writes the value to keep', () => {
+  const typed = (value: string) => ({ box: { label: '메모' }, value });
+  const records = {
+    'visits/a.json': [{ url: '/signin' }, { url: '/home', inputs: [typed('하나')] }, { url: '/help' }],
+    'visits/c.json': [{ url: '/lab' }, { url: '/home', inputs: [typed('둘')] }, { url: '/help' }],
+  };
+  withReplaceable(records, ({ comment, post, files, stored }) => {
+    const id = comment();
+    const drop = (screens: string[]) => ({ screens, dropped: [{ step: 1, reason: '시험 준비입니다' }] });
+    const replaces = [drop([SIGNIN, HOME, HELP]), drop([LAB, HOME, HELP])];
+    assert.throws(() => post(id, { name: '홈에서 도움말을 연다', screens: [HOME, HELP], replaces }),
+      { message: `screens 의 1 번째 단계 ${HOME} 의 입력칸 {"label":"메모"} 에 원래 후보들의 값이 서로 다릅니다. 이 단계의 inputs 에 남길 값을 적습니다` });
+    assert.deepEqual(files(), []);
+    const posted = post(id, { name: '홈에서 도움말을 연다', screens: [{ screen: HOME, inputs: [typed('둘')] }, HELP], replaces });
+    assert.deepEqual(stored(posted).stepFields[0].inputs, [typed('둘')]);
+  });
+});
+
+test('an original stays out of the list after candidateSkipScreens changes its order, from a record and from a stored file', () => {
+  withReplaceable(HELP_VISITS, ({ cfg, comment, post }) => {
+    const a = [SIGNIN, HOME, HELP];
+    post(comment({ candidate: a.join(' > ') }), { name: '홈에서 도움말을 연다', screens: [HOME, HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }] }] });
+    const names = () => storyCandidates({ ...cfg, candidateSkipScreens: [{ screen: HELP, where: 'any' }] }, map, MAP_FILE).list.map((c) => c.name);
+    assert.deepEqual(names(), ['b', '홈에서 도움말을 연다']);
+    storeCandidates(cfg.storiesDir, storyCandidates(cfg, map, MAP_FILE).list);
+    assert.deepEqual(names(), ['b', '홈에서 도움말을 연다']);
+  });
+});
+
+test('replacing one of the candidates answering a comment on a screen order leaves the others from that comment listed', () => {
+  withReplaceable(HELP_VISITS, ({ comment, post, listed }) => {
+    const asked = comment({ screens: [HOME, LAB] });
+    post(asked, { name: '첫째', screens: [HOME, { screen: HELP, reason: '도움말을 거칩니다' }, LAB] });
+    post(asked, { name: '둘째', screens: [HOME, { screen: SIGNIN, reason: '다시 로그인합니다' }, LAB] });
+    post(comment({ candidate: [HOME, HELP, LAB].join(' > ') }), { name: '첫째를 고침', screens: [HELP, LAB], replaces: [{ screens: [HOME, HELP, LAB], dropped: [{ step: 1, reason: '시험 준비입니다' }] }] });
+    assert.deepEqual(listed().list.map((c) => c.name).filter((n) => n !== 'a' && n !== 'b').sort(), ['둘째', '첫째를 고침']);
+  });
+});
+
+test('a candidate that replaces another takes over the steps the reviewer took out of it with ✕, with the reviewer as their reason and no judged mark', () => {
+  withReplaceable(HELP_VISITS, ({ cfg, comment, post, listed, stored }) => {
+    const a = [SIGNIN, HOME, HELP];
+    pickCandidateStep(cfg.storiesDir, listed().list.find((c) => c.name === 'a')!, { step: 2, on: false });
+    const posted = post(comment({ candidate: a.join(' > ') }), { name: '도움말만', screens: [HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }] }] });
+    assert.deepEqual(stored(posted).source.replaces[0].dropped, [{ step: 1, reason: NO_SIGNIN }, { step: 2, reason: '검토자 제외' }]);
+  });
+  withReplaceable(HELP_VISITS, ({ cfg, comment, post, listed, stored }) => {
+    const a = [SIGNIN, HOME, HELP];
+    pickCandidateStep(cfg.storiesDir, listed().list.find((c) => c.name === 'a')!, { step: 2, on: false });
+    const posted = post(comment({ candidate: a.join(' > ') }), { name: '도움말만', screens: [HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }, { step: 2, reason: '제가 판단했습니다', judged: true }] }] });
+    assert.deepEqual(stored(posted).source.replaces[0].dropped[1], { step: 2, reason: '검토자 제외' });
+  });
+});
+
+test('a candidate that replaces another cannot keep a step the reviewer took out with ✕, or leave nothing once those steps are out', () => {
+  withReplaceable(HELP_VISITS, ({ cfg, comment, post, listed }) => {
+    const a = [SIGNIN, HOME, HELP];
+    pickCandidateStep(cfg.storiesDir, listed().list.find((c) => c.name === 'a')!, { step: 2, on: false });
+    const id = comment({ candidate: a.join(' > ') });
+    assert.throws(() => post(id, { name: '홈부터', screens: [HOME, HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }] }] }),
+      { message: /2 번째 단계는 검토자가 ✕ 로 뺐으므로 빠진 것으로 봅니다/ });
+    assert.throws(() => post(id, { name: '없음', screens: [{ screen: LAB, reason: '넣습니다' }], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }, { step: 3, reason: '뺍니다' }] }] }),
+      { message: /단계를 모두 뺄 수는 없습니다\. 2 번째 단계는 검토자가 ✕ 로 뺐습니다/ });
+  });
+});
+
+test('an agent may put a screen the reviewer took out with ✕ back in with a reason, and the candidate shows that reason as an added step beside the reviewer\'s drop', () => {
+  withReplaceable(HELP_VISITS, ({ cfg, comment, post, listed, stored }) => {
+    const a = [SIGNIN, HOME, HELP];
+    pickCandidateStep(cfg.storiesDir, listed().list.find((c) => c.name === 'a')!, { step: 2, on: false });
+    const posted = post(comment({ candidate: a.join(' > ') }), { name: '홈을 다시 넣음', screens: [{ screen: HOME, reason: '검토자가 코멘트로 부탁했습니다' }, HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }] }] });
+    const { source } = stored(posted);
+    assert.deepEqual(source.added, [{ step: 1, reason: '검토자가 코멘트로 부탁했습니다' }]);
+    assert.deepEqual(source.replaces[0].dropped[1], { step: 2, reason: '검토자 제외' });
+  });
+});
+
+test('a value typed on a step the reviewer took out with ✕ stays out of the candidate that replaces it, and dropped may be empty when ✕ took out all that goes', () => {
+  const records = { 'visits/a.json': [{ url: '/home', inputs: [{ box: { label: '메모' }, value: '뺀 칸' }] }, { url: '/lab' }, { url: '/help' }] };
+  withReplaceable(records, ({ cfg, comment, post, listed, stored }) => {
+    const a = [HOME, LAB, HELP];
+    pickCandidateStep(cfg.storiesDir, listed().list.find((c) => c.name === 'a')!, { step: 1, on: false });
+    const posted = post(comment({ candidate: a.join(' > ') }), { name: '실험실부터', screens: [LAB, HELP], replaces: [{ screens: a, dropped: [] }] });
+    assert.deepEqual(stored(posted).source.replaces[0].dropped, [{ step: 1, reason: '검토자 제외' }]);
+    assert.ok(!JSON.stringify(stored(posted).stepFields ?? []).includes('뺀 칸'));
+  });
+});
+
+test('the usage guide and the agent skill give duru candidate the same replaces input, each original with screens and its dropped steps with step, reason and judged, and the guide says the originals stay out of the list while the new candidate is listed, accepted or discarded', () => {
+  const readme = fs.readFileSync(path.join(import.meta.dirname, '../README.md'), 'utf8');
+  const skill = fs.readFileSync(path.join(import.meta.dirname, '../skills/duru/SKILL.md'), 'utf8');
+  const guide = readme.slice(readme.indexOf('**Candidates that replace others.**'), readme.indexOf('## Review page'));
+  for (const text of [guide, skill]) {
+    const part = text.slice(text.indexOf('`replaces`'));
+    for (const name of ['screens', 'dropped', 'step', 'reason', 'judged: true']) assert.match(part, new RegExp(`[\`"]${name}[\`"]`), name);
+    assert.match(text, /A comment on a screen order takes no `replaces`/);
+  }
+  assert.match(guide, /While the new candidate is listed, accepted or discarded, the candidates it replaces are not\s+listed, even after a `rebuild`/);
+  assert.match(guide, /「원래 순서 N」[^]*「판단」/);
 });
 
 const stepOff = (step: number) => ({ step, on: false });

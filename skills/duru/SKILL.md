@@ -406,6 +406,18 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    link that is broken or needs a condition. If no way joins two of them, post no candidate and say so in the
    reply. Never write a story file or a candidate file yourself; only `duru candidate` writes a candidate. A comment
    on a screen order takes no status and never appears in the task list, so act on it when its line arrives.
+   `duru candidate` also takes a candidate for a comment on a story candidate or for a comment with no target. Such
+   a candidate must name in `replaces` each listed candidate it takes the place of: `{ "screens": [ … ], "dropped":
+   [ { "step", "reason", "judged" }, … ] }`, where `screens` is that candidate's order as listed now, `step` is the
+   number of a step taken out of that order, from 1, `reason` is one line on why it goes, and `judged: true` marks a
+   step you took out on your own judgment rather than because the reviewer asked. A step the reviewer took out with ✕
+   is taken out for you: its number is in `offSteps` of that candidate in `candidates.list` of
+   `GET <review page address>/api/data`. Leave it out of the order, and put that screen back with a `reason` only when a
+   comment asks for it; `dropped`, which may be empty, need not name it. The steps you post without
+   `reason` must be that order with the dropped steps taken out, neighbouring steps of one screen joined into one;
+   a screen you put in carries `reason` as above. When two listed candidates become the same order, post one
+   candidate naming both in `replaces`; if they typed different values into one box, give the value to keep in that
+   step's `inputs`. You may post several candidates for one such comment. The candidates it replaces leave the list. A comment on a screen order takes no `replaces`.
    A comment can also be on several targets or on none. Its line then has `targets`, a list of targets in the shapes
    above, in place of `target`, and `wheres`, the `where` of each target in the same order (`null` for one that has
    none or is no longer found). Answer it once, covering every target it names. With an empty `targets` the reviewer

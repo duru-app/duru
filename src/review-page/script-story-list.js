@@ -7,7 +7,7 @@ const needPath = (use) => `needs/${use}`;
 const candidateName = (key) => state.data.candidates.list.find((c) => c.key === key)?.name ?? state.data.candidates.gone?.[key] ?? key;
 const stepsText = ([first, last]) => (first === last ? `단계 ${first}` : `단계 ${first}–${last}`);
 const byAgent = (c) => c.source.comment !== undefined;
-const AGENT_WORDS = { candidate: '에이전트가 화면 순서 코멘트에 답해 올린 후보', step: '에이전트가 사이에 넣은 화면' };
+const AGENT_WORDS = { candidate: '에이전트가 코멘트에 답해 올린 후보', step: '에이전트가 사이에 넣은 화면' };
 const agentChip = (what) => h('span', { class: 'chip agent', title: `${AGENT_WORDS[what]}입니다`, 'aria-label': AGENT_WORDS[what] }, '에이전트');
 const shortDate = (iso) => new Date(iso).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' });
 
@@ -29,7 +29,8 @@ function commentSource(id, whose) {
   const found = commentRecord(id);
   if (!found) return h('div', { class: 'muted source', title: `${whose} 코멘트를 찾지 못했습니다` }, `코멘트 ${id}`);
   const text = `「${firstLine(found.r.note)}」 · ${found.r.author} · ${shortDate(found.r.date)}`;
-  if (!found.attached) return h('div', { class: 'muted source', title: `${whose} 코멘트입니다. 그 화면 순서의 화면이 맵에서 사라져 화면 목록의 「떨어져 나감」에 있습니다` }, text);
+  const away = found.m.target.candidate !== undefined ? '그 후보가 목록에서 빠져 스토리 목록의' : '그 화면 순서의 화면이 맵에서 사라져 화면 목록의';
+  if (!found.attached) return h('div', { class: 'muted source', title: `${whose} 코멘트입니다. ${away} 「떨어져 나감」에 있습니다` }, text);
   return h('button', { type: 'button', class: 'source comment-source', title: `${whose} 코멘트로 갑니다`, onclick: () => reachComment(found) }, text);
 }
 

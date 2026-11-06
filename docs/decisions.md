@@ -1726,6 +1726,33 @@ Candidates a rule joins write one file, the first one's found order, so the foun
 its record or trace is there. Writing a file for each would only add files and can still be done later; for now the
 limit is written down (the author's call, not yet confirmed by the driver, 2026-11-05).
 
+**A candidate that replaces others carries them in its comment source, each as its listed order with the step
+numbers dropped from it, and the list hides every order such a source names in a candidate file, a story or a
+current discard.**
+The agent names a step by its number in the original order rather than by its screen, because the same screen can
+sit twice in one order, as a second login under another role, and only one of them may go. Keeping the originals in
+the source of the new candidate, rather than writing a record for each original into `discarded/`, makes one file say
+both what was replaced and why, so a story accepted from it keeps that origin, discarding it hides the originals with
+no second record, and the hiding survives a `rebuild` that makes the originals again from records and traces. Being
+told apart by the comment and the orders replaced, rather than by the comment alone as for a screen-order comment,
+lets one comment with no target get a candidate per original and lets the next one through after the first is
+accepted. A comment on a screen order takes no `replaces`: it asks for screens between two ends, and nothing listed
+stands for it (model's decision in #532, not yet confirmed).
+An order an original already holds is refused rather than bringing the original back, because the new candidate would
+then hide itself; taking a replacement back belongs to the undo in #533. Originals that typed different values into one
+box are refused until the agent gives the value, because keeping the last one would let the order of `replaces` choose
+what the story types. Records and stored files are also hidden by their source, so a change to `candidateSkipScreens`
+does not bring an original back; a trace is hidden by its order only, because one test can walk several orders and a
+new path must still be offered (model's decisions in #532, not yet confirmed).
+A step the reviewer took out of an original with ✕ is dropped from the new candidate without the agent naming it, with
+「검토자 제외」 as its reason and no 「판단」 chip, whatever the agent wrote for it. Refusing a candidate that
+left it unnamed told the agent one step per refusal and made it invent a reason for a choice the reviewer made, which
+could also mark the reviewer's step as the agent's judgment. An agent can still put that screen in with a `reason`, like
+any screen it adds: the reason shows on the card and the reviewer takes or discards the candidate. Refusing it was tried
+by screen name, which also refused a later visit to a screen that stays in the order, and telling the two apart by
+position adds a rule for orders that visit one screen twice, so the instruction to agents carries it instead (model's
+decisions in #532, not yet confirmed).
+
 **`rebuild` writes the screen order of each traced test into `tests.json` as `traced`, and the review page makes
 trace candidates from it instead of reading the reports and traces itself.**
 The candidates then change only at `rebuild`, together with the 「지나간 시험」 links read from the same traces, so

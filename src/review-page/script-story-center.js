@@ -202,6 +202,7 @@ function renderStoryCenter() {
       storyErrorLine(),
       sourceView(c.source, '후보가 나온'),
       foundOrder(c),
+      ...replacedOrders(c),
       needsFold(c, `candidate\n${c.key}`),
       c.skipped ? h('div', { class: 'muted skipped-inputs', title: '기록에는 있었지만 이 후보의 단계에 입력값으로 옮기지 못한 입력' }, `옮기지 못한 입력 ${c.skipped}개`) : null,
       ...storyPath(c, c.stepRanges, undefined, byAgent(c) ? c.source.added : [], linePicker(c), (i) => stepOff(c, i)),
@@ -589,6 +590,28 @@ const foundOrder = (c) => {
       h('span', { class: 'found-screen mono' }, screen),
       dropped.has(i + 1) ? h('span', { class: 'chip skip-reason', title: '설정의 candidateSkipScreens 에 적힌 화면이라 후보에서 뺐습니다' }, '설정 규칙') : null))));
 };
+
+const JUDGED = '검토자가 시키지 않았는데 에이전트가 판단해서 뺀 단계입니다';
+
+function toggleReplaced(e, at) {
+  if (e.currentTarget.open) state.replacedOpen.add(at);
+  else state.replacedOpen.delete(at);
+}
+
+const replacedOrders = (c) => (byAgent(c) ? c.source.replaces ?? [] : []).map((r, i) => {
+  const at = `${c.key}\n${i}`;
+  const dropped = new Map(r.dropped.map((d) => [d.step, d]));
+  return h('details', { class: 'found-order replaced-order', open: state.replacedOpen.has(at), ontoggle: (e) => toggleReplaced(e, at) },
+    h('summary', {}, `원래 순서 ${r.screens.length}`),
+    sourceView(r.source, '원래 후보가 나온'),
+    h('ol', {}, r.screens.map((screen, step) => {
+      const d = dropped.get(step + 1);
+      return h('li', { class: d ? 'skipped' : null },
+        h('span', { class: 'found-screen mono' }, screen),
+        d?.judged ? h('span', { class: 'chip judged', title: JUDGED, 'aria-label': JUDGED }, '판단') : null,
+        d ? h('div', { class: 'drop-reason muted', title: '이 단계를 뺀 이유' }, d.reason) : null);
+    })));
+});
 
 const needsFold = (st, key) => h('details', { class: 'story-needs', open: state.storyNeedsOpen, ontoggle: (e) => { state.storyNeedsOpen = e.currentTarget.open; } },
   h('summary', {}, h('span', { class: 'title' }, `사전 조건 ${st.reach.length}`)),
