@@ -1084,11 +1084,14 @@ test('in a browser, 「되돌리기」 leaves a comment already being written on
         await p.click('#center button.back-to-original');
         await p.waitForFunction(() => document.querySelector('#center h3')?.textContent === 'open-help');
         assert.equal(await p.inputValue('#right-dock textarea'), '원래 후보에 쓰던 글');
-        await p.fill('#right-dock textarea', '');
         await bringFixedBack(p);
+        assert.equal(await p.inputValue('#right-dock textarea'), '고친 후보에 쓰던 글');
         await pickCandidate(p, 'publish-document');
         await pickCandidate(p, FIXED_NAME);
         assert.equal(await p.inputValue('#right-dock textarea'), '고친 후보에 쓰던 글');
+        await p.click('#center button.back-to-original');
+        await p.waitForFunction(() => document.querySelector('#center h3')?.textContent === 'open-help');
+        assert.equal(await p.inputValue('#right-dock textarea'), '원래 후보에 쓰던 글');
         assert.deepEqual(errors, []);
       });
     }),
