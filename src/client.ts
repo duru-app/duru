@@ -2873,17 +2873,18 @@ export async function extractClient(config: any) {
       return [{ ...candidate(expr.name), named }];
     });
     const wrapperFn = !tag.includes('.') ? functionBound(element.scope.getBinding(tag)) : null;
-    const jsxProps = (wrapperFn ? (element.get('openingElement.attributes') as NodePath<JSXAttribute>[]) : []).flatMap((a) => {
-      const name = a.node.name?.name as string;
+    const jsxPages = (wrapperFn ? (element.get('openingElement.attributes') as NodePath[]) : []).flatMap((a) => {
+      if (!a.isJSXAttribute() || a.node.value?.type !== 'JSXExpressionContainer' || a.node.name.type !== 'JSXIdentifier') return [];
       const held = a.get('value.expression') as NodePath;
-      if (!a.node.value || a.node.value.type !== 'JSXExpressionContainer' || !held.isJSXElement() || !rendersProp(wrapperFn!, name)) return [];
+      if (!held.isJSXElement() || !rendersProp(wrapperFn!, a.node.name.name)) return [];
       const page = pageOf(held, routesFile);
-      return isPage(page) && page.componentFile ? [{ component: page.component, componentFile: page.componentFile }] : [];
+      return isPage(page) && page.componentFile ? [page] : [];
     });
-    const passed = [...jsxProps.map((c) => ({ ...c, named: true })), ...props.filter((c) => c.named), ...props.filter((c) => !c.named)]
+    const jsxProps = jsxPages.map((p) => ({ component: p.component, componentFile: p.componentFile, named: true }));
+    const passed = [...props.filter((c) => c.named), ...jsxProps, ...props.filter((c) => !c.named)]
       .filter((c) => !constantModuleFiles.has(c.componentFile!) && !apiModuleFiles.has(c.componentFile!))
       .map(({ named, ...c }) => c);
-    const files = ([outer, ...passed].map((c) => c.componentFile).filter(Boolean) as string[]).concat(innerFiles);
+    const files = ([outer, ...passed].map((c) => c.componentFile).filter(Boolean) as string[]).concat(innerFiles, jsxPages.flatMap((p) => p.files));
     const innerPage = innerPageOf(inner);
     if (innerPage) return withFiles(innerPage, files);
     const binding = !tag.includes('.') && element.scope.getBinding(tag);
