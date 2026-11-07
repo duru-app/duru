@@ -568,6 +568,58 @@ test('of a wrapper and the component passed to it, the first whose file is found
   });
 });
 
+test('a wrapper declared in the route file that renders a prop holding JSX makes the component in that JSX the screen, and a prop it does not render, or a wrapper from another file, does not', async () => {
+  const gate = 'const Gate = ({ allowed, element }: { allowed: boolean; element: ReactElement }) => (allowed ? element : <Admin />);\n\nconst Checked';
+  const useGate = '<Gate allowed={memberRole === "ADMIN"} element={<Report />} />';
+  const edits = [
+    [ADMIN_ROUTES, 'const Checked', gate],
+    [ADMIN_ROUTES, '<Checked Page={Report} />', useGate],
+  ];
+  const asComponent = [[ADMIN_ROUTES, '<Checked Page={Report} />', '<Report />']];
+  const plain = await inCopy(asComponent, (copy) => buildFixture(copy));
+  await inCopy(edits, async (copy) => {
+    const map = await buildFixture(copy);
+    const report = screen(map, '/report#Report');
+    assert.deepEqual([report.componentFile, report.sourceFiles], ['screens/Report.ts', ['screens/Report.ts']]);
+    assert.deepEqual(map.screens.map((s) => s.id), plain.screens.map((s) => s.id));
+  });
+  const crumbs = 'const Frame = ({ crumbs, Page }: { crumbs: ReactElement; Page: ComponentType }) => <Page />;\n\nconst Checked';
+  await inCopy([[ADMIN_ROUTES, 'const Checked', crumbs], [ADMIN_ROUTES, '<Checked Page={Report} />', '<Frame crumbs={<Admin />} Page={Report} />']], async (copy) => {
+    assert.ok((await buildFixture(copy)).screens.some((s) => s.id === '/report#Report'));
+  });
+  const unrendered = 'const Frame = ({ crumbs }: { crumbs: ReactElement }) => <section />;\n\nconst Checked';
+  await inCopy([[ADMIN_ROUTES, 'const Checked', unrendered], [ADMIN_ROUTES, '<Checked Page={Report} />', '<Frame crumbs={<Report />} />']], async (copy) => {
+    const report = (await buildFixture(copy)).screens.find((s) => s.path === '/report')!;
+    assert.deepEqual([report.id, report.componentFile], ['/report#Frame', null]);
+  });
+  const imported = [[ADMIN_ROUTES, "import Report from '../screens/Report';", "import Report from '../screens/Report';\nimport Gate from '../components/Banner';"], [ADMIN_ROUTES, '<Checked Page={Report} />', '<Gate element={<Report />} />']];
+  await inCopy(imported, async (copy) => {
+    const report = (await buildFixture(copy)).screens.find((s) => s.path === '/report')!;
+    assert.deepEqual(report.id, '/report#Gate');
+  });
+});
+
+test('a wrapper declared in the route file that renders both a JSX prop and a passed component makes the passed component the screen, keeps the files inside the JSX it passes, and reads an attribute without a value or a spread attribute as before', async () => {
+  const both = 'const Frame = ({ crumbs, Page }: { crumbs: ReactElement; Page: ComponentType }) => <>{crumbs}<Page /></>;\n\nconst Checked';
+  await inCopy([[ADMIN_ROUTES, 'const Checked', both], [ADMIN_ROUTES, '<Checked Page={Report} />', '<Frame crumbs={<Admin />} Page={Report} />']], async (copy) => {
+    const report = (await buildFixture(copy)).screens.find((s) => s.path === '/report')!;
+    assert.deepEqual([report.id, report.componentFile], ['/report#Report', 'screens/Report.ts']);
+  });
+  const banner = "import Report from '../screens/Report';\nimport Banner from '../components/Banner';";
+  const gate = 'const Gate = ({ element }: { element: ReactElement }) => element;\n\nconst Checked';
+  await inCopy([[ADMIN_ROUTES, "import Report from '../screens/Report';", banner], [ADMIN_ROUTES, 'const Checked', gate], [ADMIN_ROUTES, '<Checked Page={Report} />', '<Gate element={<Banner><Report /></Banner>} />']], async (copy) => {
+    const report = screen(await buildFixture(copy), '/report#Report');
+    assert.ok(report.sourceFiles.includes('components/Banner.tsx'), report.sourceFiles.join(', '));
+  });
+  await inCopy([[ADMIN_ROUTES, '<Checked Page={Report} />', '<Checked wide {...{}} Page={Report} />']], async (copy) => {
+    assert.equal(screen(await buildFixture(copy), '/report#Report').componentFile, 'screens/Report.ts');
+  });
+  const viaProps = 'function Gate(props: { ok?: boolean; element: ReactElement }) { return props.ok ? props.element : null; }\n\nconst Checked';
+  await inCopy([[ADMIN_ROUTES, 'const Checked', viaProps], [ADMIN_ROUTES, '<Checked Page={Report} />', '<Gate ok element={<Report />} />']], async (copy) => {
+    assert.equal(screen(await buildFixture(copy), '/report#Report').componentFile, 'screens/Report.ts');
+  });
+});
+
 test('a route whose element wraps the screen as a child, through Suspense, a guard, a fragment, a condition or several wrapping calls, is named after the child, with the files of the wrappers and the components passed to them among its sources', async () => {
   const plain = await buildFixture();
   const routes = 'client/src/Routes.tsx';
