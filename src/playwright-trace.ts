@@ -27,6 +27,7 @@ export interface WalkStep {
   method?: string;
   box?: StepInput['box'];
   value?: string;
+  secret?: true;
   checked?: boolean;
   unread?: 'box';
   selector?: string;
@@ -76,6 +77,7 @@ const BOX_LOCATORS: { word: (typeof BOX_WORDS)[number]; selector: RegExp; locato
   { word: 'testId', selector: new RegExp(`^internal:testid=\\[data-testid=${QUOTED}[is]?\\](?: >> nth=(\\d+))?$`), locator: (text) => `getByTestId(${JSON.stringify(text)})` },
 ];
 const VALUE_WRITES = new Set(['type', 'selectOption', 'check', 'uncheck', 'setInputFiles']);
+const SECRET_BOX = /password|passwd|pwd|secret|token|비밀번호|암호/i;
 const NAVIGATIONS = new Set(['goto', 'reload', 'goBack', 'goForward']);
 const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const NOT_SENT_BY_THE_TEST = /^(text\/html|application\/xhtml\+xml|text\/css|image\/|font\/|application\/(x-)?font|application\/vnd\.ms-fontobject|(text|application)\/(x-)?(javascript|ecmascript)|application\/wasm)/i;
@@ -101,9 +103,11 @@ function boxOf(selector: unknown): StepInput['box'] | null {
   return null;
 }
 
+const namesSecret = (selector: unknown) => typeof selector === 'string' && SECRET_BOX.test(selector);
+
 function fillOf(params: any): StepInput | 'skipped' {
   const value = params?.value;
-  if (typeof value !== 'string' || !value.trim()) return 'skipped';
+  if (typeof value !== 'string' || !value.trim() || namesSecret(params.selector)) return 'skipped';
   const box = boxOf(params.selector);
   return box ? { box, value } : 'skipped';
 }
@@ -123,8 +127,10 @@ function walkStepOf(action: any, kind: WalkKind, failed: boolean): Omit<WalkStep
   const { method, params } = action;
   const selector = typeof params?.selector === 'string' ? params.selector : undefined;
   const box = kind === 'write' ? boxOf(selector) : null;
-  const written = kind !== 'write' ? {} : box ? { box } : { unread: 'box' as const, ...(selector && { selector }) };
-  return { kind, method, ...written, ...(kind === 'write' && writtenOf(method, params)), ...(failed && { failed: true as const }) };
+  const found = kind !== 'write' ? {} : box ? { box } : { unread: 'box' as const, ...(selector && { selector }) };
+  const written = kind !== 'write' ? {} : writtenOf(method, params);
+  const kept = written.value && namesSecret(selector) ? { secret: true as const } : written;
+  return { kind, method, ...found, ...kept, ...(failed && { failed: true as const }) };
 }
 
 const withoutHash = (url: string) => url.split('#')[0];

@@ -76,6 +76,22 @@ test('in a browser, 「단계」 on a screen\'s test opens, in order, what the t
   });
 });
 
+test('in a browser, a write into a box whose value duru did not keep because the box names a secret shows 「숨김」 in place of the value', { skip: browserMissing }, async () => {
+  await withSteps(async (p) => {
+    const row = testLine(p, 'lists the documents on home');
+    await row.locator('.steps-toggle').click();
+    assert.deepEqual((await lines(foldOf(row))).slice(-2), ['넣기 /home 라벨 「Password」 숨김', '넣기 /home 찾은 상자를 읽지 못함 숨김']);
+    assert.equal(await foldOf(row).locator('.step-secret').first().getAttribute('title'), '비밀번호 · 비밀 값 · 토큰을 넣는 상자라 넣은 값을 적지 않았습니다');
+  }, changeData((data) => {
+    for (const runs of Object.values(data.testSteps)) {
+      runs.chromium?.push(
+        { kind: 'write', method: 'fill', box: { label: 'Password' }, secret: true, path: '/home', screen: '/home#Home' },
+        { kind: 'write', method: 'fill', unread: 'box', selector: '#pwd', secret: true, path: '/home', screen: '/home#Home' },
+      );
+    }
+  }));
+});
+
 test('in a browser, a test that ran in two projects shows the steps of its own project first and the other one\'s on its chip, and 「trace」 opens the run whose steps are shown', { skip: browserMissing }, async () => {
   await withSteps(async (p) => {
     const [chromium, firefox] = [testLine(p, 'fills the boxes on home').first(), testLine(p, 'fills the boxes on home').nth(1)];
