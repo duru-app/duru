@@ -5528,7 +5528,8 @@ sees at a glance whether anyone has picked a comment up. The server is the only 
 reaches an agent: `duru wait` connects to `/api/events?unanswered`, and a Claude Code session gets a message through
 its socket. It keeps the taken comments in memory, because a restart ends those connections and `duru wait` brings
 every comment without a reply again; the state describes this run, so nothing goes in the marks folder that reviewers
-commit. A session that stops without replying leaves 「응답 중」 until the review restarts or another `duru wait` runs.
+commit. A session that stops without replying leaves 「응답 중」 until the comment gets a reply or the review restarts; another
+`duru wait` does not change the chip.
 Compared:
 - Storing the taken comments in the marks folder: they would survive a restart but go into git and say an agent is
   working on something no running agent holds.
