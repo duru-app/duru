@@ -118,6 +118,8 @@ export function routeRank(routePath: string) {
 
 export const isCatchAll = (routePath: string) => /^\/?\*$/.test(routePath);
 
+export const joinRoutePath = (outer: string, routePath: string) => (routePath.startsWith('/') ? routePath : `${outer}/${routePath}`.replace(/\/{2,}/g, '/'));
+
 export const fillPath = (routePath: string, values: Record<string, unknown>) => fill(pathParts(routePath), values);
 
 const isQuery = (name: string) => name.length > 1 && name.startsWith('?');

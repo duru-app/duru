@@ -2192,7 +2192,7 @@ test('paths in moves that match no route are listed, and each move joins every s
 });
 
 const MOVE = { from: '/signin', to: '/home', reason: '로그인 뒤' };
-for (const moves of [MOVE, { '/signin': '/home' }, [{ ...MOVE, from: 'signin' }], [{ ...MOVE, to: undefined }], [{ ...MOVE, reason: '' }], [{ ...MOVE, reason: ' ' }], [{ ...MOVE, reason: '로그인 뒤\n저장' }], [{ ...MOVE, via: 'reload' }]]) {
+for (const moves of [MOVE, { '/signin': '/home' }, [{ ...MOVE, from: '/sign in' }], [{ ...MOVE, to: undefined }], [{ ...MOVE, reason: '' }], [{ ...MOVE, reason: ' ' }], [{ ...MOVE, reason: '로그인 뒤\n저장' }], [{ ...MOVE, via: 'reload' }]]) {
   test(`moves ${JSON.stringify(moves)} is rejected`, async () => {
     await assert.rejects(
       buildCopy((rewrite) => rewrite('config.json', (src) => JSON.stringify({ ...JSON.parse(src), moves }))),

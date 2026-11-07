@@ -137,6 +137,19 @@ test('a first step on a `*` route says that duru does not know which address to 
   });
 });
 
+test('a step whose route path the map keeps relative says that duru does not know the address it goes on from, in place of the open and arrival lines', () => {
+  withCopy((run, copy) => {
+    run('rebuild');
+    const mapFile = path.join(copy, 'out/map.json');
+    const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+    map.screens.find((s: any) => s.id === '/home#Home').path = 'home';
+    fs.writeFileSync(mapFile, JSON.stringify(map));
+    const story = section(run('story', 'change-settings').stdout, 'change-settings');
+    assert.match(story, /^ {5}- open: not written, the route path `home` at Routes\.js:\d+ goes on from the address of the route that draws it, which duru does not put in front$/m);
+    assert.match(story, /^ {5}- arrives: not written, the route path `home` at Routes\.js:\d+ goes on from the address of the route that draws it, which duru does not put in front$/m);
+  });
+});
+
 test('a story ID that is not there, a story file that cannot be read and a map from an older duru end with 1 and one line on standard error, and nothing on standard output', () => {
   withCopy((run, copy) => {
     run('rebuild');
