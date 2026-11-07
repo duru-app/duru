@@ -2872,7 +2872,15 @@ export async function extractClient(config: any) {
       if (expr?.type !== 'Identifier' || !(named || /^[A-Z].*[a-z]/.test(expr.name))) return [];
       return [{ ...candidate(expr.name), named }];
     });
-    const passed = [...props.filter((c) => c.named), ...props.filter((c) => !c.named)]
+    const wrapperFn = !tag.includes('.') ? functionBound(element.scope.getBinding(tag)) : null;
+    const jsxProps = (wrapperFn ? (element.get('openingElement.attributes') as NodePath<JSXAttribute>[]) : []).flatMap((a) => {
+      const name = a.node.name?.name as string;
+      const held = a.get('value.expression') as NodePath;
+      if (!a.node.value || a.node.value.type !== 'JSXExpressionContainer' || !held.isJSXElement() || !rendersProp(wrapperFn!, name)) return [];
+      const page = pageOf(held, routesFile);
+      return isPage(page) && page.componentFile ? [{ component: page.component, componentFile: page.componentFile }] : [];
+    });
+    const passed = [...jsxProps.map((c) => ({ ...c, named: true })), ...props.filter((c) => c.named), ...props.filter((c) => !c.named)]
       .filter((c) => !constantModuleFiles.has(c.componentFile!) && !apiModuleFiles.has(c.componentFile!))
       .map(({ named, ...c }) => c);
     const files = ([outer, ...passed].map((c) => c.componentFile).filter(Boolean) as string[]).concat(innerFiles);
@@ -2882,6 +2890,22 @@ export async function extractClient(config: any) {
     const declaredHere = Boolean(binding) && (binding as Binding).kind !== 'module';
     const page = [...(followed ? [] : [outer]), ...passed].find((c) => c.componentFile) ?? (declaredHere ? passed[0] : null) ?? inner[0] ?? outer;
     return withFiles(page, files);
+  }
+
+  function functionBound(binding: Binding | undefined) {
+    if (!binding || binding.kind === 'module') return null;
+    const fn = binding.path.isVariableDeclarator() ? binding.path.get('init') : binding.path;
+    return fn.isFunction() ? (fn as NodePath<ArrowFunctionExpression | FunctionExpression | FunctionDeclaration>) : null;
+  }
+
+  function rendersProp(fn: NodePath<ArrowFunctionExpression | FunctionExpression | FunctionDeclaration>, name: string) {
+    const [param] = fn.get('params') as NodePath[];
+    if (!param) return false;
+    if (param.isObjectPattern()) {
+      return param.get('properties').some((q) => q.isObjectProperty() && !q.node.computed && ((q.node.key.type === 'Identifier' && q.node.key.name === name) || (q.node.key.type === 'StringLiteral' && q.node.key.value === name)) && q.get('value').isIdentifier() && Boolean(fn.scope.getBinding((q.node.value as Identifier).name)?.referenced));
+    }
+    if (!param.isIdentifier()) return false;
+    return Boolean(fn.scope.getBinding(param.node.name)?.referencePaths.some((r) => r.parentPath?.isMemberExpression() && r.parentPath.node.object === r.node && !r.parentPath.node.computed && r.parentPath.get('property').isIdentifier({ name })));
   }
 
   function fillOuterAddresses(sourced: { s: { path: string; routeFile: string }; outerFill: OuterFill; files: string[] }[]) {

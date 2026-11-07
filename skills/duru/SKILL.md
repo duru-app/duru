@@ -56,7 +56,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
 - The route shapes duru reads: `component={Home}`, `element={<Home />}`, `element={wrap(<Home />)}`,
   `element={<Suspense><Home /></Suspense>}`, where the screen is the element inside the wrapping ones, and
   `element={<Wrapper Page={Signer} />}`, where the screen is the first of the wrapper and the passed components whose
-  file is found, or the passed component when the wrapper is declared in the route file itself,
+  file is found, or the passed component when the wrapper is declared in the route file itself. A wrapper declared there also
+  passes a screen written as JSX, `element={<Gate element={<Home />} />}`, when it renders that prop,
   `render={() => <Home />}`, a render function that returns one element, read as `element=` reads it, and
   `<Route path=…><Home /></Route>`, a child element read the same way. A route whose render function or children
   hold other routes only wraps them. A route whose element is `element={<Navigate to=… />}` is a redirect, not a

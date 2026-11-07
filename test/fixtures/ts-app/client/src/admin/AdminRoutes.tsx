@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react';
+import type { ComponentType, ReactElement } from 'react';
 import { Route, Routes } from 'react-router-dom';
 import Option from '../_define/Option';
 import type { Settings } from '../store/settings';
