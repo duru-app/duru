@@ -423,11 +423,15 @@ export interface StoryBrief {
 
 const ROUTE_END = '(?:\\/(?=$))?$';
 
-const catchAllAt = (screen: any) => `not written, the route path \`${screen.path}\` at ${screen.routeFile}:${screen.line}`;
+const notWrittenAt = (screen: any) => `not written, the route path \`${screen.path}\` at ${screen.routeFile}:${screen.line}`;
+const goesOn = (screen: any) => (screen.path.startsWith('/') || isCatchAll(screen.path) || !readableRoute(screen.path) ? null
+  : `${notWrittenAt(screen)} goes on from the address of the route that draws it, which duru does not put in front`);
 
 function arrivalLine(screen: any, base: string) {
   if (!readableRoute(screen.path)) return `not written, the route path was not read at ${screen.routeFile}:${screen.line}`;
-  if (isCatchAll(screen.path)) return `${catchAllAt(screen)} fits any address, so a check of the address could not fail`;
+  if (isCatchAll(screen.path)) return `${notWrittenAt(screen)} fits any address, so a check of the address could not fail`;
+  const relative = goesOn(screen);
+  if (relative) return relative;
   const { source, flags } = routePattern(screen.path);
   const body = source.slice(1, -ROUTE_END.length).replace(/\[\^([^\]]*)\]\+\?/g, '[^$1?#]+?');
   return `\`await expect(page).toHaveURL(/^[a-z]+:\\/\\/[^\\/]+${base}${body}\\/?(?:[?#].*)?$/${flags});\``;
@@ -441,7 +445,7 @@ function appBase(appUrl: string | null) {
 function briefLines(step: any, first: boolean, brief: StoryBrief, indent: string) {
   const screen = brief.screensById.get(step.screen);
   if (!screen) return [`${indent}- arrives: none, the screen is not on the map`];
-  const address = isCatchAll(screen.path) ? `${catchAllAt(screen)} takes any address no other route takes, so duru does not know which one to open` : `${(brief.appUrl ?? '').replace(/\/+$/, '')}${screen.path}`;
+  const address = isCatchAll(screen.path) ? `${notWrittenAt(screen)} takes any address no other route takes, so duru does not know which one to open` : goesOn(screen) ?? `${(brief.appUrl ?? '').replace(/\/+$/, '')}${screen.path}`;
   const open = first ? [`${indent}- open: ${address}`] : [];
   return [...open, `${indent}- arrives: ${arrivalLine(screen, brief.base)}`];
 }

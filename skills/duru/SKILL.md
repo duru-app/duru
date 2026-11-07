@@ -63,9 +63,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   screen. The redirect element names come from
   `redirectElements` in the config, default `Redirect` and `Navigate`; a config that lists them uses only the
   names listed. A route file that another screen draws, whose paths start with the address that screen's route
-  matched (`${match.url}/…`, `useRouteMatch().path`), gets that screen's path in front; a nested route written with
-  a relative path shows on the map with that relative path. A route made for each item of a table, an object or a
-  list, in a route file the config's `routeTables` names, gives screens for its items; the conditions written in an item (such as
+  matched (`${match.url}/…`, `useRouteMatch().path`), gets that screen's path in front. A route made for each item
+  of a table, an object or a list, in a route file the config's `routeTables` names, gives screens for its items; the conditions written in an item (such as
   `isHidden`) are not read, so such a screen shows none of them.
 - A settings page that picks its tab by the address: when one route draws a page that shows a different tab at each
   address under it (SigNoz's `/settings` and its `RouteTab`), those tabs have no screen and the links to them reach
@@ -616,10 +615,11 @@ When the user names a story, or you have to write a test for a story the reviewe
 `duru story <config> <story ID>` after `duru rebuild <config>`. Its standard output is the text of one story, in the
 shape of a story under `# Stories` in `duru tasks`, without the `marks` lines and with these lines added under each
 step: `open` (the first step only), the address to open, with a route variable left as it is in the route path, put
-the app address in front when the config has `appUrl`, or, on a `*` route, that duru does not know which address to
-open, so take the address the test means to land on that screen from the source; `arrives`, a `toHaveURL` line with a regular expression that matches the whole address of the step's screen, after the path and hash of `appUrl` if it has any, to put after the step, or why
-duru could not write it (the route path was not read, the route is `*` and any address would pass, or the screen is
-not on the map); and under a link
+the app address in front when the config has `appUrl`, or, on a `*` route or a route whose path on the map does not
+start with `/`, that duru does not know which address to open, so take the address the test means to land on that
+screen from the source; `arrives`, a `toHaveURL` line with a regular expression that matches the whole address of the step's screen, after the path and hash of `appUrl` if it has any, to put after the step, or why
+duru could not write it (the route path was not read, the route is `*` and any address would pass, the path goes on
+from the address of a route duru does not put in front, or the screen is not on the map); and under a link
 `what to press: duru does not know` (only under a link that exists in the source: not under `no link`, under `not judged, a screen is not on the map`, or under a move written in the config's `moves`), because duru gives the link's verdict and where it is written but not which
 element to press, so find that element in the source it names; and under an `input` line, `fill`, the Playwright
 code that finds the box with all its words, each matched exactly, and puts the value in, which duru did not try on
