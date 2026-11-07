@@ -5641,6 +5641,20 @@ Compared:
 - Joining only where addresses are read (trace matching, story lines, moves): each would need the parent paths, which
   the map does not keep.
 
+**A value a traced test writes into a box whose selector names a password, a secret or a token is kept neither in
+`tests.json` nor in a candidate; the step stays, with `"secret": true`.**
+A private app's sign-in test left its password in `tests.json` on every `rebuild`, and the same box found by its label
+would have carried it into `candidates/`, which is kept in git. The words are looked for in the whole selector, so a
+CSS, role or chained selector counts as well as the placeholder, label or test ID a story box is named by. An empty
+value is kept, since it only says the box was emptied. The step stays so the walk still shows that the test wrote
+there.
+Compared:
+- Reading the box's `type` from the page snapshot the trace keeps before the action: it would catch a password box
+  whatever its selector says, but duru reads no snapshot's page content anywhere else, and a token typed into a text
+  box would still be kept.
+- Keeping no typed value at all: nothing could leak, but a candidate would lose the inputs a story is written with,
+  and 「단계」 the values that tell what the test did.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
