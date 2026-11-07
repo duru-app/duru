@@ -202,7 +202,7 @@ client with example results and a config to start from.
   that function is given, written as the position of the value counted from 0 followed by the keys inside it. `body`
   is the place of the request body and may be left out; without it duru does not check the input keys of the screens.
   An `import` starting with `.` is a path from `srcRoot`. duru runs the listed files with that function replaced by a
-  recorder, calls every exported function, every method of every exported object and every static method of every
+  recorder, and what else its file exports stays as it is, calls every exported function, every method of every exported object and every static method of every
   exported class once with fake values, and puts the method and address of each request on the map as that function's
   or method's call, with the prefix the app adds. A piece of an address that comes from a fake value is written `{?}`.
   Requests the listed files send with the global `fetch` are recorded too, so API code that sends only through
@@ -561,6 +561,10 @@ listing the places whose value the source does not show in full.
   second). Its calls are missing from the map. A method that sends no request is not printed.
 - `calledApiModules <file> did not run: <file>:<line>: <error>` — a listed file that failed to run, so none of
   its functions or methods are on the map.
+- `requestFunction <import> did not run: <file>:<line>: <error>; everything else that file exports does nothing, so an address built by it shows as {?}`
+  — the file `requestFunction` names exports other values too, and it stopped when it was run, so those values were
+  replaced along with the function. Name a function in another file that the requests pass through, or give what the
+  file needs in `constantStubs` (`requestFileError`).
 - `calledApiModules <file> recorded no request; without requestFunction only requests sent with fetch or by moving the browser are recorded`
   — with `requestFunction` left out, a listed file none of whose methods sent a request with `fetch` or by moving
   the browser. Its API code may send through a function or object that `requestFunction` should name, or its
