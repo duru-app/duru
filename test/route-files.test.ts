@@ -8,6 +8,7 @@ import type { AddressInfo } from 'node:net';
 import { chromium } from 'playwright-core';
 import type { Page } from 'playwright-core';
 import { loadConfig } from '../src/config.ts';
+import { loadConstants } from '../src/constants.ts';
 import { buildMap } from '../src/map.ts';
 import type { ScreenMap } from '../src/map.ts';
 import { startReviewServer } from '../src/review.ts';
@@ -469,9 +470,12 @@ test('in a browser, the 라우트 line of a screen and the route step of a story
   }), { configPatch: { storiesDir: 'example-stories' } });
 });
 
-test('a constants entry naming a file that does not exist stops the run with an error that names the entry and the path', async () => {
-  await withCopy(({ configFile, setConfig }) => {
-    setConfig({ constants: { Gadget: 'nowhere/Gadget.js' }, routeConstant: undefined });
-    assert.throws(() => loadConfig(configFile), /^Error: constants\.Gadget: file nowhere\/Gadget\.js does not exist, but each constants entry must be a file as a path from srcRoot, such as "_define\/Option\.js"$/);
-  });
+test('a constants entry naming a file that does not exist, or a folder, stops the run with an error that names the entry and the path', async () => {
+  for (const missing of ['nowhere/Gadget.js', 'components']) {
+    await withCopy(async ({ configFile, setConfig }) => {
+      setConfig({ constants: { Gadget: missing }, routeConstant: undefined });
+      const text = missing.replace(/[/.]/g, '\\$&');
+      await assert.rejects(() => loadConstants(loadConfig(configFile)), new RegExp(`^Error: constants\\.Gadget: there is no file ${text} in srcRoot, but each constants entry must be a file as a path from srcRoot, such as "_define/Option\\.js"$`));
+    });
+  }
 });
