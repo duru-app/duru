@@ -379,6 +379,9 @@ export async function loadConstants(config: ConstantsConfig, resolve: ImportReso
   const loaded: Record<string, unknown> = {};
   try {
     for (const [name, rel] of Object.entries(config.constants)) {
+      if (!fs.statSync(path.join(config.srcRoot, rel), { throwIfNoEntry: false })?.isFile()) {
+        throw new Error(`constants.${name}: there is no file ${rel} in srcRoot, but each constants entry must be a file as a path from srcRoot, such as "_define/Option.js"`);
+      }
       const rewritten = copier.copy(path.join(config.srcRoot, rel));
       copier.finish();
       let mod;
