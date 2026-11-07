@@ -97,6 +97,27 @@ export const withoutPatterns = (routePath: string) => routePath.replace(TOKEN, (
 
 export const readableRoute = (routePath: string) => pathParts(routePath).every((p) => !(isVariable(p) ? p.pattern?.includes(UNKNOWN) : p.includes(UNKNOWN)));
 
+export function explodedPaths(routePath: string): string[] {
+  const [first, ...rest] = routePath.split('/');
+  const required = first.replace(/\?$/, '');
+  const optional = first !== required;
+  if (!rest.length) return optional ? [required, ''] : [required];
+  const tails = explodedPaths(rest.join('/'));
+  const paths = [...tails.map((t) => (t === '' ? required : `${required}/${t}`)), ...(optional ? tails : [])];
+  return paths.map((p) => (routePath.startsWith('/') && p === '' ? '/' : p));
+}
+
+const VARIABLE_ONLY = /^(?::[\w-]+(?:\([^/]*\))?|\([^/]*\))[+*]?$/;
+
+// React Router 6 의 점수에, 6 에는 없는 React Router 5 의 정규식이 붙은 동적 세그먼트(:id(\d+))와 이름 없는 그룹도 동적 세그먼트로 센다.
+export function routeRank(routePath: string) {
+  const segments = routePath.split('/');
+  const splat = segments.includes('*');
+  return segments.filter((s) => s !== '*').reduce((score, s) => score + (VARIABLE_ONLY.test(s) ? 3 : s === '' ? 1 : 10), segments.length + (splat ? -2 : 0));
+}
+
+export const isCatchAll = (routePath: string) => /^\/?\*$/.test(routePath);
+
 export const fillPath = (routePath: string, values: Record<string, unknown>) => fill(pathParts(routePath), values);
 
 const isQuery = (name: string) => name.length > 1 && name.startsWith('?');

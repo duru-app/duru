@@ -1741,8 +1741,9 @@ listening for new saves when the review ends.
 
 `story <config> <story ID>` prints one story as text for a coding agent, marked or not. It has the lines of a story
 under `# Stories` in the task list, without `marks`, and under each step: `open`, on the first step, the route path
-(after `appUrl` when the config has it) with a route variable left as it is; `arrives`, a `toHaveURL` line matching the whole address for the
-step's screen, or the reason when its route path was not read or it is not on the map; `what to press`, under a
+(after `appUrl` when the config has it) with a route variable left as it is, or, on a `*` route, that duru does not know
+which address to open; `arrives`, a `toHaveURL` line matching the whole address for the
+step's screen, or the reason when its route path was not read, it is `*` and fits any address, or it is not on the map; `what to press`, under a
 link, saying duru does not know which element to press (only under a link that exists in the source, not under `no link`, a screen not on the map, or a move written in `moves`); and `fill`, under each `input` line,
 Playwright code that finds the box with every word written for it, each matched exactly, takes the Nth of them for
 `number N`, and puts the value in, such as

@@ -2775,10 +2775,9 @@ pattern takes, both when a link address is matched to a route and when a browser
 address is matched to a screen.** Before, the `{?}` went into the regular expression as the pattern, so the variable
 took only `}` or `{}`, and an address finding its screen skipped every route with `{?}` anywhere in it. A route with
 `{?}` in its fixed text (`/{?}/settings`) still takes no address, and one with `{?}` in a group without a name
-(`/lab({?})`) still takes no browser test address. A browser test address goes to the first route in the map's
-screen list that fits the whole address. That list joins the route files in order, and a React Router v5 `<Switch>`
-renders a route without `exact` when only the start of the address fits, so the screen can differ from the one the
-app renders. The stand-in is not the real pattern either, so such a route can take an address the app sends to
+(`/lab({?})`) still takes no browser test address. A browser test address goes to the route that fits the whole
+address and ranks highest, written below. A React Router v5 `<Switch>` renders a route without `exact` when only the
+start of the address fits, so the screen can differ from the one the app renders. The stand-in is not the real pattern either, so such a route can take an address the app sends to
 another route, or miss one the app renders on it.
 Alternatives compared:
 - Leaving such routes unmatched: no link address and no browser test address ever reaches the screen.
@@ -5564,6 +5563,34 @@ Compared:
 - One verifier even on a new feature: cheaper on those pull requests, with fewer chances to catch a problem.
 - Telling the cause of a failure from its error text: a crash caused by the pull request read as "could not run", and
   rewording a message would change the decision with nothing to notice it.
+
+**A browser test address, a visit record's address and an address the review page records go to the route that fits
+the whole address and that React Router 6 ranks highest, not to the first one in the map's screen list.** The rank is
+the one the link reader gives a `<Routes>` path: a written segment over a variable, a variable over a splat, `*` last,
+an optional segment ranking as the path with it or without it, and the route listed first between equal ranks. A
+React Router 5 variable with a pattern (`:id(\d+)`) or a group without a name ranks as a variable. The map's screen
+list joins the route files and the `<Routes>` of each file in the order they are written, so a signed-out `<Routes>`
+holding only `*`, written above the signed-in one, took every address a trace showed, and every request and story
+candidate step with it. `duru story` writes no `open` address and no `arrives` check for a `*` route, since its
+pattern fits any address.
+Measured on a private app (three traced runs, against main): every address the traces showed went to `*`. Now the
+detail screen's address goes to the detail screen in all three runs and the publish screen's to the publish screen
+in the one run that opens it; the addresses of child routes written with a relative path still go to `*`, as they fit
+no route on the map. Calls tied to a screen only by a trace went 23 → 15, 11 → 9 and 11 → 8: each call that left is
+one the source already ties to the screen the trace now names. The story candidate went from one `*` step to 5, 7 and
+4 steps.
+Known limit: two `<Routes>` that the app picks between with a condition are ranked as one. The private app draws its
+sign-in screen from the signed-out `*` at `/signin`, and `/signin` now goes to the signed-in `/:workspaceId` layout,
+with the sign-in request; which of the two is drawn depends on whether the test is signed in, which the map does not
+hold. A React Router 5 `<Switch>` that lists `/:id` with `exact` before `/about` draws `/:id` for `/about`, where duru
+now takes `/about`.
+Compared:
+- The first route that fits, as before: right for a `<Switch>`, but in a map that joins several route trees the order
+  says nothing about which tree draws the address.
+- Taking `*` only when no other route fits: the same for the private app, but `/:slug` written before `/about` still
+  took `/about`, and React Router 6 ranks every route of a `<Routes>`, not only `*`.
+- Following the route tree, as the link reader does (first fit in a `<Switch>`, rank in a `<Routes>`): the map does
+  not keep the route tree, and two trees the app picks between with a condition still could not be told apart.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 

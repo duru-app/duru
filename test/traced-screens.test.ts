@@ -101,6 +101,14 @@ test('a request is tied to the screen the page showed when it was sent, and a re
     assert.deepEqual(map.calls[0].tracedScreens[0].tests, [{ test: 'moves from a to b', file: 'test/flow.spec.ts', line: 1, project: 'chromium' }]);
   }));
 
+test('a request sent on an address that a route with a variable fits is tied to that screen, not to a `*` route written before it', () =>
+  inTempDir((dir) => {
+    const map = { ...mapOf(), screens: [screen('*#Gate', '*'), screen('/:org/a#A', '/:org/a')] };
+    const trace = traceFile(dir, 'org-a', [{ goto: '/o1/a', at: 1 }], [{ url: '/api/x', at: 5 }]);
+    assert.deepEqual(addTracedScreens(map, [sentOf(trace, 'opens a in an org')]), { calls: 1, screens: 1 });
+    assert.deepEqual(tracedOf(map), { 'POST:/api/x': ['/:org/a#A ← opens a in an org'] });
+  }));
+
 test('a call the source already ties to that screen gets no traced screen, and nor does a call sent at app start', () =>
   inTempDir((dir) => {
     const map = mapOf(['/a#A'], ['GET:/api/me']);

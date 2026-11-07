@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { callFinder, screenFinder } from '../src/address-match.ts';
+import { callFinder, screenFinder, screenRoutes } from '../src/address-match.ts';
 
 const map = {
   screens: [
@@ -20,7 +20,7 @@ test('an address finds its screen without its query and hash, with or without th
   assert.equal(screenAt('/home#top'), 'home');
 });
 
-test('a value in the address finds the screen of its route, and the first route that fits wins', () => {
+test('a value in the address finds the screen of its route, and of routes that rank alike the one written first wins', () => {
   assert.equal(screenAt('http://127.0.0.1:4598/document/42?mode=edit'), 'detail');
   assert.equal(screenAt('/document/draft'), 'list');
 });
@@ -42,13 +42,42 @@ test('a variable whose pattern could not be read takes any one segment', () => {
   assert.equal(screenAt('/a/b/drafts'), null);
 });
 
-test('a route with a variable whose pattern could not be read takes an address in map order, as the first route that fits wins in the app', () => {
-  const at = screenFinder({ screens: [{ id: 'login', path: '/login' }, { id: 'team', path: '/:team({?})' }, { id: 'any', path: '*' }] });
+test('of the routes that fit an address, the one React Router ranks highest wins wherever it is written: a written segment over a variable, a variable over a splat, and `*` last', () => {
+  const at = screenFinder({ screens: [
+    { id: 'gate', path: '*' },
+    { id: 'slug', path: '/:slug' },
+    { id: 'about', path: '/about' },
+    { id: 'notes', path: '/team/*' },
+    { id: 'member', path: '/team/:member' },
+    { id: 'detail', path: '/:org/detail/:id' },
+  ] });
+  assert.equal(at('/about'), 'about');
+  assert.equal(at('/acme'), 'slug');
+  assert.equal(at('/team/ann'), 'member');
+  assert.equal(at('/team/ann/notes'), 'notes');
+  assert.equal(at('/o1/detail/9'), 'detail');
+  assert.equal(at('/a/b'), 'gate');
+});
+
+test('a path with an optional segment ranks as the path written with the segment or without it, whichever fits the address', () => {
+  const at = screenFinder({ screens: [{ id: 'doc', path: '/doc/:id?' }, { id: 'docs', path: '/doc' }, { id: 'new', path: '/doc/new' }] });
+  assert.equal(at('/doc'), 'doc');
+  assert.equal(at('/doc/7'), 'doc');
+  assert.equal(at('/doc/new'), 'new');
+});
+
+test('a variable whose pattern could not be read ranks as a variable', () => {
+  const at = screenFinder({ screens: [{ id: 'team', path: '/:team({?})' }, { id: 'login', path: '/login' }, { id: 'any', path: '*' }] });
   assert.equal(at('/login'), 'login');
   assert.equal(at('/myteam'), 'team');
   assert.equal(at('/a/b'), 'any');
   const behind = screenFinder({ screens: [{ id: 'any', path: '*' }, { id: 'drafts', path: '/team/:team({?})/drafts' }] });
-  assert.equal(behind('/team/myteam/drafts'), 'any');
+  assert.equal(behind('/team/myteam/drafts'), 'drafts');
+});
+
+test('the routes the review page matches an address against come in the order an address takes them', () => {
+  const routes = screenRoutes({ screens: [{ id: 'gate', path: '*' }, { id: 'slug', path: '/:slug' }, { id: 'about', path: '/about' }, { id: 'doc', path: '/doc/:id?' }] });
+  assert.deepEqual(routes.map((r) => r.id), ['doc', 'about', 'doc', 'slug', 'gate']);
 });
 
 test('a group without a name whose pattern could not be read finds nothing, as a path that was not read', () => {
