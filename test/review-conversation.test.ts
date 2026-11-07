@@ -102,6 +102,7 @@ test('in a browser, the comment form is a rounded card in the colors of each the
         for (const colorScheme of ['light', 'dark'] as const) {
           await p.emulateMedia({ colorScheme });
           const { card, text, field, save } = themes[colorScheme];
+          assert.deepEqual(await style('#right-dock', 'background-color', 'border-top-width'), ['rgba(0, 0, 0, 0)', '0px']);
           assert.deepEqual(await style('#right-dock > .mark-form', 'background-color', 'border-top-left-radius', 'color'), [card, '16px', text]);
           assert.deepEqual(await style('#right-dock textarea', 'border-top-left-radius', 'resize', 'background-color', 'color'), ['8px', 'none', field, text]);
           assert.deepEqual(await style('#right-dock button.save', 'background-color', 'border-top-left-radius'), [save, '999px']);
