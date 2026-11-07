@@ -87,6 +87,7 @@ export const isPlainObject = (v: unknown): boolean => typeof v === 'object' && v
 export const compare = <T>(a: T, b: T) => (a < b ? -1 : a > b ? 1 : 0);
 const isOneLine = (v: unknown) => typeof v === 'string' && /\S/.test(v) && !/[\r\n]/.test(v);
 const isRoutePath = (v: unknown) => isText(v) && v.startsWith('/');
+const isMapPath = (v: unknown) => isText(v) && !/\s/.test(v);
 const isWebAddress = (v: unknown) => isText(v) && /^https?:\/\/[^/]/.test(v);
 const MOVE_KEYS = ['from', 'to', 'reason'];
 const CALL_LINK_KEYS = ['from', 'to', 'note'];
@@ -255,7 +256,7 @@ export function loadConfig(configPath: string) {
   }
   const caseKinds: Record<string, CaseKind> = Object.fromEntries(Object.entries<any>(rawKinds).map(([kind, entry]) => [kind, caseKind(kind, entry)]));
   const moves = raw.moves ?? [];
-  const isMove = (m: any) => isPlainObject(m) && Object.keys(m).every((k) => MOVE_KEYS.includes(k)) && isRoutePath(m.from) && isRoutePath(m.to) && isOneLine(m.reason);
+  const isMove = (m: any) => isPlainObject(m) && Object.keys(m).every((k) => MOVE_KEYS.includes(k)) && isMapPath(m.from) && isMapPath(m.to) && isOneLine(m.reason);
   if (!Array.isArray(moves) || !moves.every(isMove)) {
     throw new Error(`moves must be a list of { "from", "to", "reason" }, with the reason on one line, for screen moves the code shows no link for, with route paths as in the map, such as [{ "from": "/signin", "to": "/user-home", "reason": "로그인 뒤" }], not ${JSON.stringify(raw.moves)}`);
   }
