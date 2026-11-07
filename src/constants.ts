@@ -335,10 +335,13 @@ export function moduleCopier(config: ConstantsConfig, resolve: ImportResolver['r
   function otherExportsOf(file: string, name: string) {
     if (standInNames(file)) return '';
     try {
-      const names = new Set(ownExports(parseSource(file, { asWritten: true }).ast.program.body));
+      const body = parseSource(file, { asWritten: true }).ast.program.body;
+      const names = new Set(ownExports(body));
       names.delete(name);
-      if (!names.size) return '';
-      return `\nexport { ${[...names].map((n) => (n === 'default' ? n : JSON.stringify(n))).join(', ')} } from ${JSON.stringify(copy(file))};`;
+      const starred = body.some((n) => n.type === 'ExportAllDeclaration' && n.exportKind !== 'type');
+      if (!names.size && !starred) return '';
+      const from = JSON.stringify(copy(file));
+      return `${names.size ? `\nexport { ${[...names].map((n) => (n === 'default' ? n : JSON.stringify(n))).join(', ')} } from ${from};` : ''}${starred ? `\nexport * from ${from};` : ''}`;
     } catch {
       return '';
     }

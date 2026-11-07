@@ -443,6 +443,19 @@ test('an address built by another export of the file holding the request functio
   assert.deepEqual(map.apiFunctions.getOrder.endpoints.map((e) => `${e.method} ${e.url}`), ['GET /v1/orders/{?}']);
 });
 
+test('an address built by a function the file holding the request function re-exports from another file is read, whether it re-exports everything or that name', async () => {
+  const sender = 'export async function sendRequest(request: { info: { METHOD: string; URL: string } }) {\n  return request;\n}\n';
+  const routes = SENDING_FILE.slice(SENDING_FILE.indexOf('export function route'));
+  for (const reexport of ["export * from './routes';", "export { route } from './routes';"]) {
+    const map = await build(fixtureCopy(SENDING, {
+      'contracts/api/sending.ts': `${sender}${reexport}\n`,
+      'contracts/api/routes.ts': routes,
+      'contracts/api/orders.ts': "import { sendRequest, route } from './sending';\nexport const getOrder = ({ id }: { id: string }) => sendRequest({ info: route('GET', '/v1/orders/{0}', id) });\n",
+    }));
+    assert.deepEqual(map.apiFunctions.getOrder.endpoints.map((e) => `${e.method} ${e.url}`), ['GET /v1/orders/{?}'], reexport);
+  }
+});
+
 test('API code importing the whole file holding the request function can reach its other exports', async () => {
   const map = await build(fixtureCopy(SENDING, {
     'contracts/api/sending.ts': SENDING_FILE,
