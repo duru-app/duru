@@ -468,3 +468,10 @@ test('in a browser, the 라우트 line of a screen and the route step of a story
     assert.equal(await p.locator('#center .reach-route > code').textContent(), `${SECOND}:${lineOf(second, 'ROUTE_PATH.LAB}')}`);
   }), { configPatch: { storiesDir: 'example-stories' } });
 });
+
+test('a constants entry naming a file that does not exist stops the run with an error that names the entry and the path', async () => {
+  await withCopy(({ configFile, setConfig }) => {
+    setConfig({ constants: { Gadget: 'nowhere/Gadget.js' }, routeConstant: undefined });
+    assert.throws(() => loadConfig(configFile), /^Error: constants\.Gadget: file nowhere\/Gadget\.js does not exist, but each constants entry must be a file as a path from srcRoot, such as "_define\/Option\.js"$/);
+  });
+});

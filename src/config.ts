@@ -268,6 +268,9 @@ export function loadConfig(configPath: string) {
   if (!isPlainObject(constants) || !Object.values(constants).every(isText)) {
     throw new Error(`constants must map each name the app's code imports a constants module by to its file as a path from srcRoot, such as { "Option": "_define/Option.js" }, not ${JSON.stringify(raw.constants)}`);
   }
+  for (const [name, file] of Object.entries<string>(constants)) {
+    if (!fs.existsSync(path.join(at(raw.srcRoot), file))) throw new Error(`constants.${name}: file ${file} does not exist, but each constants entry must be a file as a path from srcRoot, such as "_define/Option.js"`);
+  }
   if (raw.routeConstant != null && raw.routeConstant !== '') {
     if (!isText(raw.routeConstant) || !DOTTED_NAME.test(raw.routeConstant)) {
       throw new Error(`routeConstant must be the dotted name of the object that holds the route paths, such as "Option.ROUTE_PATH", not ${JSON.stringify(raw.routeConstant)}`);
