@@ -84,7 +84,10 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   method that gave no address, so its calls are missing from the map and from every screen that calls it; a
   `calledApiModules <file> did not run` line means none of that file's methods are on the map, and a
   `calledApiModules ran <import> as a stand-in, though it is <path> outside srcRoot` line names a package of the
-  repository whose API code was not run; ask the user to add its folder to `sourcePackages`. A `calledApiModules
+  repository whose API code was not run; ask the user to add its folder to `sourcePackages`. A `requestFunction
+  <import> did not run` line means the file holding that function stopped when run, so whatever else it exports does
+  nothing and an address built by it shows as `{?}`: name a function in another file that the requests pass through,
+  or give what the file needs in `constantStubs`. A `calledApiModules
   <file> recorded no request` line means that file sent nothing with `fetch` or by moving the browser while
   `requestFunction` is left out: check whether it sends through something `requestFunction` should name. Tell the
   user which methods are missing; do not write tests or fixes for them as if their endpoints were gone. Most come
