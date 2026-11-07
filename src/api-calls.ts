@@ -322,10 +322,19 @@ export async function apiModuleInputs(config: any, resolve: ImportResolver['reso
 
 // functions 는 「export 한 이름.메서드」마다 { file, line, endpoints, error? }, keyOf 는 (파일, export 한 이름) 에서 그 이름을 돌려준다.
 export async function recordApiCalls(config: any, resolve: ImportResolver['resolve'], taken = new Set<string>()) {
+  const kept = await recordWith(config, resolve, taken, true);
+  if (!kept.keptOthers || !kept.failedModules.length) return kept;
+  // 요청 함수 파일을 실행할 수 없으면 그 파일 전체를 대역으로 바꾼 결과를 쓴다.
+  const whole = await recordWith(config, resolve, taken, false);
+  return whole.failedModules.length < kept.failedModules.length ? { ...whole, requestFileError: kept.failedModules[0].error } : kept;
+}
+
+async function recordWith(config: any, resolve: ImportResolver['resolve'], taken: Set<string>, keepOtherExports: boolean) {
   const { import: from, name, method, url, body, object } = config.requestFunction ?? {};
   const relative = Boolean(from?.startsWith('.'));
   const target = requestFunctionFile(config, resolve);
   let recorded = false;
+  let keptOthers = false;
   const recorder = `const record = globalThis.${object ? '__duruRequestObject' : '__duruRecorder'};\nexport { record as ${name === 'default' ? 'default' : JSON.stringify(name)} };`;
   const copier = moduleCopier({ ...config, constantStubs: { ...PACKAGE_STAND_INS, ...config.constantStubs } }, resolve, {
     label: 'calledApiModules',
@@ -333,7 +342,9 @@ export async function recordApiCalls(config: any, resolve: ImportResolver['resol
     replacement: (spec, resolved) => {
       if (!from || !((!relative && spec === from) || (target && resolved === target))) return null;
       recorded = true;
-      return recorder;
+      const others = keepOtherExports && target && resolved === target ? copier.otherExportsOf(target, name === 'default' ? 'default' : name) : '';
+      if (others) keptOthers = true;
+      return recorder + others;
     },
   });
   const rel = (f: string) => path.relative(config.srcRoot, f);
@@ -464,7 +475,7 @@ export async function recordApiCalls(config: any, resolve: ImportResolver['resol
       outside.get(spec)!.importedBy.add(rel(from));
     }
     const outsideStandIns = [...outside.values()].map((s) => ({ ...s, importedBy: [...s.importedBy].sort() }));
-    return { functions, exportsOf, keyOf: (file: string, exportName: string) => keyOf.get(`${file}\n${exportName}`) ?? prefixOf(file, exportName), failedModules, bodyTypeNotices, outsideStandIns, silentModules };
+    return { functions, exportsOf, keyOf: (file: string, exportName: string) => keyOf.get(`${file}\n${exportName}`) ?? prefixOf(file, exportName), failedModules, bodyTypeNotices, outsideStandIns, silentModules, keptOthers, requestFileError: null as string | null };
   } finally {
     copier.cleanup();
   }

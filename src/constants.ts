@@ -331,6 +331,19 @@ export function moduleCopier(config: ConstantsConfig, resolve: ImportResolver['r
     return `./${name}`;
   }
 
+  // file 에서 name 만 대역으로 바꿀 때 나머지 export 를 원래 파일의 것으로 잇는 문장을 돌려준다.
+  function otherExportsOf(file: string, name: string) {
+    if (standInNames(file)) return '';
+    try {
+      const names = new Set(ownExports(parseSource(file, { asWritten: true }).ast.program.body));
+      names.delete(name);
+      if (!names.size) return '';
+      return `\nexport { ${[...names].map((n) => (n === 'default' ? n : JSON.stringify(n))).join(', ')} } from ${JSON.stringify(copy(file))};`;
+    } catch {
+      return '';
+    }
+  }
+
   function place(copyName: string, line: number, column?: number | string) {
     const source = [...copied].find(([, c]) => c === copyName)?.[0];
     if (!source) return null;
@@ -355,6 +368,7 @@ export function moduleCopier(config: ConstantsConfig, resolve: ImportResolver['r
   return {
     dir,
     copy,
+    otherExportsOf,
     url: (copyName: string) => pathToFileURL(path.join(dir, copyName)).href,
     copyOfUrl: (url: unknown) => {
       const m = String(url).match(/[/\\](m_\d+_\w+\.mjs)$/);

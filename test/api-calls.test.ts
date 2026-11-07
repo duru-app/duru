@@ -419,6 +419,53 @@ const FETCHED_API = [
 ].join('\n');
 const fetchedRequests = (map: ScreenMap) => ['load', 'save', 'remove', 'pass', 'inner', 'win'].map((m) => map.apiFunctions[`fetchedApi.${m}`].endpoints.map((e) => `${e.method} ${e.url}`));
 
+// 요청 함수와 주소를 만드는 함수가 한 파일에 있는 앱.
+const SENDING_FILE = `export async function sendRequest(request: { info: { METHOD: string; URL: string } }) {
+  return request;
+}
+export function route(path: string): { METHOD: string; URL: string };
+export function route(method: string, path: string, ...args: string[]): { METHOD: string; URL: string };
+export function route(first: string, ...rest: string[]) {
+  const [path, ...args] = rest.length ? rest : [first];
+  return { METHOD: rest.length ? first : 'GET', URL: args.reduce((text, arg, i) => text.replace(\`{\${i}}\`, arg), path) };
+}
+`;
+const SENDING = {
+  calledApiModules: ['contracts/api/orders.ts'],
+  requestFunction: { import: './contracts/api/sending', name: 'sendRequest', method: '0.info.METHOD', url: '0.info.URL' },
+};
+
+test('an address built by another export of the file holding the request function is read', async () => {
+  const map = await build(fixtureCopy(SENDING, {
+    'contracts/api/sending.ts': SENDING_FILE,
+    'contracts/api/orders.ts': "import { sendRequest, route } from './sending';\nexport const getOrder = ({ id }: { id: string }) => sendRequest({ info: route('GET', '/v1/orders/{0}', id) });\n",
+  }));
+  assert.deepEqual(map.apiFunctions.getOrder.endpoints.map((e) => `${e.method} ${e.url}`), ['GET /v1/orders/{?}']);
+});
+
+test('API code importing the whole file holding the request function can reach its other exports', async () => {
+  const map = await build(fixtureCopy(SENDING, {
+    'contracts/api/sending.ts': SENDING_FILE,
+    'contracts/api/orders.ts': "import * as sending from './sending';\nexport const getOrder = ({ id }: { id: string }) => sending.sendRequest({ info: sending.route('POST', '/v1/orders/{0}', id) });\n",
+  }));
+  assert.equal(map.apiFunctions.getOrder.error, undefined);
+  assert.deepEqual(map.apiFunctions.getOrder.endpoints.map((e) => `${e.method} ${e.url}`), ['POST /v1/orders/{?}']);
+});
+
+test('a request function file that stops when it is run is replaced whole, and the summary says what that loses', async () => {
+  const configFile = fixtureCopy(SENDING, {
+    'contracts/api/sending.ts': `throw new Error('needs a browser');\n${SENDING_FILE}`,
+    'contracts/api/orders.ts': "import { sendRequest, route } from './sending';\nexport const getOrder = ({ id }: { id: string }) => sendRequest({ info: route('GET', '/v1/orders/{0}', id) });\n",
+  });
+  const map = await build(configFile);
+  assert.deepEqual(map.unrunApiModules, []);
+  assert.equal(map.apiFunctions.getOrder.endpoints.length, 1);
+  const result = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(result.stdout.includes('requestFunction ./contracts/api/sending did not run: '), result.stdout);
+  assert.ok(result.stdout.includes('needs a browser'), result.stdout);
+});
+
 test('a request a listed file sends with the global fetch is recorded with its method and address, with requestFunction or without it, and without requestFunction a listed file none of whose methods sent one is named, and a run where none sent one stops', async () => {
   const fetched = { 'contracts/api/fetched.ts': FETCHED_API };
   const both = await build(fixtureCopy({ ...CALLED, calledApiModules: ['contracts/api/fetched.ts', ...CALLED.calledApiModules] }, fetched));

@@ -5641,6 +5641,20 @@ Compared:
 - Joining only where addresses are read (trace matching, story lines, moves): each would need the parent paths, which
   the map does not keep.
 
+**Replacing the request function leaves what else its file exports.** An app can declare the function its requests
+go through beside the function that builds their addresses, and API code then writes `send({ info: route(path, id) })`
+with both imported from that file. duru replaced the whole file, so `route` did nothing and every address came out as
+only `{?}`, reported as no address written. Now only the named export is replaced, and the rest comes from the file
+itself run as it is. The alternative was to keep replacing the file and print a line asking for a function one level
+lower. That needs no second run, but it asks the person to work out a config the map gives no hint of, and it fails
+wherever the lower function is not one a config can name. Counted on 2026-11-07: one private app has this shape, with
+293 of its 363 API functions affected; appsmith, mattermost, metabase, outline, redash, superset and another private
+app do not. It widens what `requestFunction` already reads, so it does not wait for a second app. The file now runs
+where it did not before, and it may stop there: then the run is made again with the whole file replaced, which gives
+the old result, and a `requestFunction … did not run` line says so. A request sent inside that file by another of its
+functions still goes through the real function and is not recorded, and `apiModules` runs still replace the whole
+file: their addresses do not come from the run.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
