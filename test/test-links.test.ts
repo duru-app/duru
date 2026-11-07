@@ -8,6 +8,7 @@ import type { ScreenAccess } from '../src/access.ts';
 import { loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
 import { readPlaywright } from '../src/playwright.ts';
+import { readTrace } from '../src/playwright-trace.ts';
 import { linkTests, sentTraces, writeShots } from '../src/test-links.ts';
 
 type Config = ReturnType<typeof loadConfig>;
@@ -949,6 +950,22 @@ test('a test without a trace, with a trace that cannot be read or that was skipp
     assert.equal(stepsOf(`${title} @screen:/home#Home`)[0].steps, undefined, title);
   }
   assert.deepEqual(stepLinks.traceNotices.map((n) => n.test.title), ['opens home without snapshots @screen:/home#Home']);
+});
+
+test('a skipped browser test whose trace holds only the test runner\'s record is not among the traces not read', () => {
+  const [run] = stepsOf('skips home @screen:/home#Home');
+  assert.equal(run.status, 'pending');
+  const trace = path.join(config.configDir, 'results/playwright-steps/test-results/steps-skips-home-chromium/trace.zip');
+  assert.deepEqual(readTrace(trace), { reason: 'trace 파일에서 브라우저 기록을 찾지 못했습니다' });
+  assert.equal(stepLinks.traceNotices.some((n) => n.test.title === run.title), false);
+});
+
+test('a test that ran but is pending for a @limit with no source still has its unread trace noticed', () => {
+  const ran = { title: 'signs @limit @screen:/home#Home', file: 'a.spec.ts', line: 1, tests: [{ status: 'expected', results: [{ status: 'passed', attachments: [{ name: 'trace', path: '/builds/app/test-results/a-signs/trace.zip' }] }] }] };
+  withResults({ 'e2e.json': reportOf([{ title: 'a.spec.ts', specs: [ran] }]) }, (own) => {
+    const result = linkTests(own, { screens: [], calls: [] });
+    assert.deepEqual(result.traceNotices.map((n) => [n.test.title, n.reason]), [['signs @limit @screen:/home#Home', 'trace 파일이 없습니다']]);
+  });
 });
 
 test('a trace that cannot be read is noticed for its own run, named by its result file and project', () => {

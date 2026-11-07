@@ -175,7 +175,13 @@
                 {
                   "retry": 0,
                   "status": "skipped",
-                  "attachments": []
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/steps-skips-home-chromium/trace.zip"
+                    }
+                  ]
                 }
               ]
             }
