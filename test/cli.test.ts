@@ -1849,6 +1849,8 @@ test('with a Claude Code session socket in its environment, review sends each sa
         const [first, line] = content.split('\n');
         assert.equal(first, `duru review comment; answer it with duru reply ${JSON.stringify(fs.realpathSync(configFile))} ${comment.id} "<answer>" --server ${url}/`);
         assert.deepEqual(JSON.parse(line), { duru: 'comment', ...comment });
+        const { takenComments } = (await (await fetch(`${url}/api/data`)).json()) as { takenComments: string[] };
+        assert.deepEqual(takenComments, [comment.id]);
         await endReview(url);
         await within(closed, 'exit');
       } finally {
@@ -1872,6 +1874,7 @@ test('a session socket that review cannot reach or cannot use leaves a line on s
         await waitFor(() => plain.out.stderr.includes('No session here.'), 'the comment line on stderr');
         await new Promise((resolve) => setTimeout(resolve, 300));
         assert.doesNotMatch(plain.out.stderr, /could not send the comment/);
+        assert.deepEqual(((await (await fetch(`${url}/api/data`)).json()) as { takenComments: string[] }).takenComments, []);
         await endReview(url);
         await within(plain.closed, 'exit');
       } finally {

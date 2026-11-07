@@ -437,15 +437,26 @@ function storiesChanged(event) {
   else if (event.data !== state.data?.storiesVersion) reloadLive();
 }
 
+const takenHeard = new Set();
+
+function commentsTaken(event) {
+  for (const id of JSON.parse(event.data)) takenHeard.add(id);
+  if (state.data) drawLive();
+}
+
 // 끊겼다가 다시 이어지면 그 사이에 저장된 것을 못 받았을 수 있으므로 다시 읽는다.
 const events = new EventSource('/api/events');
 let eventsOpened = false;
 events.addEventListener('open', () => {
-  if (eventsOpened) reloadLive();
+  if (eventsOpened) {
+    takenHeard.clear();
+    reloadLive();
+  }
   eventsOpened = true;
 });
 events.addEventListener('message', heard);
 events.addEventListener('stories', storiesChanged);
+events.addEventListener('taken', commentsTaken);
 events.addEventListener('end', () => events.close());
 
 // 리뷰를 끝낸 뒤에 늦게 실패한 읽기만 알리지 않고, 그리다 난 오류는 그대로 알린다.

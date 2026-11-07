@@ -22,7 +22,7 @@ function scopeButtons() {
 
 const TALK_FILTERS = [
   { key: 'all', label: '모두', keep: () => true },
-  { key: 'unanswered', label: '미답변', keep: unanswered },
+  { key: 'unanswered', label: '남은 것', keep: unanswered },
   ...Object.entries(MARK_STATUS).map(([key, label]) => ({ key, label, keep: (m, r) => m.current?.status === key && saidIn(m).find((x) => x.status === key)?.id === r.id })),
   { key: 'changes', label: '변경 기록' },
 ];
@@ -70,7 +70,7 @@ function allTalk() {
   const lineItem = ({ m, r }) => {
     const replies = m.history.filter((x) => x.replyTo === r.id).sort(byDate);
     const meta = h('span', { class: 'meta' },
-      unanswered(m, r) ? h('span', { class: 'unanswered-dot', role: 'img', 'aria-label': '미답변', title: '미답변 코멘트' }) : null,
+      talkState(m, r),
       r.status ? h('span', { class: `chip ${r.status}` }, MARK_STATUS[r.status]) : null,
       noTarget(m.target) ? null : tagChip(tagLabel((r.targets ?? [r.target]).find((t) => t && keyOf(t) === m.key) ?? m.target)),
       h('span', {}, signedAt(r)),
@@ -173,6 +173,21 @@ const attachedTalk = (target) => talkIn(state.data.marks.attached, target);
 
 const byDate = (a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id);
 
+const TALK_STATES = {
+  waiting: { label: '대기', title: '아직 아무 세션도 이 코멘트를 가져가지 않았습니다' },
+  taken: { label: '응답 중', title: '세션이 이 코멘트를 가져갔고 아직 답하지 않았습니다' },
+  answered: { label: '답변 완료', title: '에이전트가 이 코멘트에 답했습니다' },
+};
+
+function talkState(m, r) {
+  if (r.replyTo !== undefined || r.status !== undefined) return null;
+  const key = m.history.some((x) => x.replyTo === r.id) ? 'answered' : state.data.takenComments.includes(r.id) || takenHeard.has(r.id) ? 'taken' : 'waiting';
+  const { label, title } = TALK_STATES[key];
+  return h('span', { class: `talk-state ${key}`, title, 'aria-label': title },
+    key === 'taken' ? h('span', { class: 'hops', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')) : null,
+    label);
+}
+
 function tagChip(label, remove) {
   return h('span', { class: 'tag' }, h('span', { class: 'tag-label' }, label), remove ? h('button', { type: 'button', title: '꼬리표 빼기', 'aria-label': `${label} 꼬리표 빼기`, onclick: remove }, '×') : null);
 }
@@ -181,6 +196,7 @@ function talkThread(target) {
   const talk = talkOf(target);
   const shown = state.historyFilter ? talk.filter((m) => m.key === state.historyFilter) : talk;
   const recordItem = (m, r) => h('li', { class: r.replyTo !== undefined ? 'reply' : null, 'data-record': r.id },
+    talkState(m, r),
     r.status ? [h('span', { class: `chip ${r.status}` }, MARK_STATUS[r.status]), ' '] : null,
     r.replyTo === undefined ? [...recordTags(r, target), ' '] : null,
     h('span', { class: 'muted' }, signedAt(r)),
@@ -216,6 +232,16 @@ function markForm(target, draftKey, label) {
   const tags = (draft.tags ?? [target]).map((t) => (t.screens !== undefined && target.screens !== undefined ? target : t));
   const statusOn = onlyTag(tags, target) && target.candidate === undefined && target.screens === undefined;
   const savable = () => draft.note.trim() !== '' || (statusOn && !!draft.status);
+  const cancelable = () => draft.note !== '' || draft.status !== (mark?.current?.status ?? null) || draft.tags !== undefined;
+  const cancel = h('button', { type: 'button', class: 'cancel', title: '쓰던 코멘트를 지웁니다', disabled: !cancelable(), onclick: () => {
+    state[draftKey] = null;
+    state.error = null;
+    render();
+  } }, '취소');
+  const refresh = () => {
+    save.disabled = !savable();
+    cancel.disabled = !cancelable();
+  };
   const save = h('button', { class: 'save', title: 'Enter 로 남기고, Shift+Enter 로 줄을 바꿉니다', disabled: !savable(), onclick: () => {
     save.disabled = true;
     saveMark(tags, draftKey, statusOn);
@@ -224,7 +250,7 @@ function markForm(target, draftKey, label) {
     const button = h('button', { class: statusOn && draft.status === k ? 'on' : '', disabled: !statusOn, title: statusOn ? null : target.candidate !== undefined ? '후보에는 상태를 매기지 않습니다. 스토리로 받은 뒤에 매깁니다' : target.screens !== undefined ? '화면 순서에는 상태를 매기지 않습니다' : '상태는 꼬리표가 화면 · 호출 · 깊이 · 스토리 하나뿐일 때만 매깁니다', onclick: () => {
       draft.status = draft.status === k ? null : k;
       for (const b of statuses) b.classList.toggle('on', b === button && draft.status === k);
-      save.disabled = !savable();
+      refresh();
     } }, text);
     return button;
   });
@@ -238,7 +264,7 @@ function markForm(target, draftKey, label) {
     placeholder: '코멘트 — 상태 없이 글만 남겨도 됩니다. @ 로 꼬리표를 더합니다',
     oninput: (e) => {
       draft.note = e.target.value;
-      save.disabled = !savable();
+      refresh();
       showPicker(picker, field, draft, tags, target);
     },
     onkeydown: (e) => {
@@ -263,6 +289,6 @@ function markForm(target, draftKey, label) {
     h('div', { class: 'statuses' }, statuses),
     h('div', { class: 'tag-field' }, field, picker),
     state.error ? h('p', { class: 'error' }, state.error) : null,
-    h('div', { class: 'save-row' }, save));
+    h('div', { class: 'save-row' }, cancel, save));
 }
 

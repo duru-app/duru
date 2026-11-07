@@ -283,7 +283,7 @@ test('in a browser, a new story with no screen yet shows 「에이전트와 대�
         await startNewStory(p);
         assert.deepEqual(await rightPane(p), { top: ['talk'], heading: '에이전트와 대화', bottom: ['mark-form'], folded: 0 });
         assert.equal(await p.textContent('#right-info .talk p'), '화면을 고르면 그 순서가 꼬리표로 붙어, 사이를 채워 달라고 에이전트에게 부탁할 수 있습니다.');
-        assert.deepEqual(await p.locator('#right-dock :is(textarea, button)').evaluateAll((els) => els.map((e) => (e as HTMLButtonElement).matches(':disabled'))), [true, true, true, true]);
+        assert.deepEqual(await p.locator('#right-dock :is(textarea, button)').evaluateAll((els) => els.map((e) => (e as HTMLButtonElement).matches(':disabled'))), [true, true, true, true, true]);
         assert.equal(await p.textContent('#right-dock button.save'), '남기기');
         for (const routePath of ['/signin', '/home', '/help']) await pickScreen(p, routePath);
         await untilJudged(p, 2);

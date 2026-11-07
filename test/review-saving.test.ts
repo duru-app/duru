@@ -448,7 +448,7 @@ test('in a browser, a mark an older duru saved as missing shows as 「테스트 
         await scope.nth(1).click();
         const filter = (label: string) => p.locator('#right-info .talk-filters button', { hasText: label });
         const lines = () => p.locator('#right-info .talk-line').evaluateAll((list) => list.map((l) => [l.querySelector('.chip')?.textContent, l.querySelector('.first')?.textContent]));
-        assert.deepEqual(await p.locator('#right-info .talk-filters button').allTextContents(), ['모두', '미답변 0', '테스트 필요', '충분']);
+        assert.deepEqual(await p.locator('#right-info .talk-filters button').allTextContents(), ['모두', '남은 것 0', '테스트 필요', '충분']);
         assert.deepEqual(await lines(), [['테스트 필요', 'the empty document too'], ['테스트 필요', 'no table test yet']]);
         await filter('테스트 필요').click();
         assert.deepEqual(await lines(), [['테스트 필요', 'the empty document too'], ['테스트 필요', 'no table test yet']]);

@@ -299,11 +299,11 @@ export function callRegressions(c: TestComparison, calls: { id: string; screens:
   return byScreen;
 }
 
-function pageData(config: any, data: ReturnType<typeof reviewData>, baseline: ReturnType<typeof readBaseline> | null, baselineTests: BaselineTests | null, version: ReturnType<typeof storiesVersion>) {
+function pageData(config: any, data: ReturnType<typeof reviewData>, takenComments: string[], baseline: ReturnType<typeof readBaseline> | null, baselineTests: BaselineTests | null, version: ReturnType<typeof storiesVersion>) {
   const fromConfig = baseline && path.relative(config.configDir, config.baselineMap);
   const changes = baseline && { file: fromConfig!.startsWith('..') ? config.baselineMap : fromConfig, label: baselineLabel(config.baselineMap), code: recordedState(baseline.meta), ...compareMaps(baseline, data.map) };
   const tests = baselineTests && testsLinked(data.tests) ? compareTests(baselineTests, data.tests, { screens: data.map.screens.map((s) => s.id), calls: data.map.calls.map((c) => c.id) }) : null;
-  return { ...data, baseline: changes, baselineTests: tests && { ...tests, callRegressions: callRegressions(tests, data.map.calls) }, storiesVersion: version };
+  return { ...data, takenComments, baseline: changes, baselineTests: tests && { ...tests, callRegressions: callRegressions(tests, data.map.calls) }, storiesVersion: version };
 }
 
 export type PageData = ReturnType<typeof pageData>;
@@ -437,7 +437,7 @@ type Where = ReturnType<typeof locatePart> | ReturnType<typeof locateStoryPart> 
 type Target = NonNullable<Mark['target']>;
 export type AnnouncedMark = Mark & { duru: string; where?: Where; wheres?: Where[] };
 
-export async function startReviewServer(config: any, { port = 0, author = reviewAuthor(config), onDone = () => {}, onMark = () => {}, baselineTests = config.baselineTests ? readBaselineTests(config) : null }: { port?: number; author?: ReviewAuthor; onDone?: () => (() => void) | void | null; onMark?: (line: AnnouncedMark) => void; baselineTests?: BaselineTests | null } = {}) {
+export async function startReviewServer(config: any, { port = 0, author = reviewAuthor(config), onDone = () => {}, onMark = () => {}, baselineTests = config.baselineTests ? readBaselineTests(config) : null }: { port?: number; author?: ReviewAuthor; onDone?: () => (() => void) | void | null; onMark?: (line: AnnouncedMark, taken: () => void) => void; baselineTests?: BaselineTests | null } = {}) {
   const mapFile = path.join(config.outDir, 'map.json');
   // 없거나 아직 쓰는 중인 맵은 페이지가 요청할 때 알리고, 예전 형식의 맵만 서버를 띄우기 전에 알린다.
   let onDisk: any = null;
@@ -457,6 +457,14 @@ export async function startReviewServer(config: any, { port = 0, author = review
   const ownHosts = () => [`127.0.0.1:${(server.address() as AddressInfo).port}`, `localhost:${(server.address() as AddressInfo).port}`];
   const isJson = (req: http.IncomingMessage) => req.headers['content-type']?.startsWith('application/json');
   const streams = new Set<http.ServerResponse>();
+  const agentStreams = new Set<http.ServerResponse>();
+  const takenComments = new Set<string>();
+  const takeComments = (ids: string[]) => {
+    const fresh = ids.filter((id) => !takenComments.has(id));
+    if (!fresh.length) return;
+    for (const id of fresh) takenComments.add(id);
+    for (const stream of streams) stream.write(`event: taken\ndata: ${JSON.stringify(fresh)}\n\n`);
+  };
   let streamsEnded = false;
   // 열린 스트림이 남아 있으면 서버가 닫히지 않으므로, 끝났다고 알리고 닫는다.
   const endStreams = () => {
@@ -545,8 +553,9 @@ export async function startReviewServer(config: any, { port = 0, author = review
   });
   const announce = (mark: Mark) => {
     const line = lineOf(mark);
-    onMark(line);
+    onMark(line, () => takeComments([mark.id]));
     for (const stream of streams) stream.write(`data: ${JSON.stringify(line)}\n\n`);
+    if (line.duru === 'comment' && agentStreams.size) takeComments([mark.id]);
     return mark;
   };
   // 답글의 작성자는 페이지를 띄운 사람이 아니라 답한 에이전트다.
@@ -585,14 +594,21 @@ export async function startReviewServer(config: any, { port = 0, author = review
         res.flushHeaders();
         if (backlog) res.write(`${backlog.map((line) => `data: ${JSON.stringify(line)}\n\n`).join('')}event: unanswered-sent\ndata: \n\n`);
         streams.add(res);
-        res.on('close', () => streams.delete(res));
+        res.on('close', () => {
+          streams.delete(res);
+          agentStreams.delete(res);
+        });
+        if (backlog) {
+          agentStreams.add(res);
+          takeComments(backlog.map((line) => line.id));
+        }
         return;
       }
       if (req.method === 'GET' && req.url === '/api/data') {
         const fileSettings = app && config.app.settingsFile ? await app.fileSettings() : null;
         // 해시를 데이터보다 먼저 구해 두어야, 그 사이에 바뀐 스토리가 다른 해시의 이벤트로 와서 다시 읽힌다.
         const version = storiesVersion(config.storiesDir);
-        return send(res, 200, 'application/json', JSON.stringify(pageData(config, reviewData(config, author, app, fileSettings), baseline, baselineTests, version)));
+        return send(res, 200, 'application/json', JSON.stringify(pageData(config, reviewData(config, author, app, fileSettings), [...takenComments], baseline, baselineTests, version)));
       }
       const url = new URL(req.url!, 'http://host');
       if (req.method === 'GET' && url.pathname.startsWith('/trace-viewer/')) return sendTraceViewer(res, config, url);

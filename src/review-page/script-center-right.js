@@ -28,7 +28,7 @@ function renderStoryRight(info, dock) {
 const composeTalkForm = () => h('fieldset', { class: 'mark-form', disabled: true, title: '화면을 고른 뒤에 남길 수 있습니다' },
   h('div', { class: 'statuses' }, Object.values(MARK_STATUS).map((text) => h('button', { type: 'button' }, text))),
   h('textarea', { 'aria-label': '코멘트', placeholder: '화면을 고른 뒤에 코멘트를 남길 수 있습니다' }),
-  h('div', { class: 'save-row' }, h('button', { type: 'button', class: 'save' }, '남기기')));
+  h('div', { class: 'save-row' }, h('button', { type: 'button', class: 'cancel' }, '취소'), h('button', { type: 'button', class: 'save' }, '남기기')));
 
 function renderCenter() {
   if (state.view === 'story') return renderStoryCenter();

@@ -142,7 +142,11 @@ async function listenTo(url: string) {
     const decoder = new TextDecoder();
     for await (const chunk of res.body!) got.text += decoder.decode(chunk, { stream: true });
   })();
-  return { got, stories: () => [...got.text.matchAll(/^event: stories\ndata: (.*)$/gm)].map((m) => m[1]) };
+  return {
+    got,
+    stories: () => [...got.text.matchAll(/^event: stories\ndata: (.*)$/gm)].map((m) => m[1]),
+    taken: () => [...got.text.matchAll(/^event: taken\ndata: (.*)$/gm)].map((m) => JSON.parse(m[1]) as string[]),
+  };
 }
 
 const until = async (check: () => boolean, what: string) => {
@@ -236,6 +240,59 @@ test('a sub-folder of the stories folder that cannot be read leaves the other st
     } finally {
       server?.close();
       fs.chmodSync(locked, 0o755);
+    }
+  });
+});
+
+const dataOf = async (base: string) => (await (await fetch(`${base}/api/data`)).json()) as PageData;
+const postComment = (base: string, note: string) =>
+  fetch(`${base}/api/marks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: { node: '/lab#Lab' }, note }) });
+
+test('a comment counts as taken once an agent connection receives it, whether it was waiting or arrives later, and a page connection or a mark with a status takes nothing', async () => {
+  await withRebuiltFixture({}, async (config) => {
+    const server = await startReviewServer(config, { author: signer('reviewer') });
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    try {
+      const page = await listenTo(`${base}/api/events`);
+      const waiting = (await (await postComment(base, 'waiting')).json()) as { id: string };
+      assert.deepEqual((await dataOf(base)).takenComments, []);
+
+      const agent = await listenTo(`${base}/api/events?unanswered`);
+      await until(() => page.taken().flat().includes(waiting.id), 'taken event for the waiting comment');
+      assert.deepEqual((await dataOf(base)).takenComments, [waiting.id]);
+
+      const later = (await (await postComment(base, 'later')).json()) as { id: string };
+      await until(() => page.taken().flat().includes(later.id), 'taken event for the later comment');
+      assert.deepEqual((await dataOf(base)).takenComments, [waiting.id, later.id]);
+
+      await fetch(`${base}/api/marks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: { node: '/lab#Lab' }, status: 'missing' }) });
+      assert.deepEqual((await dataOf(base)).takenComments, [waiting.id, later.id]);
+      assert.match(agent.got.text, /event: taken/);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
+test('after the agent connection closes, a new comment stays not taken until another agent connection receives it', async () => {
+  await withRebuiltFixture({}, async (config) => {
+    const server = await startReviewServer(config, { author: signer('reviewer') });
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    try {
+      const closing = new AbortController();
+      const agent = await fetch(`${base}/api/events?unanswered`, { signal: closing.signal });
+      closing.abort();
+      await agent.body!.cancel().catch(() => {});
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const comment = (await (await postComment(base, 'nobody listens')).json()) as { id: string };
+      assert.deepEqual((await dataOf(base)).takenComments, []);
+      await listenTo(`${base}/api/events?unanswered`);
+      for (const end = Date.now() + 5_000; Date.now() < end; await new Promise((resolve) => setTimeout(resolve, 20))) {
+        if ((await dataOf(base)).takenComments.includes(comment.id)) return;
+      }
+      assert.fail('the comment was not taken by the second connection');
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
     }
   });
 });

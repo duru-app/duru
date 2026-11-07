@@ -314,7 +314,7 @@ test('in a browser, 「전체」 and its filter are kept in the address: back fr
         const steps = await p.evaluate(() => history.length);
         await scope.nth(1).click();
         await filter('테스트 필요').click();
-        await filter('미답변').click();
+        await filter('남은 것').click();
         assert.equal(await placeOf(p), '#screens?screen=/help#Help&talk=all&filter=unanswered');
         await scope.first().click();
         assert.equal(await placeOf(p), '#screens?screen=/help#Help');
@@ -331,7 +331,7 @@ test('in a browser, 「전체」 and its filter are kept in the address: back fr
         await p.waitForFunction(() => state.talkScope === 'all');
         assert.equal(await placeOf(p), '#screens?screen=/help#Help&talk=all&filter=unanswered');
         assert.match((await p.textContent('#screen-list li.selected'))!, /^\/help/);
-        assert.equal(await filter('미답변').getAttribute('aria-pressed'), 'true');
+        assert.equal(await filter('남은 것').getAttribute('aria-pressed'), 'true');
         assert.equal(await inView(labLine), true, 'the pressed line is in view after going back');
         assert.match((await p.textContent('#right-info .talk-line.reached'))!, /lab question/);
 
@@ -349,7 +349,7 @@ test('in a browser, 「전체」 and its filter are kept in the address: back fr
 
         await p.reload();
         await p.waitForSelector('#right-info .all-talk');
-        assert.equal(await filter('미답변').getAttribute('aria-pressed'), 'true');
+        assert.equal(await filter('남은 것').getAttribute('aria-pressed'), 'true');
         assert.deepEqual(errors, []);
       }));
   });

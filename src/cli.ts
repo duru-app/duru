@@ -247,7 +247,7 @@ if (command === 'tasks') {
     };
   };
   // Claude Code 2.1.296 에서 세션에 들어오는 것을 확인한 비공식 메시지 형식이다.
-  const toSession = (line: AnnouncedMark) => {
+  const toSession = (line: AnnouncedMark, taken: () => void) => {
     const socket = process.env.CLAUDE_CODE_MESSAGING_SOCKET;
     if (!socket) return;
     const failed = (err: Error) => console.error(`could not send the comment to the Claude Code session: ${err.message}`);
@@ -258,16 +258,16 @@ if (command === 'tasks') {
       const content = `duru review comment; answer it with ${reply}\n${JSON.stringify(line)}`;
       const conn = net.createConnection(socket, () => {
         if (token) conn.write(`${JSON.stringify({ type: 'auth', token })}\n`);
-        conn.end(`${JSON.stringify({ type: 'user', message: { role: 'user', content } })}\n`);
+        conn.end(`${JSON.stringify({ type: 'user', message: { role: 'user', content } })}\n`, taken);
       });
       conn.on('error', failed);
     } catch (err: any) {
       failed(err);
     }
   };
-  const onMark = (line: AnnouncedMark) => {
+  const onMark = (line: AnnouncedMark, taken: () => void) => {
     console.error(JSON.stringify(line));
-    if (line.duru === 'comment') toSession(line);
+    if (line.duru === 'comment') toSession(line, taken);
   };
   let baselineTests = null;
   try {
