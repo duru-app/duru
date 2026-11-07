@@ -80,6 +80,17 @@ test('a request that fits several calls finds the one with the fewest variables'
   assert.equal(callAt('GET', '/api/v1/document/list'), 'GET:/api/v1/document/list');
 });
 
+test('a request finds the call whose segment ends in an unknown value after the same text, not a sibling with an unknown value there', () => {
+  const one = { endpoints: [endpoint('GET:/v1/area/{?}/thing/{?}', 'GET', '/v1/area/{?}/thing/{?}')] };
+  const list = { endpoints: [endpoint('GET:/v1/area/{?}/thing/list{?}', 'GET', '/v1/area/{?}/thing/list{?}')] };
+  for (const apiFunctions of [{ one, list }, { list, one }]) {
+    const find = callFinder({ apiFunctions });
+    assert.equal(find('GET', '/v1/area/1/thing/list?x=1'), 'GET:/v1/area/{?}/thing/list{?}');
+    assert.equal(find('GET', '/v1/area/1/thing/list-old'), 'GET:/v1/area/{?}/thing/list{?}');
+    assert.equal(find('GET', '/v1/area/1/thing/42'), 'GET:/v1/area/{?}/thing/{?}');
+  }
+});
+
 test('a request with another method, with a path of another length, to a path no call has or with an address that cannot be read finds nothing', () => {
   assert.equal(callAt('POST', '/api/v1/document/42/name'), null);
   assert.equal(callAt('GET', '/api/v1/document/42/name/more'), null);
