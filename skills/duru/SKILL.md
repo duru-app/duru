@@ -617,8 +617,10 @@ When the user names a story, or you have to write a test for a story the reviewe
 `duru story <config> <story ID>` after `duru rebuild <config>`. Its standard output is the text of one story, in the
 shape of a story under `# Stories` in `duru tasks`, without the `marks` lines and with these lines added under each
 step: `open` (the first step only), the address to open, with a route variable left as it is in the route path, put
-the app address in front when the config has `appUrl`; `arrives`, a `toHaveURL` line with a regular expression that matches the whole address of the step's screen, after the path and hash of `appUrl` if it has any, to put after the step, or why
-duru could not write it (the route path was not read, or the screen is not on the map); and under a link
+the app address in front when the config has `appUrl`, or, on a `*` route, that duru does not know which address to
+open, so take the address the test means to land on that screen from the source; `arrives`, a `toHaveURL` line with a regular expression that matches the whole address of the step's screen, after the path and hash of `appUrl` if it has any, to put after the step, or why
+duru could not write it (the route path was not read, the route is `*` and any address would pass, or the screen is
+not on the map); and under a link
 `what to press: duru does not know` (only under a link that exists in the source: not under `no link`, under `not judged, a screen is not on the map`, or under a move written in the config's `moves`), because duru gives the link's verdict and where it is written but not which
 element to press, so find that element in the source it names; and under an `input` line, `fill`, the Playwright
 code that finds the box with all its words, each matched exactly, and puts the value in, which duru did not try on

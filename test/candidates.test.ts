@@ -86,7 +86,7 @@ test('a candidate is checked against the map like a story, and an address off th
   assert.equal(publish.detached, false);
 });
 
-test('an address picks the first screen in map order whose route path matches the whole path, with variables matching one segment and their own pattern, a trailing slash and any letter case', () => {
+test('an address picks, of the screens whose route path matches the whole path and ranks alike, the first in map order, with variables matching one segment and their own pattern, a trailing slash and any letter case', () => {
   const records = recordsIn({
     'a.json': ['/document/done/', '/HOME', '/document/other', '/document/7/edit', '/document'],
   });

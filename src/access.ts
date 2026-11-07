@@ -2,7 +2,7 @@ import { lookupConstant, memberChain, UNKNOWN, VARIABLE_SEGMENT } from './client
 import type { TableItem } from './client.ts';
 import { parseRoleEntry } from './config.ts';
 import { parseFragment, plainText } from './parse.ts';
-import { pathParts, type PathPart } from './path-values.ts';
+import { explodedPaths, isCatchAll, pathParts, routeRank, type PathPart } from './path-values.ts';
 import type { Identifier, MemberExpression, Node, OptionalMemberExpression } from '@babel/types';
 import type { SettingNeed, SettingReason } from './setting-needs.ts';
 
@@ -410,22 +410,6 @@ export type RouteNode =
 
 const REDIRECT_HOPS = 5;
 
-function explodedPaths(routePath: string): string[] {
-  const [first, ...rest] = routePath.split('/');
-  const required = first.replace(/\?$/, '');
-  const optional = first !== required;
-  if (!rest.length) return optional ? [required, ''] : [required];
-  const tails = explodedPaths(rest.join('/'));
-  const paths = [...tails.map((t) => (t === '' ? required : `${required}/${t}`)), ...(optional ? tails : [])];
-  return paths.map((p) => (routePath.startsWith('/') && p === '' ? '/' : p));
-}
-
-function rankScore(routePath: string) {
-  const segments = routePath.split('/');
-  const splat = segments.includes('*');
-  return segments.filter((s) => s !== '*').reduce((score, s) => score + (/^:[\w-]+$/.test(s) ? 3 : s === '' ? 1 : 10), segments.length + (splat ? -2 : 0));
-}
-
 export function routerTargets(roots: RouteNode[]) {
   const endsInSplat = (routePath: string) => /(^|\/)\*$/.test(routePath);
   const patterns = new Map<string, RegExp[]>();
@@ -439,7 +423,7 @@ export function routerTargets(roots: RouteNode[]) {
   };
   const fitScores = (routePath: string, address: string) => explodedPaths(routePath)
     .filter((p) => fits(p.replace(/\/?\*$/, ''), address, !/(^|\/)\*$/.test(p)))
-    .map(rankScore);
+    .map(routeRank);
   const rankedWinners = (branches: Branch[], address: string) => {
     const scored = branches.map((b) => ({ b, score: Math.max(...fitScores(b.path, address)) })).filter((x) => x.score > -Infinity);
     const best = scored.reduce<(typeof scored)[number] | null>((a, x) => (!a || x.score > a.score ? x : a), null);
@@ -483,7 +467,7 @@ export function routerTargets(roots: RouteNode[]) {
           if ((won.every((b) => endsInSplat(b.path)) && unsure(node, address)) || node.indexes.some((p) => fits(p || '/', address, true))) doubtful = true;
           for (const { path: branchPath, chain } of won) {
             const splat = endsInSplat(branchPath);
-            const catchAll = /^\/?\*$/.test(branchPath);
+            const catchAll = isCatchAll(branchPath);
             chain.forEach((r, i) => {
               const leaf = i === chain.length - 1;
               const own = r.screens.map((screen) => ({ screen, whole: leaf, fits: leaf && !splat, depth: depth + 1 + i, catchAll: leaf && catchAll }));

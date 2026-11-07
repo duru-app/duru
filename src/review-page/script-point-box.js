@@ -165,8 +165,8 @@ function checkedAnswer(d) {
 }
 
 function movedFrom(screen, url) {
-  const route = state.data.screenRoutes.find((r) => r.id === screen);
-  return route ? !new RegExp(route.source, route.flags).test(walkPath(url)) : walkScreenOf(url) !== screen;
+  const routes = state.data.screenRoutes.filter((r) => r.id === screen);
+  return routes.length ? !routes.some((r) => new RegExp(r.source, r.flags).test(walkPath(url))) : walkScreenOf(url) !== screen;
 }
 
 window.addEventListener('message', (e) => {

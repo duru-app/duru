@@ -124,6 +124,19 @@ test('a screen whose route path was not read gets the reason in place of the arr
   });
 });
 
+test('a first step on a `*` route says that duru does not know which address to open and that no address check could fail, in place of the open and arrival lines', () => {
+  withCopy((run, copy) => {
+    run('rebuild');
+    const mapFile = path.join(copy, 'out/map.json');
+    const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+    map.screens.find((s: any) => s.id === '/home#Home').path = '*';
+    fs.writeFileSync(mapFile, JSON.stringify(map));
+    const story = section(run('story', 'change-settings').stdout, 'change-settings');
+    assert.match(story, /^ {5}- open: not written, the route path `\*` at Routes\.js:\d+ takes any address no other route takes, so duru does not know which one to open$/m);
+    assert.match(story, /^ {5}- arrives: not written, the route path `\*` at Routes\.js:\d+ fits any address, so a check of the address could not fail$/m);
+  });
+});
+
 test('a story ID that is not there, a story file that cannot be read and a map from an older duru end with 1 and one line on standard error, and nothing on standard output', () => {
   withCopy((run, copy) => {
     run('rebuild');

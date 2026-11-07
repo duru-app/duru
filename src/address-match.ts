@@ -1,4 +1,4 @@
-import { readableRoute, routePattern } from './path-values.ts';
+import { explodedPaths, readableRoute, routePattern, routeRank } from './path-values.ts';
 import { toSegments } from './server.ts';
 
 interface MapEndpoint {
@@ -38,7 +38,11 @@ export function pathOf(url: string) {
   }
 }
 
-export const screenRoutes = (map: AddressMap) => map.screens.filter((s) => readableRoute(s.path)).map((s) => ({ id: s.id, pattern: routePattern(s.path) }));
+// 점수가 같은 경로끼리는 맵에 적힌 순서를 따른다.
+export const screenRoutes = (map: AddressMap) => map.screens
+  .filter((s) => readableRoute(s.path))
+  .flatMap((s) => explodedPaths(s.path).map((p) => ({ id: s.id, rank: routeRank(p), pattern: routePattern(p) })))
+  .sort((a, b) => b.rank - a.rank);
 
 export function screenFinder(map: AddressMap) {
   const routes = screenRoutes(map);
