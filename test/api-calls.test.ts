@@ -453,17 +453,19 @@ test('API code importing the whole file holding the request function can reach i
 });
 
 test('a request function file that stops when it is run is replaced whole, and the summary says what that loses', async () => {
-  const configFile = fixtureCopy(SENDING, {
+  const configFile = fixtureCopy({ ...SENDING, calledApiModules: ['contracts/api/broken.ts', ...SENDING.calledApiModules] }, {
+    'contracts/api/broken.ts': "throw new Error('its own failure');\nexport const unused = () => 1;\n",
     'contracts/api/sending.ts': `throw new Error('needs a browser');\n${SENDING_FILE}`,
     'contracts/api/orders.ts': "import { sendRequest, route } from './sending';\nexport const getOrder = ({ id }: { id: string }) => sendRequest({ info: route('GET', '/v1/orders/{0}', id) });\n",
   });
   const map = await build(configFile);
-  assert.deepEqual(map.unrunApiModules, []);
+  assert.deepEqual(map.unrunApiModules!.map((m) => m.file), ['contracts/api/broken.ts']);
   assert.equal(map.apiFunctions.getOrder.endpoints.length, 1);
   const result = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   assert.ok(result.stdout.includes('requestFunction ./contracts/api/sending did not run: '), result.stdout);
-  assert.ok(result.stdout.includes('needs a browser'), result.stdout);
+  const line = result.stdout.split('\n').find((l) => l.includes('requestFunction ./contracts/api/sending did not run'));
+  assert.ok(line?.includes('needs a browser') && !line.includes('its own failure'), result.stdout);
 });
 
 test('a request a listed file sends with the global fetch is recorded with its method and address, with requestFunction or without it, and without requestFunction a listed file none of whose methods sent one is named, and a run where none sent one stops', async () => {
