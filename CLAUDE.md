@@ -39,6 +39,15 @@
   holds the merge. Exit 1 or 2 means nothing was compared: say so in the pull request. The client's config and the results stay in `~/duru-verify-out/` and name a private client, so nothing
   from them goes into an issue or a pull request.
 
+## Reading a new source shape
+
+- duru reads any app, so a new reader is a rule about what the code does. It does not name one app's components, paths
+  or keys, and a test for it uses made-up names.
+- Before proposing a reader, count the shape in the reference apps under `~/duru-target-apps` and in the app that raised
+  it, and say the counts. A shape only one app writes gets a reader only as an extension of a rule duru already reads;
+  otherwise it waits in an issue until a second app writes it.
+- After the change, build the maps of those apps with and without it, and say what moved.
+
 ## Writing the review page
 
 - The data from `/api/data` has the type `PageData` in `src/review.ts`. Give a new field the server sends a type
