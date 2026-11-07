@@ -170,6 +170,7 @@ function stepPlace(line) {
 
 function writtenValue(line) {
   if (line.checked !== undefined) return h('span', { class: 'step-value' }, line.checked ? '켬' : '끔');
+  if (line.secret) return h('span', { class: 'muted step-value step-secret', title: '비밀번호 · 비밀 값 · 토큰을 넣는 상자라 넣은 값을 적지 않았습니다' }, '숨김');
   if (line.value === undefined) return null;
   return line.value === '' ? h('span', { class: 'muted step-value', title: '빈 값을 넣어 상자를 비웠습니다' }, '빈 값') : h('code', { class: 'step-value' }, line.value);
 }

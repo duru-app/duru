@@ -423,6 +423,46 @@ test('a box found by label is read for a check as well as for a fill', () =>
     ]);
   }));
 
+test('a value written into a box whose selector names a password, a secret or a token is kept neither on the walk nor on the steps, while the walk still shows the write', () =>
+  inTempDir((dir) => {
+    const secret = 'S3cret-Made-Up';
+    const writes: [string, string, object][] = [
+      ['fill', 'internal:label="Password"i', { value: secret }],
+      ['fill', 'internal:testid=[data-testid="login-pwd"s]', { value: secret }],
+      ['fill', 'internal:attr=[placeholder="비밀번호 입력"i]', { value: secret }],
+      ['fill', 'internal:label="암호"i', { value: '' }],
+      ['type', '#api-TOKEN', { text: secret }],
+      ['fill', 'internal:role=textbox[name="Client Secret"i]', { value: secret }],
+      ['fill', 'input[name="passwd"]', { value: secret }],
+      ['fill', 'internal:label="이름"i', { value: 'Kim' }],
+    ];
+    const file = traceZip(dir, [
+      { type: 'before', callId: 'go', pageId: 'p', method: 'goto', startTime: 1, params: { url: 'http://x/signin' } },
+      { type: 'after', callId: 'go', endTime: 2 },
+      frameSnapshot('after@go', 'http://x/signin', 2),
+      ...writes.flatMap(([method, selector, params], i) => [
+        { type: 'before', callId: `w${i}`, pageId: 'p', method, startTime: 10 + i * 2, params: { selector, ...params } },
+        { type: 'after', callId: `w${i}`, endTime: 11 + i * 2 },
+      ]),
+    ], []);
+    const trace = readTrace(file) as Traced;
+    assert.deepEqual(trace.walk.filter((line) => line.kind === 'write').map(({ url, ...line }) => line), [
+      { kind: 'write', method: 'fill', box: { label: 'Password' }, secret: true },
+      { kind: 'write', method: 'fill', box: { testId: 'login-pwd' }, secret: true },
+      { kind: 'write', method: 'fill', box: { placeholder: '비밀번호 입력' }, secret: true },
+      { kind: 'write', method: 'fill', box: { label: '암호' }, value: '' },
+      { kind: 'write', method: 'type', unread: 'box', selector: '#api-TOKEN', secret: true },
+      { kind: 'write', method: 'fill', unread: 'box', selector: 'internal:role=textbox[name="Client Secret"i]', secret: true },
+      { kind: 'write', method: 'fill', unread: 'box', selector: 'input[name="passwd"]', secret: true },
+      { kind: 'write', method: 'fill', box: { label: '이름' }, value: 'Kim' },
+    ]);
+    assert.deepEqual(trace.steps.filter((s) => s.kind === 'interact').map((s) => s.input ?? 'skipped'), [
+      ...writes.slice(0, -1).map(() => 'skipped'),
+      { box: { label: '이름' }, value: 'Kim' },
+    ]);
+    assert.ok(!JSON.stringify(trace).includes(secret));
+  }));
+
 function clickTrace(resources: Sent[], after = 'http://x/next', before = 'http://x/home') {
   const page = 'page@1';
   return inTempDir((dir) => walkLines(traceZip(dir, [

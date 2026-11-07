@@ -814,7 +814,9 @@ in as `projects`, each with the worst status of the test's runs in it. `traced`
 lists each Playwright test that passed, with the trace of its passing run, as its report, its title, its file and
 line, and the screens it passed in order; an address no screen matches stays in that list as its path. A story test whose passing run left a trace
 carries the same order as `screens`. `walks` keeps what each traced test did, per project: its steps and the requests it sent, in order,
-and each entry of such a test names its walk as `steps`. A step or opened page carries `shot`, the name of its screen
+and each entry of such a test names its walk as `steps`. A value written into a box whose selector holds `password`,
+`passwd`, `pwd`, `secret`, `token`, `비밀번호` or `암호`, in any case, is not kept: its step has `"secret": true` in place
+of `value`. A step or opened page carries `shot`, the name of its screen
 picture in `test-shots/`, when the trace was recorded with screenshots. A line without `shot` keeps the last `shot`
 written before it, skipping requests, which never carry one, and has no picture when none was written before it;
 `null` means that its page has no picture yet after a line that had one, as on the first step in a popup. `traceFiles` names the trace file each walk was
@@ -1007,7 +1009,8 @@ A Playwright test needs no visit record when its report is listed in `tests` and
 `trace` option on: the screens it passed through, read from its trace by `rebuild`, become a candidate whose source
 names the report and the test titles. The candidate is named after the first of those titles without its tags. Only a passing run counts: a test that failed gives no candidate, and a test
 that passed on a retry gives the screens of the retry that passed. The steps of such a candidate may come with the values the test typed in, shown before the candidate is accepted and
-written into the story file with it; a line on the page says how many inputs were not carried over. These candidates
+written into the story file with it; a line on the page says how many inputs were not carried over, a value typed into
+a box whose selector names a password, a secret or a token among them. These candidates
 follow the limits of reading traces:
 
 - Only trace format version 8 is read. A trace of another version is skipped and listed with the traces
@@ -1412,7 +1415,7 @@ reviewer's call. A mark or judgment saved without a hash shows as it always did.
 
 **What a test did.** A Playwright test's row under a screen or a call has 「단계」. It opens, under the row, the
 test's steps in the order they ran, each with its screen: 「열기」 for an address it opened, 「누르기」, 「넣기」 with the
-box and the value, or 「찾은 상자를 읽지 못함」 in place of a box duru could not name, and 「확인」, with 「실패」 on an
+box and the value, 「숨김」 in place of a value duru did not keep, or 「찾은 상자를 읽지 못함」 in place of a box duru could not name, and 「확인」, with 「실패」 on an
 action that ended in an error. Between the steps come the requests the test sent, with their status or 「응답 없음」; a
 request that matches a call opens that call. A test that ran in several projects has a chip for each. A test without
 a trace, with a trace that could not be read, or that was skipped says so instead. When Playwright recorded the trace
