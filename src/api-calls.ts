@@ -326,7 +326,8 @@ export async function recordApiCalls(config: any, resolve: ImportResolver['resol
   if (!kept.keptOthers || !kept.failedModules.length) return kept;
   // 요청 함수 파일을 실행할 수 없으면 그 파일 전체를 대역으로 바꾼 결과를 쓴다.
   const whole = await recordWith(config, resolve, taken, false);
-  return whole.failedModules.length < kept.failedModules.length ? { ...whole, requestFileError: kept.failedModules[0].error } : kept;
+  const freed = kept.failedModules.find((m) => !whole.failedModules.some((w) => w.file === m.file));
+  return freed ? { ...whole, requestFileError: freed.error } : kept;
 }
 
 async function recordWith(config: any, resolve: ImportResolver['resolve'], taken: Set<string>, keepOtherExports: boolean) {
