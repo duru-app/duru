@@ -14,7 +14,7 @@ import { loadConstants } from './constants.ts';
 import { inTypePosition, nameFollower } from './follow-names.ts';
 import type { Origin } from './follow-names.ts';
 import { parseSource } from './parse.ts';
-import { pathParts, routePattern } from './path-values.ts';
+import { joinRoutePath, pathParts, routePattern } from './path-values.ts';
 import { importResolver } from './resolve.ts';
 import { sagaFiles, sagaReader, sourceFiles } from './saga-requests.ts';
 import { screenInputReader } from './screen-inputs.ts';
@@ -169,6 +169,8 @@ type UnreadRoutePath = { file: string; line: number; path: string; stoppedAt: St
 
 interface OuterFill {
   startsWithOuterAddress: boolean;
+  // 자기 파일에서 어느 라우트 안에도 없는 상대 경로다. 다른 라우트 파일의 화면이 이 라우트 파일을 렌더링하지 않으면 / 기준으로 해석한다.
+  atTopOfRoutes: boolean;
   unreadPath: { entry: UnreadRoutePath; restStoppedAt: StoppedAt | null } | null;
 }
 
@@ -1838,6 +1840,7 @@ export async function extractClient(config: any) {
   // ---------- 라우트 파일: 화면 목록과 화면에 걸린 조건 ----------
 
   const redirects: { to: string; file: string; line: number; guards: string[] }[] = [];
+  const topRedirects = new Set<(typeof redirects)[number]>();
   const unreadRoutePaths: UnreadRoutePath[] = [];
   const unreadRoutes: { file: string; line: number; reason: string }[] = [];
   const readWhole = (v: unknown) => typeof v === 'number' || (typeof v === 'string' && !v.includes(UNKNOWN));
@@ -1893,6 +1896,68 @@ export async function extractClient(config: any) {
     return { path: unread, stops: [calledAt], ...(paths.length > MOST_ADDRESSES ? { manyPaths: true as const } : { paths }) };
   }
 
+  function attributeValue(p: NodePath<JSXElement>, name: string): NodePath | null | undefined {
+    const found = p.get('openingElement.attributes').find((a) => (a.node as JSXAttribute).name?.name === name) as NodePath<JSXAttribute> | undefined;
+    if (!found) return undefined;
+    const value = found.get('value') as NodePath<any>;
+    return value.node ? (value.isJSXExpressionContainer() ? value.get('expression') as NodePath : value) : null;
+  }
+
+  function isReactFragment(p: NodePath<JSXElement>) {
+    const tag = tagOf(p.node.openingElement.name);
+    const reactAs = (b: Binding | undefined) => {
+      const from = b && importedAs(b);
+      return from?.spec === 'react' ? from.name : null;
+    };
+    return tag === 'Fragment' ? reactAs(p.scope.getBinding(tag)) === 'Fragment' : tag === 'React.Fragment' && ['default', '*'].includes(reactAs(p.scope.getBinding('React')) ?? '');
+  }
+
+  // 라우트의 children 에 적힌 라우트만 그 라우트 안에 있다. element 나 render 안의 라우트는 그 라우트가 렌더링하는 다른 Routes 의 것이다.
+  function routeAround(p: NodePath<JSXElement>): NodePath<JSXElement> | null {
+    let up: NodePath | null = p.parentPath;
+    while (up && !up.isJSXElement()) {
+      if (up.isJSXAttribute()) return null;
+      up = up.parentPath;
+    }
+    if (!up) return null;
+    if (isReactFragment(up as NodePath<JSXElement>)) return routeAround(up as NodePath<JSXElement>);
+    const tag = tagOf((up.node as JSXElement).openingElement.name);
+    return tag && config.routeElements.includes(tag) ? up as NodePath<JSXElement> : null;
+  }
+
+  type JoinedPath = { path: string; stops: NodePath[]; lead: NodePath };
+  const outerRoutes = new Map<Node, JoinedPath | null>();
+  function outerRoutePath(route: NodePath<JSXElement>): JoinedPath | null {
+    if (!outerRoutes.has(route.node)) {
+      const parent = routeAround(route);
+      const at = parent && attributeValue(parent, 'path');
+      outerRoutes.set(route.node, !parent ? null : at ? joinedRoutePath(parent, readRoutePath(at), at) : outerRoutePath(parent));
+    }
+    return outerRoutes.get(route.node)!;
+  }
+
+  // lead 는 경로의 첫 세그먼트가 적힌 곳이다.
+  function joinedRoutePath<T extends { path: string; stops: NodePath[]; paths?: string[] }>(route: NodePath<JSXElement>, read: T, at: NodePath): T & { lead: NodePath } {
+    const outer = read.path.startsWith('/') || read.path.startsWith(UNKNOWN) ? null : outerRoutePath(route);
+    if (!outer) return { ...read, lead: at };
+    const paths = read.paths?.map((p) => joinRoutePath(outer.path, p));
+    return { ...read, path: joinRoutePath(outer.path, read.path), stops: [...outer.stops, ...read.stops], lead: outer.lead, ...(paths && { paths }) };
+  }
+
+  function atTopOfRoutes(routePath: string, route: NodePath<JSXElement>) {
+    if (routePath.startsWith('/') || routePath.startsWith(UNKNOWN) || routePath === '*') return false;
+    let top = route;
+    for (let up = routeAround(top); up; up = routeAround(top)) top = up;
+    // 함수가 돌려주는 라우트처럼 Routes 밖에 있으면 그 함수를 부르는 쪽의 라우트 아래에 놓일 수 있다.
+    let group: NodePath | null = top.parentPath;
+    while (group && !(group.isJSXElement() && !isReactFragment(group as NodePath<JSXElement>))) {
+      if (group.isJSXAttribute()) return false;
+      group = group.parentPath;
+    }
+    return Boolean(group) && groupKind(group as NodePath<JSXElement>) === 'routes'
+      && !group!.findParent((up) => up.isJSXElement() && config.routeElements.includes(tagOf(up.node.openingElement.name) ?? ''));
+  }
+
   function stopOf(p: NodePath) {
     const file = programFile.get(p.scope.getProgramParent().block) ?? null;
     return { text: file ? sliceText(parse(file).src, p.node) : '?', file: rel(file), line: p.node.loc!.start.line };
@@ -1925,7 +1990,16 @@ export async function extractClient(config: any) {
           // 글자 값으로 끝까지 읽히는 to 는 그 값을 쓰고, 아니면 링크로 읽는다. 링크로도 읽지 못하면 글자 값을 남긴다.
           const written = toExpr ? evaluate(toExpr) : undefined;
           const read = typeof written === 'string' && !written.includes(UNKNOWN) ? written : toExpr ? oneAddress(toExpr) : UNKNOWN;
-          redirects.push({ to: read === UNKNOWN && typeof written === 'string' ? written : read, file: routeFile, line: p.node.loc!.start.line, guards: guardsOf(p, src, note) });
+          const to = read === UNKNOWN && typeof written === 'string' ? written : read;
+          const holder = p.parentPath.isJSXExpressionContainer() ? p.parentPath.parentPath : null;
+          const route = holder?.isJSXAttribute() && holder.node.name.name === 'element' ? holder.parentPath.parentPath as NodePath<JSXElement> : null;
+          const routeAt = route && config.routeElements.includes(tagOf(route.node.openingElement.name) ?? '') && !/^[/.]|[{:]/.test(to) ? route : null;
+          const at = routeAt && attributeValue(routeAt, 'path');
+          const outer = routeAt && (at ? joinedRoutePath(routeAt, readRoutePath(at), at) : outerRoutePath(routeAt));
+          const base = outer?.path.replace(/(^|\/)\*$/, '');
+          const redirect = { to: base ? joinRoutePath(base, to) : to, file: routeFile, line: p.node.loc!.start.line, guards: guardsOf(p, src, note) };
+          redirects.push(redirect);
+          if (routeAt && atTopOfRoutes(redirect.to, routeAt)) topRedirects.add(redirect);
           return;
         }
         if (!config.routeElements.includes(tag)) return;
@@ -1982,10 +2056,10 @@ export async function extractClient(config: any) {
         const grouped = Boolean(p.findParent((up) => up.isJSXElement() && ['Switch', 'Routes'].includes(tagOf(up.node.openingElement.name) ?? '')));
         const made: RouteScreen[] = [];
         for (const onePath of pathsIn(pathExpr)) {
-          const { path: routePath, stops, ...gives } = readRoutePath(onePath);
+          const { path: routePath, stops, lead, ...gives } = joinedRoutePath(p, readRoutePath(onePath), onePath);
           if (!routePath.includes(UNKNOWN) && made.some((m) => m.path === routePath)) continue;
           let unreadPath: OuterFill['unreadPath'] = null;
-          const outerAddress = routePath.startsWith(UNKNOWN) ? leadingPiece(onePath) : null;
+          const outerAddress = routePath.startsWith(UNKNOWN) ? leadingPiece(lead) : null;
           if (routePath.includes(UNKNOWN)) {
             const stoppedAt = stopOf(stops[0] ?? onePath);
             if (drawnInFunctionOrChildren && madeInLoop(p)) {
@@ -2006,7 +2080,7 @@ export async function extractClient(config: any) {
             routeFile,
             routeGuards: [...routeGuards],
             line,
-            outerFill: { startsWithOuterAddress: Boolean(outerAddress) && readsMatchedRoute(outerAddress!), unreadPath },
+            outerFill: { startsWithOuterAddress: Boolean(outerAddress) && readsMatchedRoute(outerAddress!), atTopOfRoutes: atTopOfRoutes(routePath, p), unreadPath },
           };
           screens.push(screen);
           made.push(screen);
@@ -2055,22 +2129,12 @@ export async function extractClient(config: any) {
       JSXElement(p) {
         const tag = tagOf(p.node.openingElement.name);
         if (!tag || definesRouteElement(p)) return;
-        const attr = (name: string) => {
-          const found = p.get('openingElement.attributes').find((a) => (a.node as JSXAttribute).name?.name === name) as NodePath<JSXAttribute> | undefined;
-          if (!found) return undefined;
-          const value = found.get('value') as NodePath<any>;
-          return value.node ? (value.isJSXExpressionContainer() ? value.get('expression') as NodePath : value) : null;
-        };
+        const attr = (name: string) => attributeValue(p, name);
         const exact = attr('exact');
         const exactValue = exact ? evaluate(exact) : undefined;
         const text = (p: NodePath | undefined | null) => (p ? readRoutePath(p).path : UNKNOWN);
         const node: DrawnNode = { kind: 'route', path: null, exact: exact === null || exactValue === true, exactUnread: Boolean(exact) && typeof exactValue !== 'boolean', from: null, to: UNKNOWN, screens: elementScreens.get(p.node) ?? [], entry: null, isRoute: false, isFragment: false, redirectAsElement: false, when: drawnSide(p), children: [] };
-        const binding = p.scope.getBinding(tag);
-        const reactAs = (b: Binding | undefined) => {
-          const from = b && importedAs(b);
-          return from?.spec === 'react' ? from.name : null;
-        };
-        node.isFragment = tag === 'Fragment' ? reactAs(binding) === 'Fragment' : tag === 'React.Fragment' && ['default', '*'].includes(reactAs(p.scope.getBinding('React')) ?? '');
+        node.isFragment = isReactFragment(p);
         const group = groupKind(p);
         if (group) node.kind = group;
         else if (config.redirectElements.includes(tag)) {
@@ -2081,7 +2145,7 @@ export async function extractClient(config: any) {
         } else if (config.routeElements.includes(tag)) {
           const at = attr('path');
           node.isRoute = true;
-          node.path = node.screens.length ? node.screens[0].path : at === undefined ? null : text(at);
+          node.path = node.screens.length ? node.screens[0].path : at === undefined ? null : at ? joinedRoutePath(p, readRoutePath(at), at).path : UNKNOWN;
         } else if (!/^[a-z]/.test(tag.split('.').pop()!) || (tag.includes('.') && !fromPackage(p.scope, tag, absFile))) {
           node.entry = resolveTag(p.scope, tag, absFile) ?? null;
           let frame: FrameFile[] | undefined;
@@ -2167,7 +2231,7 @@ export async function extractClient(config: any) {
           routeGuards: guards,
           line,
           tableItem: { key, file: itemFile, line: itemLine },
-          outerFill: { startsWithOuterAddress: Boolean(outerAddress) && readsMatchedRoute(outerAddress!), unreadPath },
+          outerFill: { startsWithOuterAddress: Boolean(outerAddress) && readsMatchedRoute(outerAddress!), atTopOfRoutes: false, unreadPath },
         };
         if (exactField) itemExact.set(screen, exact);
         return screen;
@@ -2916,6 +2980,14 @@ export async function extractClient(config: any) {
       const around = sourced.flatMap((x, j) => (x.s.routeFile !== sourced[i].s.routeFile && holds[j].has(routeFileOf(i)) ? [j] : []));
       return around.filter((j) => !around.some((k) => sourced[k].s.routeFile !== sourced[j].s.routeFile && holds[j].has(routeFileOf(k))));
     };
+    const heldElsewhere = (routeFile: string) => sourced.some((x, j) => x.s.routeFile !== routeFile && holds[j].has(path.join(config.srcRoot, routeFile)));
+    for (const r of topRedirects) if (!heldElsewhere(r.file)) r.to = joinRoutePath('', r.to);
+    sourced.forEach((x) => {
+      if (!x.outerFill.atTopOfRoutes || heldElsewhere(x.s.routeFile)) return;
+      x.s.path = joinRoutePath('', x.s.path);
+      const entry = x.outerFill.unreadPath?.entry;
+      if (entry) Object.assign(entry, { path: x.s.path, ...(entry.paths && { paths: entry.paths.map((p) => joinRoutePath('', p)) }) });
+    });
     const filled = new Map<number, string>();
     const outers = new Map<number, string>();
     const filling = new Set<number>();
@@ -2962,12 +3034,13 @@ export async function extractClient(config: any) {
     const holding = new Map<RouteNode & { kind: 'route' }, { files: string[]; base: string; around: string[] }>();
     const holders = new Map<string, { frame: FrameFile[]; from: string }[]>();
     let around: string[] = [];
-    const convert = (n: DrawnNode, file: string, base = ''): RouteNode[] => {
-      const nodes = convertNode(n, file, base);
+    // base 는 경로가 / 로 시작하지 않을 때 앞에 붙는 경로이고, outer 는 경로가 없는 라우트 안에서 다른 라우트 파일의 경로 앞에 붙는 경로다.
+    const convert = (n: DrawnNode, file: string, base = '', outer = base): RouteNode[] => {
+      const nodes = convertNode(n, file, base, outer);
       for (const node of nodes) if (n.when && node.kind !== 'redirect') node.when = n.when;
       return nodes;
     };
-    const convertNode = (n: DrawnNode, file: string, base: string): RouteNode[] => {
+    const convertNode = (n: DrawnNode, file: string, base: string, outer: string): RouteNode[] => {
       if (n.kind === 'routes') {
         const branches: Branch[] = [];
         const unwrapped = (nodes: DrawnNode[]): DrawnNode[] => nodes.flatMap((c) => (c.isFragment ? unwrapped(c.children) : [c]));
@@ -2976,8 +3049,8 @@ export async function extractClient(config: any) {
           for (const r of unwrapped(routes).filter((c) => c.isRoute)) {
             const drawnBy = unwrapped(r.children).filter((c) => !c.isRoute && (c.kind !== 'redirect' || c.redirectAsElement));
             const leaf = drawnBy.length === unwrapped(r.children).length;
-            for (const node of convert({ ...r, children: drawnBy }, file, outerPath) as Branch['chain']) {
-              const own = node.path === null ? null : node.path.startsWith('/') ? node.path : `${outerPath}/${node.path}`.replace(/\/{2,}/g, '/');
+            for (const node of convert({ ...r, children: drawnBy }, file, base, outerPath) as Branch['chain']) {
+              const own = node.path === null ? null : joinRoutePath(base, node.path);
               flatten(r.children, own ?? outerPath, [...chain, node]);
               if (own !== null) branches.push({ path: own, chain: [...chain, node] });
               else if (leaf) indexes.push(outerPath);
@@ -2999,8 +3072,8 @@ export async function extractClient(config: any) {
       if (!byPath.size) byPath.set('', { routePath: n.path, itemValue: undefined, screens: [] });
       return [...byPath.values()].map(({ routePath, itemValue, screens }) => {
         const entries = screens.length ? screens.flatMap((i) => sourced[i].s.componentFile ?? []) : n.entry ? [n.entry] : [];
-        const full = routePath === null || routePath.startsWith('/') ? routePath : `${base}/${routePath}`.replace(/\/{2,}/g, '/');
-        const inner = full === null ? base : full.endsWith('/*') ? full.slice(0, -2) : '';
+        const full = routePath === null ? null : joinRoutePath(base, routePath);
+        const inner = full === null ? outer : full.endsWith('/*') ? full.slice(0, -2) : '';
         const fromItem = typeof itemValue === 'boolean';
         const node = { kind: 'route' as const, path: routePath, exact: fromItem ? itemValue : n.exact, exactUnread: fromItem ? false : n.exactUnread, screens, children: n.children.flatMap((c) => convert(c, file, inner)) };
         const held = heldFiles(entries, file);
@@ -3262,7 +3335,7 @@ export async function extractClient(config: any) {
               routeFile: fileOf(item),
               routeGuards: [],
               line: itemLine,
-              outerFill: { startsWithOuterAddress: false, unreadPath: null },
+              outerFill: { startsWithOuterAddress: false, atTopOfRoutes: false, unreadPath: null },
             });
           }
         }

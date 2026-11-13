@@ -3336,8 +3336,9 @@ Measured with mattermost 4d94455 (8 route files), appsmith 4f8e991 and outline d
 0, 10 to 0 and 12 to 12 (all function results), with no duplicate ID and the same number of screens (57, 44, 30);
 apart from path, ID, access and links, every screen is the same as on main.
 Known limits: a screen that imports the inner route file only for a constant counts as an outer screen too, which can
-join a wrong path or leave the path unread; react-router 6 child routes written with a relative path are not joined;
-the inner screens do not take on the route conditions of the outer screen.
+join a wrong path or leave the path unread; react-router 6 child routes written with a relative path were not joined
+(they are since the entry on child routes written with a relative path); the inner screens do not take on the route
+conditions of the outer screen.
 Alternatives compared:
 - One screen with two routes, marked 「라우트 2곳」, as first planned for this case: dropped once measuring showed the
   two routes are two addresses duru read wrongly, not one screen.
@@ -4597,9 +4598,9 @@ limit of 64 below, and that function's body has a `switch`, which is not read ei
 addresses the module merges branches with the same text and stops at 64.
 A route path drops a branch that adds a query (a `?` not right after a path variable), so `${searchPath()}/:query?`
 is `/search/:query?`, and a branch that leaves only path variables when a branch with a written segment is left, so
-outline's home route `${homePath()}/:tab?` is `/home/:tab?`. A relative path a function returns is kept, so React
-Router 6 joins it to the outer route's path. When two or more different paths are left, the path is `{?}` and the
-`route path not read` line names the call and the paths (`stopped at homePath(), which gives / and /home`), or says
+outline's home route `${homePath()}/:tab?` is `/home/:tab?`. A relative path a function returns is kept, and is
+joined to the outer route's path as any relative path of a child route is. When two or more different paths are left,
+the path is `{?}` and the `route path not read` line names the call and the paths (`stopped at homePath(), which gives / and /home`), or says
 `more than 8 paths`. When such a path starts with the address the outer route matched (`${path}${tabPath(admin)}`),
 it is `{?}{?}`, so the outer route's path is filled in front and the rest stays `{?}`, as before this change, and
 each path that line names gets the outer route's path in front too.
@@ -5591,6 +5592,54 @@ Compared:
   took `/about`, and React Router 6 ranks every route of a `<Routes>`, not only `*`.
 - Following the route tree, as the link reader does (first fit in a `<Switch>`, rank in a `<Routes>`): the map does
   not keep the route tree, and two trees the app picks between with a condition still could not be told apart.
+
+**A child route written with a relative path gets the paths of the routes around it on the map itself:
+`<Route path="/:team" element={<Frame />}><Route path="shelf/home" … /></Route>` is the screen `/:team/shelf/home`,
+and its ID follows that path.** Driver's decision. React Router 6, and the route elements `createRoutesFromElements`
+reads, put a child's relative path behind its parent's; duru does the same while it reads the route file, going up
+through the routes whose children hold the route (a route without a path and a Fragment add nothing) until a path
+starts with `/` or no route holds it. A route inside another route's `element` or `render` belongs to a `<Routes>` that
+route draws, not to the route. The route tree that links walk joins with the same function (`joinRoutePath` in
+`src/path-values.ts`), now from the joined path, so a link and the screen list give one path. A relative path a
+function returns is joined the same way, and a child of a route whose path duru could not read is not read either,
+stopped where the parent's path stopped. A redirect drawn in a route's `element` to a relative address goes on from
+that route's path, so `<Route index element={<Navigate to="team" />} />` under `/app` goes to `/app/team`; from a `*`
+route it goes on from the path in front of the `*`, as React Router resolves it, so `<Route path="*" element={<Navigate
+to="home" />} />` at the top goes to `/home`.
+A relative path at the top of a `<Routes>` that no route of its file holds is read from `/`, as React Router reads a
+`<Routes>` drawn under no route, when no screen of another route file draws that route file. A `<Routes>` drawn in a
+route's `element`, or in a route file another screen draws, keeps its relative path as written: the outer path is
+not in the file, and `fillOuterAddresses` fills it in front only for a path that starts with the matched address.
+Routes outside any `<Routes>`, such as the ones a function returns for its caller to put under its own routes, keep
+the outermost relative path as written too, since the caller decides where they go. `*` alone keeps its path too,
+since it fits any address either way and `/*` would only move IDs. For a path that stays relative, `duru story` writes
+why it has no `open` address and no `arrives` check instead of a pattern that cannot match, and `moves` takes a path as
+the map writes it, relative or not.
+Why one path and no second field: with one source of the path, trace matching, `open`, `arrives` and `moves` need no
+special case; a second field would leave every reader to pick one of the two.
+Measured on a private app (three runs with traces kept, against the base branch): 38 of its 52 screens held a relative
+path (31 under `/:workspaceId`, 4 at the top of a signed-out `<Routes>`, 3 `*`) and now 2 do, both a top-level `*`; 36
+IDs moved, the 35 and the `*` under `/:workspaceId`. Every address the traces showed under the workspace went to `*`
+before and now goes to its own screen. Of the 25 `arrives` lines the four stories print for steps that are not `*`,
+6 matched an address of the traces before and 25 do now; `open` went from `member/home` to
+`/:workspaceId/member/home`. A move written as `/:workspaceId/member/document-approve` matched no route before and is
+now on the map, and the relative spelling stopped the run. The stories and test tags written during the trial name
+the old IDs: as written the stories come out detached and 4, 5 and 6 tags point outside the map; with the IDs
+replaced, the calls tied to a screen only by a trace go 15 → 11, 8 → 5 and 9 → 6, and 2 of the 4 stories read pass
+where all 4 read part-pass; the other 2 stay part-pass because the sign-in address still goes to the `/:workspaceId`
+layout, the known limit of the entry above.
+On metabase (37 route files, 27 screens it reads; the others are `lazy` routes), 13 IDs moved: 5 screens under
+`/admin` and `/model/:slug` now have their whole path, 8 under a relative outer route take its path and stay relative,
+and the 12 left are outermost paths of routes a function returns. The other reference apps write no relative child
+route; outline's map, built with and without the change, is the same.
+Known limits: a `<Routes>` that a component of the same file draws inside a route keeps its relative paths read from
+`/`, since only route files drawn by another file count as drawn; a route made for each item of a `routeTables`
+table does not take the path of a route around it; a relative redirect address under `..` is kept as written.
+Compared:
+- A second field beside the path for the joined address: two sources of one address, and every reader of the map
+  would have to choose.
+- Joining only where addresses are read (trace matching, story lines, moves): each would need the parent paths, which
+  the map does not keep.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 
