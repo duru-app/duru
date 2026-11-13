@@ -690,14 +690,14 @@ test('in a browser, the tests with a trace are candidates beside the visit recor
         assert.equal(await p.locator('#center .story-path .step .records').count(), 0);
         assert.equal(await p.locator('#center .source').evaluate((e) => e.firstChild!.textContent), 'results/playwright-traced/visits.json');
         const titles = ['opens home and then help', 'follows a link while waiting for the new address', 'uses the mouse right after the address changes', 'clicks a button that appears after the address changes'];
-        assert.deepEqual(await p.locator('#center .source li').allTextContents(), titles);
+        assert.deepEqual(await p.locator('#center .source li .source-test').allTextContents(), titles);
         assert.equal(await placeOf(p), '#story?candidate=/home#Home+>+/help#Help');
         await p.reload();
         await p.waitForSelector('#candidate-list li.selected:has-text("opens home and then help")');
 
         await p.click('#center button.accept');
         await p.waitForSelector('#story-list li.selected:has-text("opens home and then help")');
-        assert.deepEqual(await p.locator('#center .source li').allTextContents(), titles);
+        assert.deepEqual(await p.locator('#center .source li .source-test').allTextContents(), titles);
         const saved = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'opens-home-and-then-help.json'), 'utf8'));
         assert.deepEqual([saved.screens, saved.source], [['/home#Home', '/help#Help'], { report: 'results/playwright-traced/visits.json', tests: titles }]);
 

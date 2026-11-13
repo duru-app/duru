@@ -200,7 +200,7 @@ function renderStoryCenter() {
     return fillStoryCenter(center, c, [
       h('div', { class: 'title-row' }, h('h3', {}, c.name), c.storyId ? storyIdTag(c.storyId) : null, nameButton(c), byAgent(c) ? agentChip('candidate') : null, walkChip(c), ...reachChips(c), candidateActions(c)),
       storyErrorLine(),
-      sourceView(c.source, '후보가 나온'),
+      sourceView(c.source, '후보가 나온', true),
       foundOrder(c),
       ...replacedOrders(c),
       needsFold(c, `candidate\n${c.key}`),
@@ -655,7 +655,7 @@ const replacedOrders = (c) => (c.originals ?? []).map((r, i) => {
   const dropped = new Map(r.dropped.map((d) => [d.step, d]));
   return h('details', { class: 'found-order replaced-order', open: state.replacedOpen.has(at), ontoggle: (e) => toggleReplaced(e, at) },
     h('summary', {}, `원래 순서 ${r.screens.length}`),
-    sourceView(r.source, '원래 후보가 나온'),
+    sourceView(r.source, '원래 후보가 나온', true),
     h('ol', {}, r.screens.map((screen, step) => {
       const d = dropped.get(step + 1);
       return h('li', { class: d ? 'skipped' : null },

@@ -126,7 +126,10 @@ replayView.addEventListener('close', () => {
 
 function replayButton(node, t) {
   if (t.format !== 'playwright') return null;
-  const lines = stepsRuns(t)?.[shownProject(node, t)];
+  return replayOf(stepsRuns(t)?.[shownProject(node, t)]);
+}
+
+function replayOf(lines) {
   if (!lines?.some((line) => line.kind !== 'request' && line.shot)) return null;
   return h('button', {
     class: 'replay', title: '이 테스트의 단계를 화면 그림과 함께 한 단계씩 넘겨 봅니다', 'aria-label': '재생 (단계별 화면)',
@@ -136,11 +139,22 @@ function replayButton(node, t) {
 
 function traceButton(node, t) {
   if (t.format !== 'playwright' || !t.steps) return null;
-  const project = shownProject(node, t);
-  const kept = state.data.testTraces?.[t.steps]?.[project];
+  return traceOf(t.steps, shownProject(node, t));
+}
+
+function reportTestButtons(report, title) {
+  return Object.entries(state.data.testSteps ?? {}).flatMap(([steps, runs]) => {
+    const [file, testFile, line, testTitle] = JSON.parse(steps);
+    if (file !== report || testTitle !== title) return [];
+    return Object.keys(runs).map((project) => ({ place: [`${testFile}:${line}`, project].filter(Boolean).join(' · '), buttons: [replayOf(runs[project]), traceOf(steps, project)].filter(Boolean) }));
+  }).filter((run) => run.buttons.length);
+}
+
+function traceOf(steps, project) {
+  const kept = state.data.testTraces?.[steps]?.[project];
   if (kept === undefined) return null;
   if (!kept) return h('button', { class: 'trace', disabled: true, title: '이 테스트의 trace 파일이 지워져 열 수 없습니다. 테스트를 다시 돌리고 duru rebuild 를 실행하면 됩니다', 'aria-label': 'trace 파일 없음' }, 'trace');
-  const trace = `test-trace?steps=${encodeURIComponent(t.steps)}&project=${encodeURIComponent(project)}`;
+  const trace = `test-trace?steps=${encodeURIComponent(steps)}&project=${encodeURIComponent(project)}`;
   return h('a', {
     class: 'trace', href: `/trace-viewer/index.html?trace=${encodeURIComponent(trace)}`, target: '_blank', rel: 'noopener',
     title: '이 테스트의 trace 를 Playwright trace viewer 로 새 탭에서 엽니다', 'aria-label': 'trace viewer 열기',

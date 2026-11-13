@@ -34,11 +34,16 @@ function commentSource(id, whose) {
   return h('button', { type: 'button', class: 'source comment-source', title: `${whose} 코멘트로 갑니다`, onclick: () => reachComment(found) }, text);
 }
 
-const sourceView = (source, whose) => (source.comment !== undefined
+const sourceView = (source, whose, withRuns = false) => (source.comment !== undefined
   ? commentSource(source.comment, whose)
   : source.record
   ? h('div', { class: 'muted mono source', title: `${whose} 방문 기록과 단계` }, `${source.record} · ${stepsText(source.steps)}`)
-  : h('div', { class: 'muted mono source', title: `${whose} 시험 보고와 그 순서를 지나간 시험` }, source.report, h('ul', { class: 'plain' }, source.tests.map((t) => h('li', {}, t)))));
+  : h('div', { class: 'muted mono source', title: `${whose} 시험 보고와 그 순서를 지나간 시험` }, source.report, h('ul', { class: 'plain' }, source.tests.map((t) => h('li', {}, h('span', { class: 'source-test' }, t), withRuns ? sourceRuns(source.report, t) : null)))));
+
+function sourceRuns(report, title) {
+  const runs = reportTestButtons(report, title);
+  return runs.map((run) => h('span', { class: 'source-run' }, runs.length > 1 ? h('span', { class: 'muted' }, run.place) : null, ...run.buttons));
+}
 const storyDate = (date) => (date.length > 10 ? fmtDate(date) : date);
 const storyMarkLabel = (m) => (m.target.part ? `${m.target.story} · ${tagLabel(m.target)}` : m.target.story);
 const unlistedMarks = () => state.data.marks.attached.filter((m) => m.target.story !== undefined && !state.data.stories.list.some((st) => st.id === m.target.story));

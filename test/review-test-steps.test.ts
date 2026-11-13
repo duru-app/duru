@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import type { Locator, Page } from 'playwright-core';
-import { withRebuiltFixture, withServer, browserMissing, withPage, chooseScreen, changeData, TRACED } from './review-helpers.ts';
+import { withRebuiltFixture, withServer, browserMissing, withPage, chooseScreen, changeData, TRACED, CANDIDATES, storiesTab } from './review-helpers.ts';
 
 const STEPS = { tests: [...TRACED.tests, { format: 'playwright', path: 'results/playwright-steps', depth: 'ui' }] };
 
@@ -410,4 +410,33 @@ test('the review server sends a test\'s trace and screen pictures only for what 
       assert.equal(await status('/test-shots/page@191be84288f2d906ed440904919e2f78-1793237455323.jpeg'), 500);
     }
   }));
+});
+
+test('in a browser, a story candidate from browser tests has a replay button and a trace link beside each test it came from, the replay opening the same window as on a test line, and a candidate from a visit record has neither', { skip: browserMissing }, async () => {
+  const replayed = 'shows the screen after each step @screen:/home#Home';
+  const addReplayed = changeData((data) => {
+    const c = structuredClone(data.candidates.list.find((x) => x.name === 'opens home and then help')!);
+    data.candidates.list.push({ ...c, key: `${c.key} > again`, name: 'replays home', source: { report: 'results/playwright-steps/report.json', tests: [replayed] } });
+  });
+  await withRebuiltFixture({ ...CANDIDATES, ...STEPS }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#candidate-list li:has-text("opens home and then help")');
+        const source = p.locator('#center .source');
+        const traces = await source.locator('li a.trace').evaluateAll((links) => links.map((a) => new URLSearchParams(decodeURIComponent(a.getAttribute('href')!.split('trace=')[1]).split('?')[1]).get('steps')));
+        assert.deepEqual(traces.map((steps) => JSON.parse(steps!)[3]), ['opens home and then help', 'follows a link while waiting for the new address', 'uses the mouse right after the address changes', 'clicks a button that appears after the address changes']);
+        assert.equal(await source.locator('button.replay').count(), 0);
+
+        await p.click('#candidate-list li:has-text("replays home")');
+        await source.locator('li', { hasText: replayed }).locator('button.replay').click();
+        const view = p.locator('#replay-view');
+        assert.ok(await view.evaluate((d: HTMLDialogElement) => d.open));
+        assert.match((await view.locator('.replay-count').textContent())!, /^1\/\d+$/);
+        await view.locator('button.close').click();
+
+        await p.click('#candidate-list li:has-text("open-help")');
+        assert.equal(await p.locator('#center .source').locator('button.replay, a.trace').count(), 0);
+      }, { setup: addReplayed })));
 });
