@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import type { Locator, Page } from 'playwright-core';
-import { withRebuiltFixture, withServer, browserMissing, withPage, chooseScreen, changeData, TRACED, CANDIDATES, storiesTab } from './review-helpers.ts';
+import { withRebuiltFixture, withServer, browserMissing, withPage, chooseScreen, changeData, TRACED, CANDIDATES, storiesTab, pickPathStory } from './review-helpers.ts';
 
 const STEPS = { tests: [...TRACED.tests, { format: 'playwright', path: 'results/playwright-steps', depth: 'ui' }] };
 
@@ -439,4 +439,32 @@ test('in a browser, a story candidate from browser tests has a replay button and
         await p.click('#candidate-list li:has-text("open-help")');
         assert.equal(await p.locator('#center .source').locator('button.replay, a.trace').count(), 0);
       }, { setup: addReplayed })));
+});
+
+test('in a browser, an accepted story has a replay button and a trace link beside each of its story tests that left steps, and a story whose tests left none has neither', { skip: browserMissing }, async () => {
+  const replayed = 'shows the screen after each step @screen:/home#Home';
+  const tagReplayed = changeData((data) => {
+    const traced = Object.values(data.tests.nodes).flat().find((t) => t.title === replayed && t.steps)!;
+    data.tests.stories['help-from-home'] = [...(data.tests.stories['help-from-home'] ?? []), { ...traced, title: `${replayed} @story:help-from-home` }];
+  });
+  await withRebuiltFixture({ ...CANDIDATES, ...STEPS }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await pickPathStory(p, 'help-from-home');
+        const tests = p.locator('#center .story-tests');
+        const row = tests.locator('.test', { hasText: 'shows the screen after each step' });
+        const steps = new URLSearchParams(decodeURIComponent((await row.locator('a.trace').getAttribute('href'))!.split('trace=')[1]).split('?')[1]).get('steps');
+        assert.equal(JSON.parse(steps!)[3], replayed);
+        assert.equal(await tests.locator('button.replay, a.trace').count(), 2);
+
+        await row.locator('button.replay').click();
+        const view = p.locator('#replay-view');
+        assert.ok(await view.evaluate((d: HTMLDialogElement) => d.open));
+        assert.match((await view.locator('.replay-count').textContent())!, /^1\/\d+$/);
+        await view.locator('button.close').click();
+
+        await pickPathStory(p, 'change-settings');
+        assert.equal(await p.locator('#center .story-tests').locator('button.replay, a.trace').count(), 0);
+      }, { setup: tagReplayed })));
 });
