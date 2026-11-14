@@ -31,15 +31,19 @@ export function loadServerEndpoints(file: string): ServerEndpoint[] {
     });
 }
 
-// 변수 자리 {?} 의 물음표에서 쿼리로 잘리지 않게, 그 자리를 먼저 감춰 둔다.
-export function toSegments(p: string): string[] {
+export const GLUED_UNKNOWN = '\0';
+
+// {?} 의 물음표에서 쿼리로 잘리지 않게 그 자리를 먼저 감춰 둔다.
+export function writtenSegments(p: string): string[] {
   return p
-    .replaceAll('{?}', '\0')
+    .replaceAll('{?}', GLUED_UNKNOWN)
     .split('?')[0]
     .split('/')
     .filter(Boolean)
-    .map((s) => (/^\{.*\}$/.test(s) || s.includes('\0') ? '*' : s));
+    .map((s) => (/^\{.*\}$/.test(s) || !s.replaceAll(GLUED_UNKNOWN, '') ? '*' : s));
 }
+
+export const toSegments = (p: string) => writtenSegments(p).map((s) => (s.includes(GLUED_UNKNOWN) ? '*' : s));
 
 function sameShape(a: string[], b: string[]) {
   return a.length === b.length && a.every((s, i) => s === '*' || b[i] === '*' || s === b[i]);
