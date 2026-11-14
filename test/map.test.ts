@@ -2201,6 +2201,41 @@ for (const moves of [MOVE, { '/signin': '/home' }, [{ ...MOVE, from: '/sign in' 
   });
 }
 
+function loadConfigWith(change: Record<string, unknown>) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    const file = path.join(dir, 'config.json');
+    fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(path.join(FIXTURE, 'config.json'), 'utf8')), ...change }));
+    return loadConfig(file);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const LIST_KEYS: [string, unknown[], string][] = [
+  ['routeElements', ['Route', { Route: true }, 3, [], [1], ['Route path']], 'routeElements must be a list of the elements that declare routes, as the route files write them, such as ["Route"]'],
+  ['redirectElements', ['Navigate', {}, [1], ['Navi gate']], 'redirectElements must be a list of the elements that redirect in the route files, such as ["Redirect", "Navigate"]'],
+  ['entryPaths', ['/home', { '/home': true }, [1], ['home']], 'entryPaths must be a list of route paths as in the map, such as ["/home"]'],
+  ['serverEndpoints', [{}, 3, '', [1], ['']], 'serverEndpoints must be a server endpoint list file, or a list of them, as paths from the config file, such as ["server-endpoints.txt"]'],
+  ['settingsRoots', ['globalSettings', {}, [1], ['global settings']], 'settingsRoots must be a list of the identifiers through which settings are read, such as ["globalSettings"]'],
+  ['roleIdentifiers', ['memberRole', { memberRole: true }, 3], 'roleIdentifiers must be a list of where the user\'s role is read, each an identifier (memberRole) or one member of an object (workspace[\'member.role\'])'],
+  ['passThroughCalls', ['stringFormat', {}, [1], ['string.format']], 'passThroughCalls must be a list of the names of functions that pass a URL through, such as ["stringFormat"]'],
+];
+for (const [key, values, message] of LIST_KEYS) {
+  test(`${key} that is not a list of the values it takes stops with what to write`, () => {
+    for (const value of values) {
+      assert.throws(() => loadConfigWith({ [key]: value }), { message: `${message}, not ${JSON.stringify(value)}` }, JSON.stringify(value));
+    }
+  });
+}
+
+test('without routeElements in the config, the Route element declares routes, and a redirectElements of no names reads no redirect', async () => {
+  const written = (await buildFixture()).screens.map((s) => s.id);
+  assert.deepEqual(loadConfigWith({ routeElements: undefined }).routeElements, ['Route']);
+  assert.deepEqual((await buildCopy((rewrite) => rewrite('config.json', (src) => JSON.stringify({ ...JSON.parse(src), routeElements: undefined })))).screens.map((s) => s.id), written);
+  assert.deepEqual(loadConfigWith({ redirectElements: [] }).redirectElements, []);
+});
+
 const EXPORT = 'POST:/api/v1/report/export';
 const DETAIL = 'GET:/api/v1/document/{documentId}';
 const withCallLinks = (callLinks: unknown) => buildCopy((rewrite) => rewrite('config.json', (src) => JSON.stringify({ ...JSON.parse(src), callLinks })));

@@ -52,7 +52,9 @@ A run over a large app can stop with `JavaScript heap out of memory`; run it aga
 The project config lives **outside this repository** next to the target project's data. Paths in it are
 relative to the config file, except the files inside the client source (`routesFile`, `routeTables`, `constants`,
 `apiModules`, `calledApiModules`, `settingsDefaults`), which are relative to `srcRoot`. `test/fixtures/app` holds a small fake
-client with example results and a config to start from.
+client with example results and a config to start from. A key whose value is not of the shape it takes, such as
+one object where a list goes, stops the command with one line on standard error that names the key and what it
+takes, and the exit code is 1.
 
 ### Client source
 
@@ -62,8 +64,8 @@ client with example results and a config to start from.
   the files listed and does not follow imports to find more, so a route file left out of the list gives no
   screens. An empty list, an entry that is not text or a file listed twice stops the run with an error, and a
   listed file that is not there stops the map build with its name.
-- `routeElements`, `routeConstant` — the elements that declare routes (`["Route"]`) and the object that holds
-  the route paths (`"Option.ROUTE_PATH"`). A route with a `path` gives a screen when duru can read which component
+- `routeElements`, `routeConstant` — the elements that declare routes (default `["Route"]`; a config that lists
+  them uses exactly the names listed) and the object that holds the route paths (`"Option.ROUTE_PATH"`). A route with a `path` gives a screen when duru can read which component
   it draws. When duru sees a route that draws a screen it cannot read, it prints a `route not read` line saying why
   (see "What extract and rebuild print").
   `element={<Navigate to=… />}` is a redirect, not a screen. A route without `path` gives no screen.
@@ -1757,8 +1759,9 @@ in a code span, followed by `(duru did not try it on the screen)`. The lines a p
 line gets an `accounts` line when the roles that open it were read, and each guard of a link between steps (under each way when there are several) and of a
 route gets lines of its own; `tasks` does not print these lines. A role guard gets `role <roles>:` with, for each role,
 the account in `app.roles` and the environment variable that holds its password (`no account in app.roles` when it
-has none); the password is never printed. When the config has no `app.roles`, `preconditions` starts with one
-`accounts: no app.roles in the config` line, and the role lines and the first-screen line name no accounts. On the route of
+has none); the password is never printed. A first `accounts: no app.roles in the config` line under `preconditions`
+says the story needs a role duru read and the config gives no account for any role, so the role lines and the
+first-screen line name no accounts. On the route of
 the first screen, a role whose accounts the first-screen line already gives says so instead of repeating them. A
 setting guard gets one `setting` line for each setting it reads, which speaks for that setting only, not for other
 checks joined to it with `&&`: `met with no change`, `not met with no change` with the value to put, or `not known,
