@@ -506,6 +506,39 @@ export default function Routes() {
   assert.deepEqual(map.screens.map((s) => s.id), ['/login#Login', ...INNER]);
 });
 
+const nestedRoutes = (layout: string) => `import { Route, Routes } from 'react-router-dom';
+import Home from './Home';
+import Team from './Team';
+import Help from './Help';
+import Menu from './Menu';
+import Shell from './Shell';
+
+export default function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/:org" ${layout}>
+        <Route path="/:org/home" element={<Home />} />
+        <Route path="/:org/team/:team" element={<Team />} />
+      </Route>
+      <Route path="/help" element={<Help />} />
+    </Routes>
+  );
+}
+`;
+
+test('the element or component of a route that holds other routes gives its links and requests to the screens of those routes, and to no screen beside it', async () => {
+  for (const layout of ['element={<Menu />}', 'component={Menu}', 'element={<Shell><Menu /></Shell>}']) {
+    const map = await build(writeApp({ 'Routes.js': nestedRoutes(layout) }));
+    for (const id of ['/:org/home#Home', '/:org/team/:team#Team']) {
+      assert.deepEqual(givenBy(map, id, 'Menu.js'), ['/help'], `${layout} ${id}`);
+      assert.deepEqual(requestedBy(map, id, 'Menu.js'), ['GET /api/menu'], `${layout} ${id}`);
+      assert.deepEqual(screen(map, id).links.filter((l) => l.file === 'Menu.js').map((l) => l.layout), [true], `${layout} ${id}`);
+    }
+    assert.deepEqual(givenBy(map, '/help#Help', 'Menu.js'), [], layout);
+    assert.ok(!screen(map, '/help#Help').sourceFiles.includes('Menu.js'), layout);
+  }
+});
+
 test('the usage guide and the agent skill name the line for a component beside routes that draws its own routes, and the decision record names the choice', () => {
   const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, file), 'utf8');
   assert.ok(read('../README.md').includes('`<component> at <file>:<line> is drawn beside routes but draws its own routes in <component file>'));
