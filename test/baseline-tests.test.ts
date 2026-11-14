@@ -779,6 +779,15 @@ test('a baselineTests that is not a list, or an item that is not an object with 
   });
 });
 
+test('a tests that is not a list, or an item that is not an object with a path, stops with what to write', () => {
+  withCopy(({ configFile, setConfig }) => {
+    for (const tests of [{ format: 'playwright', path: 'results/playwright', depth: 'ui' }, 'results/playwright', 3, [null], [{ format: 'playwright', depth: 'ui' }]]) {
+      setConfig({ tests });
+      assert.throws(() => loadConfig(configFile), new RegExp(`^Error: tests must be a list of \\{ "format", "path", "depth" \\}, such as \\[\\{ "format": "playwright", "path": "results/playwright", "depth": "ui" \\}\\], not ${JSON.stringify(tests).replace(/[[\]{}.]/g, '\\$&')}$`));
+    }
+  });
+});
+
 test('a baselineTests item of an unknown format or depth stops the way tests does', () => {
   withCopy(({ configFile, setConfig }) => {
     setConfig({ baselineTests: [{ format: 'mocha', path: 'releases/1.5.0/e2e.json', depth: 'ui' }] });
