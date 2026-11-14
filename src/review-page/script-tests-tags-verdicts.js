@@ -12,12 +12,13 @@ const detailText = (t) => t.status === 'limit'
   ? t.detail.split(/(https?:\/\/[^\s<>()\u0080-\uffff]*[^\s<>().,;:!?'"\u0080-\uffff])/).map((part, i) => i % 2 ? h('a', { href: part, title: part, 'aria-label': `출처 ${part}`, target: '_blank', rel: 'noopener' }, '출처 ↗') : part)
   : t.detail;
 
-function testItem(t, { depth = false, hide = [], chip = null } = {}) {
+function testItem(t, { depth = false, hide = [], chip = null, runs = [] } = {}) {
   return h('div', { class: 'test' },
     depth ? h('span', { class: 'depth', title: DEPTH_TITLES[t.depth] }, DEPTH_LABELS[t.depth]) : null,
     h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status]), ' ', chip, titleWithTags(t, depth ? [...hide, `depth:${t.depth}`] : hide), ' ',
     h('span', { class: 'muted mono' }, filePlace(t.file, t.line)),
     t.project ? h('span', { class: 'muted' }, ` · ${t.project}`) : null,
+    runs.length ? h('span', { class: 'test-run' }, ...runs) : null,
     t.detail && t.status !== 'pass' ? h('div', { class: 'detail' }, detailText(t)) : null);
 }
 

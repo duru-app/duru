@@ -1426,7 +1426,8 @@ as the first in a popup, says 「화면 그림 없음」. It shows only when at 
 greyed out when the trace file is no longer where `rebuild` read it.
 A story candidate that came from browser tests has the same 「재생」 and 「trace」 beside each test title on its card, so
 what a test did can be seen without finding a screen it passed through; a candidate from a visit record or from an
-agent has neither.
+agent has neither. After it is accepted, its card has them beside each test under 「스토리 테스트」, the tests tagged
+with its story ID.
 Under 「호출한 테스트」 a test shows, next to 「호출함」, the status it got for that call.
 
 **Untagged tests.** An untagged test linked to a screen by its imports or its trace has 「제외」, to discard the
