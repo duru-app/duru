@@ -633,6 +633,9 @@ listing the places whose value the source does not show in full.
   (`framesPickingByAddress`).
 - `component file not found for <id> ← <route file>:<line>` — the screen holds only what the components
   wrapping its route bring. For a screen made from a table item, `, table item <key> at <file>:<line>` follows.
+- `component declared in the route file for <id> ← <route file>:<line>` — the screen's component is written in the route
+  file itself, so it has no file of its own to read; the screen holds only what the components wrapping its route
+  bring.
 - `history is not set; <file> calls createBrowserHistory, and moves through the history it makes are not read as
   links` — a file that makes a history (`createHashHistory` likewise) while the config has no `history` key, so
   the `push` and `replace` calls on it are not links on the map. Name it in `history` (`madeHistories`).

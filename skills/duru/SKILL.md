@@ -197,6 +197,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   not find and the route it is written at, followed by `table item <key> at <file>:<line>` for a screen made from a
   table item, where its components are written. The map then holds only what the components wrapping that route
   bring: the screen's own source files, API calls, setting reads and links are missing.
+- A `component declared in the route file for <id> ← <route file>:<line>` line names a screen whose component is
+  written in the route file itself, such as a redirect or a layout. It has no file of its own, so the map holds only
+  what the components wrapping that route bring.
 - A `route path not read ← <route file>:<line>: stopped at <piece>` line names a route whose path holds `{?}`,
   with the first piece duru could not read where it stopped; an `in <file>:<line>` after it appears only when duru
   followed a name into another file and stopped there, and `, which gives <paths>` after it names the paths a
