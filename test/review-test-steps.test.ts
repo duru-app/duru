@@ -92,6 +92,32 @@ test('in a browser, a write into a box whose value duru did not keep because the
   }));
 });
 
+test('in a browser, the mouse over an open test\'s steps paints neither the steps nor the test\'s line, and the mouse over the test\'s title paints its line but not the steps', { skip: browserMissing }, async () => {
+  await withSteps(async (p) => {
+    const row = testLine(p, 'shows the screen after each step');
+    await row.locator('.steps-toggle').click();
+    const selected = await p.evaluate(() => {
+      const probe = document.body.appendChild(document.createElement('div'));
+      probe.style.background = 'var(--selected)';
+      const color = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return color;
+    });
+    const painted = async () => ({
+      line: await row.evaluate((el) => getComputedStyle(el).backgroundColor),
+      steps: await foldOf(row).evaluate((el) => getComputedStyle(el).backgroundColor),
+    });
+    await foldOf(row).locator('.step-lines > li').nth(1).hover();
+    const overSteps = await painted();
+    assert.notEqual(overSteps.line, selected);
+    assert.notEqual(overSteps.steps, selected);
+    await row.locator('.test').first().hover();
+    const overTitle = await painted();
+    assert.equal(overTitle.line, selected);
+    assert.notEqual(overTitle.steps, selected);
+  });
+});
+
 test('in a browser, a test that ran in two projects shows the steps of its own project first and the other one\'s on its chip, and 「trace」 opens the run whose steps are shown', { skip: browserMissing }, async () => {
   await withSteps(async (p) => {
     const [chromium, firefox] = [testLine(p, 'fills the boxes on home').first(), testLine(p, 'fills the boxes on home').nth(1)];
