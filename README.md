@@ -1419,7 +1419,7 @@ reviewer's call. A mark or judgment saved without a hash shows as it always did.
 
 **What a test did.** A Playwright test's row under a screen or a call has 「단계」. It opens, under the row, the
 test's steps in the order they ran, each with its screen: 「열기」 for an address it opened, 「누르기」, 「넣기」 with the
-box and the value, 「숨김」 in place of a value duru did not keep, or 「찾은 상자를 읽지 못함」 in place of a box duru could not name, and 「확인」, with 「실패」 on an
+box and the value, 「••••••」 in place of a value duru did not keep, or 「찾은 상자를 읽지 못함」 in place of a box duru could not name, and 「확인」, with 「실패」 on an
 action that ended in an error. Between the steps come the requests the test sent, with their status or 「응답 없음」; a
 request that matches a call opens that call. A test that ran in several projects has a chip for each. A test without
 a trace, with a trace that could not be read, or that was skipped says so instead. When Playwright recorded the trace
