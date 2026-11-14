@@ -119,13 +119,13 @@
   th, td { text-align: left; vertical-align: top; padding: 8px; border-bottom: 1px solid var(--line); }
   th { font-size: 12px; color: var(--muted); font-weight: 600; }
   tbody tr { cursor: pointer; }
-  tbody tr:hover { background: var(--bg); }
+  tbody tr:not(:where(:has(.test-steps))):hover { background: var(--bg); }
   tbody tr.selected { background: var(--selected); }
   td.depth { width: 110px; font-weight: 600; }
   td.mark { width: 90px; }
   td.test-buttons { white-space: nowrap; }
   tbody tr.test-line:not(.group-end) > td:not([rowspan]) { border-bottom: 0; }
-  tbody tr.test-line:hover { background: var(--selected); }
+  tbody tr.test-line:not(:where(:has(.test-steps))):hover { background: var(--selected); }
   table.calls tbody tr { cursor: default; }
   table.calls td.cell { cursor: pointer; white-space: nowrap; font-size: 12px; }
   table.calls td.cell:hover { background: var(--selected); }
@@ -452,7 +452,7 @@
   .part-row > :is(.test, .slot-text) { flex: 1; min-width: 0; }
   .test-row, #center .pair-test { border-top: 1px solid var(--line); padding: 4px 0; }
   .test-row:first-child, #center .pair-test:first-of-type { border-top: none; }
-  .test-row:hover, #center .pair-test:hover { background: var(--selected); }
+  .test-row:not(:where(:has(.test-steps))):hover, #center .pair-test:not(:where(:has(.test-steps))):hover { background: var(--selected); }
   :is(.steps-toggle, .replay, .trace) { flex: none; border: 1px solid var(--line); border-radius: 10px; padding: 0 8px; font: inherit; font-size: 12px; line-height: 18px; background: var(--panel); color: var(--text); cursor: pointer; white-space: nowrap; }
   a.trace { text-decoration: none; }
   .source .source-run, .test .test-run { display: inline-flex; gap: 4px; margin-left: 8px; font-family: inherit; }
