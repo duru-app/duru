@@ -110,6 +110,16 @@ test('in a browser, a test whose steps are open is not painted under the mouse, 
   });
 });
 
+test('in a browser, the selected row of the depth table keeps its selected colour under the mouse', { skip: browserMissing }, async () => {
+  await withSteps(async (p) => {
+    const row = p.locator('#center tbody tr.selected').first();
+    await p.mouse.move(0, 0);
+    const resting = await row.evaluate((el) => getComputedStyle(el).backgroundColor);
+    await row.hover();
+    assert.equal(await row.evaluate((el) => getComputedStyle(el).backgroundColor), resting);
+  });
+});
+
 test('in a browser, a test that ran in two projects shows the steps of its own project first and the other one\'s on its chip, and 「trace」 opens the run whose steps are shown', { skip: browserMissing }, async () => {
   await withSteps(async (p) => {
     const [chromium, firefox] = [testLine(p, 'fills the boxes on home').first(), testLine(p, 'fills the boxes on home').nth(1)];
