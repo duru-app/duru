@@ -14,7 +14,7 @@ interface Walk {
   strict: boolean;
 }
 
-type Found = { file: string | null | undefined; followed: boolean };
+type Found = { file: string | null | undefined; followed: boolean; madeHere?: true };
 type Resolve = ImportResolver['resolve'];
 type NameNode = { name?: string; value?: string };
 
@@ -300,7 +300,8 @@ export function componentFileFinder(resolve: Resolve) {
     const reached = fromName(scope, root, keys, fromFile, { path: new Set(), absent: new Set(), strict: Boolean(written) }, viaCall);
     if (reached.end === 'loaded') return { file: reached.file, followed: !written };
     if (written) return { file: written, followed: false };
-    const file = reached.end === 'made' && reached.file !== fromFile ? reached.file : null;
+    if (reached.end === 'made' && reached.file === fromFile) return { file: null, followed: false, madeHere: true };
+    const file = reached.end === 'made' ? reached.file : null;
     return { file, followed: Boolean(file) };
   }
 

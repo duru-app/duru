@@ -123,6 +123,7 @@ interface RouteScreen {
   line: number;
   tableItem?: TableItem;
   outerFill: OuterFill;
+  componentInRouteFile?: true;
 }
 
 export type TableItem = { key: string; file: string; line: number };
@@ -2051,6 +2052,7 @@ export async function extractClient(config: any) {
           return;
         }
         const routeGuards = guardsOf(p, src, note);
+        const madeHere = !page.componentFile && Boolean(page.component) && components.find(p.scope, page.component, absFile).madeHere;
         const { wrappers, frame } = frames.of(p);
         const wrapperFiles = [...page.files, ...wrappers];
         const grouped = Boolean(p.findParent((up) => up.isJSXElement() && ['Switch', 'Routes'].includes(tagOf(up.node.openingElement.name) ?? '')));
@@ -2081,6 +2083,7 @@ export async function extractClient(config: any) {
             routeGuards: [...routeGuards],
             line,
             outerFill: { startsWithOuterAddress: Boolean(outerAddress) && readsMatchedRoute(outerAddress!), atTopOfRoutes: atTopOfRoutes(routePath, p), unreadPath },
+            ...(madeHere && { componentInRouteFile: true as const }),
           };
           screens.push(screen);
           made.push(screen);

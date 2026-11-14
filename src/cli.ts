@@ -399,7 +399,9 @@ if (command === 'tasks') {
     console.log(`  ${component} at ${file}:${line} is drawn beside routes but draws its own routes in ${componentFile}, so it picks what it shows by the address; its links, requests and settings reads are given to no screen beside it`);
   }
   for (const d of map.duplicateIds) console.log(`  duplicate screen ID ${d.id} ← ${d.places.map((p: { file: string; line: number }) => `${p.file}:${p.line}`).join(', ')}`);
-  for (const s of map.screens.filter((s: any) => !s.componentFile)) console.log(`  component file not found for ${s.id} ← ${s.routeFile}:${s.line}${atTableItem(s)}`);
+  for (const s of map.screens.filter((s: any) => !s.componentFile)) {
+    console.log(`  component ${s.componentInRouteFile ? 'declared in the route file' : 'file not found'} for ${s.id} ← ${s.routeFile}:${s.line}${atTableItem(s)}`);
+  }
   for (const { file, line, path: routePath, stoppedAt: at, paths, manyPaths } of map.unreadRoutePaths ?? []) {
     const elsewhere = at.file === file ? '' : ` in ${at.file}:${at.line}`;
     const gives = paths ? `, which gives ${paths.slice(0, -1).join(', ')} and ${paths.at(-1)}` : manyPaths ? `, which gives more than ${MOST_ADDRESSES} paths` : '';

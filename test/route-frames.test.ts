@@ -506,6 +506,49 @@ export default function Routes() {
   assert.deepEqual(map.screens.map((s) => s.id), ['/login#Login', ...INNER]);
 });
 
+const nestedRoutes = (layout: string, declared = '') => `import { Outlet, Route, Routes } from 'react-router-dom';
+import Home from './Home';
+import Team from './Team';
+import Help from './Help';
+import Menu from './Menu';
+import Shell from './Shell';
+${declared}
+export default function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/:org" ${layout}>
+        <Route path="/:org/home" element={<Home />} />
+        <Route path="/:org/team/:team" element={<Team />} />
+      </Route>
+      <Route path="/help" element={<Help />} />
+    </Routes>
+  );
+}
+`;
+const NESTED = ['/:org/home#Home', '/:org/team/:team#Team'];
+
+test('a route component declared in the route file itself gets its own line in the extract summary instead of the line for a file not found', async () => {
+  const declared = 'const Frame = () => <div><Menu /><Outlet /></div>;\n';
+  const text = nestedRoutes('element={<Frame />}', declared).replace('element={<Help />}', 'element={<Missing />}');
+  const configFile = writeApp({ 'Routes.js': text });
+  const map = await build(configFile);
+  const frame = screen(map, '/:org#Frame');
+  assert.deepEqual([frame.componentFile, frame.componentInRouteFile], [null, true]);
+  assert.equal(screen(map, '/help#Missing').componentInRouteFile, undefined);
+  const result = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  const lineOf = (tag: string) => text.split('\n').findIndex((l) => l.includes(tag)) + 1;
+  assert.deepEqual(result.stdout.split('\n').filter((l) => /component (file not found|declared in the route file)/.test(l)), [
+    `  component declared in the route file for /:org#Frame ← Routes.js:${lineOf('<Frame />')}`,
+    `  component file not found for /help#Missing ← Routes.js:${lineOf('<Missing />')}`,
+  ]);
+});
+
+test('the usage guide and the agent skill name the line for a component declared in the route file', () => {
+  const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, file), 'utf8');
+  for (const file of ['../README.md', '../skills/duru/SKILL.md']) assert.ok(read(file).includes('`component declared in the route file for <id> ← <route file>:<line>`'), file);
+});
+
 test('the usage guide and the agent skill name the line for a component beside routes that draws its own routes, and the decision record names the choice', () => {
   const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, file), 'utf8');
   assert.ok(read('../README.md').includes('`<component> at <file>:<line> is drawn beside routes but draws its own routes in <component file>'));
