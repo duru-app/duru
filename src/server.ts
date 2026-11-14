@@ -45,8 +45,27 @@ export function writtenSegments(p: string): string[] {
 
 export const toSegments = (p: string) => writtenSegments(p).map((s) => (s.includes(GLUED_UNKNOWN) ? '*' : s));
 
-function sameShape(a: string[], b: string[]) {
-  return a.length === b.length && a.every((s, i) => s === '*' || b[i] === '*' || s === b[i]);
+// written 은 writtenSegments 의 한 칸이고, 값을 모르는 조각이 붙은 자리에는 무엇이든 들어갈 수 있다.
+export function gluedFits(written: string, actual: string) {
+  const [first, ...rest] = written.split(GLUED_UNKNOWN);
+  const last = rest.pop() ?? '';
+  if (!actual.startsWith(first)) return false;
+  let at = first.length;
+  for (const piece of rest) {
+    const found = actual.indexOf(piece, at);
+    if (found < 0) return false;
+    at = found + piece.length;
+  }
+  return actual.length - last.length >= at && actual.endsWith(last);
+}
+
+function segmentFits(server: string, call: string) {
+  if (server === '*' || call === '*') return true;
+  return call.includes(GLUED_UNKNOWN) ? gluedFits(call, server) : server === call;
+}
+
+function sameShape(server: string[], call: string[]) {
+  return server.length === call.length && server.every((s, i) => segmentFits(s, call[i]));
 }
 
 export function clientPath(url: string, apiPathPrefix: string) {
@@ -54,7 +73,7 @@ export function clientPath(url: string, apiPathPrefix: string) {
   return p.startsWith('/') ? p : '/' + p;
 }
 
-// document/{0} 은 document/list 보다 document/{documentId} 에 가깝다.
+// document/{0} 은 document/list 보다 document/{documentId} 에 가깝고, document/list{?} 는 그 반대다.
 function closestPath(entries: ServerEndpoint[], segs: string[]) {
   const score = (e: ServerEndpoint) => e.segments.filter((s, i) => (s === '*') === (segs[i] === '*')).length;
   const best = Math.max(...entries.map(score));
@@ -64,15 +83,16 @@ function closestPath(entries: ServerEndpoint[], segs: string[]) {
 export function matchEndpoint(server: ServerEndpoint[], method: string | null | undefined, url: unknown, apiPathPrefix: string): EndpointMatch {
   if (typeof url !== 'string') return { status: 'unresolved', reason: 'not-written' };
   if (OTHER_SITE.test(url)) return { status: 'unresolved', reason: 'other-host' };
-  const segs = toSegments(clientPath(url, apiPathPrefix));
+  const written = writtenSegments(clientPath(url, apiPathPrefix));
+  const segs = written.map((s) => (s.includes(GLUED_UNKNOWN) ? '*' : s));
   if (segs.length === 0) return { status: 'unresolved', reason: 'no-path' };
   if (segs[0] === '*') return { status: 'unresolved', reason: segs.every((s) => s === '*') ? 'not-written' : 'unknown-piece' };
   if (server.length === 0) return { status: 'unchecked' };
-  const byPath = server.filter((e) => sameShape(e.segments, segs));
+  const byPath = server.filter((e) => sameShape(e.segments, written));
   if (byPath.length === 0) return { status: 'none' };
   const byMethod = method ? byPath.filter((e) => e.method === method) : byPath;
-  if (byMethod.length === 0) return { status: 'method-mismatch', candidates: byPath.map((e) => `${e.label} ${e.method} ${e.path}`), path: closestPath(byPath, segs) };
-  const p = closestPath(byMethod, segs);
+  if (byMethod.length === 0) return { status: 'method-mismatch', candidates: byPath.map((e) => `${e.label} ${e.method} ${e.path}`), path: closestPath(byPath, written) };
+  const p = closestPath(byMethod, written);
   const shape = toSegments(p).join('/');
   return { status: 'match', labels: [...new Set(byMethod.filter((e) => e.segments.join('/') === shape).map((e) => e.label))], path: p };
 }
