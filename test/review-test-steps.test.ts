@@ -92,29 +92,21 @@ test('in a browser, a write into a box whose value duru did not keep because the
   }));
 });
 
-test('in a browser, the mouse over an open test\'s steps paints neither the steps nor the test\'s line, and the mouse over the test\'s title paints its line but not the steps', { skip: browserMissing }, async () => {
+test('in a browser, a test whose steps are open is not painted under the mouse, on its steps or on its title, while a closed test is', { skip: browserMissing }, async () => {
   await withSteps(async (p) => {
     const row = testLine(p, 'shows the screen after each step');
-    await row.locator('.steps-toggle').click();
-    const selected = await p.evaluate(() => {
-      const probe = document.body.appendChild(document.createElement('div'));
-      probe.style.background = 'var(--selected)';
-      const color = getComputedStyle(probe).backgroundColor;
-      probe.remove();
-      return color;
-    });
-    const painted = async () => ({
-      line: await row.evaluate((el) => getComputedStyle(el).backgroundColor),
-      steps: await foldOf(row).evaluate((el) => getComputedStyle(el).backgroundColor),
-    });
-    await foldOf(row).locator('.step-lines > li').nth(1).hover();
-    const overSteps = await painted();
-    assert.notEqual(overSteps.line, selected);
-    assert.notEqual(overSteps.steps, selected);
+    const painted = () => row.evaluate((el) => [el, ...el.querySelectorAll('.test-row')].map((e) => getComputedStyle(e).backgroundColor));
+    await p.mouse.move(0, 0);
+    const resting = await painted();
     await row.locator('.test').first().hover();
-    const overTitle = await painted();
-    assert.equal(overTitle.line, selected);
-    assert.notEqual(overTitle.steps, selected);
+    assert.notDeepEqual(await painted(), resting);
+    await row.locator('.steps-toggle').click();
+    await p.mouse.move(0, 0);
+    assert.deepEqual(await painted(), resting);
+    await foldOf(row).locator('.step-lines > li').nth(1).hover();
+    assert.deepEqual(await painted(), resting);
+    await row.locator('.test').first().hover();
+    assert.deepEqual(await painted(), resting);
   });
 });
 
