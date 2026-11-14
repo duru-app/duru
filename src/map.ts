@@ -115,6 +115,7 @@ export type ScreenMap = {
   unrunApiModules?: NonNullable<Client['unrunApiModules']>;
   outsideStandIns?: Client['outsideStandIns'];
   silentApiModules?: Client['silentApiModules'];
+  requestFileError?: string;
   unreadRequests?: UnreadSite[];
   unreadRoutePaths?: Client['unreadRoutePaths'];
   unreadRoutes?: Client['unreadRoutes'];
@@ -342,7 +343,7 @@ function checkInputs(screens: { id: string; apiCalls: (ClientScreen['apiCalls'][
 }
 
 export async function buildMap(config: MapConfig): Promise<ScreenMap> {
-  const { screens, appWide, apiFunctions, unreferencedApiFunctions, sagaRuns, unrunApiModules, outsideStandIns, silentApiModules, bodyTypeNotices, redirects, unreadRoutePaths, unreadRoutes, routeTabNotices, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports, unusedListed, madeHistories, emptyRouteFiles, takingAddressesUnder, framesPickingByAddress } = await extractClient(config);
+  const { screens, appWide, apiFunctions, unreferencedApiFunctions, sagaRuns, unrunApiModules, outsideStandIns, silentApiModules, requestFileError, bodyTypeNotices, redirects, unreadRoutePaths, unreadRoutes, routeTabNotices, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports, unusedListed, madeHistories, emptyRouteFiles, takingAddressesUnder, framesPickingByAddress } = await extractClient(config);
   const server = config.serverEndpoints.flatMap(loadServerEndpoints);
   const apiPathPrefix = config.apiPathPrefix ?? '/';
 
@@ -417,6 +418,7 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
     ...(unrunApiModules && { unrunApiModules }),
     ...(outsideStandIns.length && { outsideStandIns }),
     ...(silentApiModules.length && { silentApiModules }),
+    ...(requestFileError && { requestFileError }),
     ...(unreadRequests.length && { unreadRequests }),
     ...(unreadRoutePaths.length && { unreadRoutePaths }),
     ...(unreadRoutes.length && { unreadRoutes }),
