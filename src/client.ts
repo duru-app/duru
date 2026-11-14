@@ -2783,6 +2783,7 @@ export async function extractClient(config: any) {
         const tag = a.isJSXElement() && tagOf(a.node.openingElement.name);
         const file = tag && resolveTag(a.scope, tag, absFile);
         if (file) wrappers.push(file);
+        if (tag && config.routeElements.includes(tag) && on.listKey === 'children') wrappers.push(...routeElementFiles(a as NodePath<JSXElement>));
         if ((a.isJSXElement() || a.isJSXFragment()) && on.listKey === 'children' && !(a.isJSXElement() && groupKind(a))) frame.push(...besideOf(a, on));
         if (a.isFunction()) frame.push(...drawnFromCalls(a));
         for (const fn of a.isJSXElement() ? layoutFunctions(a) : []) {
@@ -2809,6 +2810,12 @@ export async function extractClient(config: any) {
         }));
       }
       return drawnFrom.get(fn.node) ?? [];
+    };
+    const routeElementFiles = (route: NodePath<JSXElement>) => {
+      const attr = (name: string) => route.get('openingElement.attributes').find((x) => x.isJSXAttribute() && x.node.name.name === name) as NodePath<JSXAttribute> | undefined;
+      const compAttr = attr('component');
+      const page = compAttr ? componentAttrPage(compAttr, absFile) : elementPage(attr('element'), absFile);
+      return page ? [page.componentFile, ...page.files].filter((f): f is string => Boolean(f)) : [];
     };
     return { of: climb };
   }
