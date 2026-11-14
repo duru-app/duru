@@ -132,12 +132,22 @@ function boundNames(node: Node | null): string[] {
   return [];
 }
 
+// 타입만 담은 namespace 는 실행하면 아무 값도 남기지 않는다.
+function holdsNoValue(node: Node | null | undefined): boolean {
+  if (!node) return false;
+  if ('declare' in node && node.declare) return true;
+  if (node.type === 'TSInterfaceDeclaration' || node.type === 'TSTypeAliasDeclaration' || node.type === 'TSDeclareFunction') return true;
+  if (node.type === 'ExportNamedDeclaration') return node.exportKind === 'type' || holdsNoValue(node.declaration);
+  if (node.type === 'TSModuleDeclaration') return node.body.type === 'TSModuleDeclaration' ? holdsNoValue(node.body) : node.body.body.every(holdsNoValue);
+  return false;
+}
+
 // export * from 과 export import 로 내보내는 이름은 읽지 않는다.
 function ownExports(body: Statement[]) {
   const names: string[] = [];
   for (const node of body) {
     if (node.type === 'ExportDefaultDeclaration') names.push('default');
-    if (node.type !== 'ExportNamedDeclaration' || node.exportKind === 'type') continue;
+    if (node.type !== 'ExportNamedDeclaration' || holdsNoValue(node)) continue;
     for (const sp of node.specifiers) if ((sp as { exportKind?: string }).exportKind !== 'type') names.push(sp.exported.type === 'Identifier' ? sp.exported.name : sp.exported.value);
     const declaration = node.declaration;
     if (declaration?.type === 'VariableDeclaration') names.push(...declaration.declarations.flatMap((d) => boundNames(d.id)));

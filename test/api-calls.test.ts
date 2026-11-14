@@ -465,6 +465,35 @@ test('API code importing the whole file holding the request function can reach i
   assert.deepEqual(map.apiFunctions.getOrder.endpoints.map((e) => `${e.method} ${e.url}`), ['POST /v1/orders/{?}']);
 });
 
+test('a request function file that also exports names with no value, such as a namespace holding only types, runs as it is, so an address built by another of its exports is read and the summary does not say it did not run', async () => {
+  const valueLess = [
+    'export namespace Shapes { export type Info = { METHOD: string; URL: string } }',
+    'export namespace Shapes.Inner { export interface Info { METHOD: string } }',
+    'export declare const injected: string;',
+  ];
+  for (const extra of valueLess) {
+    const configFile = fixtureCopy(SENDING, {
+      'contracts/api/sending.ts': `${SENDING_FILE}${extra}\n`,
+      'contracts/api/orders.ts': "import { sendRequest, route } from './sending';\nexport const getOrder = ({ id }: { id: string }) => sendRequest({ info: route('GET', '/v1/orders/{0}', id) });\n",
+    });
+    const map = await build(configFile);
+    assert.deepEqual(map.apiFunctions.getOrder.endpoints.map((e) => `${e.method} ${e.url}`), ['GET /v1/orders/{?}'], extra);
+    assert.equal(map.requestFileError, undefined, extra);
+    const result = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(!result.stdout.includes('did not run'), result.stdout);
+  }
+});
+
+test('a namespace holding a value in the file holding the request function is still reachable from API code', async () => {
+  const map = await build(fixtureCopy(SENDING, {
+    'contracts/api/sending.ts': `${SENDING_FILE}export namespace Paths { export const order = '/v1/orders/{0}'; }\n`,
+    'contracts/api/orders.ts': "import { sendRequest, route, Paths } from './sending';\nexport const getOrder = ({ id }: { id: string }) => sendRequest({ info: route('GET', Paths.order, id) });\n",
+  }));
+  assert.equal(map.requestFileError, undefined);
+  assert.deepEqual(map.apiFunctions.getOrder.endpoints.map((e) => `${e.method} ${e.url}`), ['GET /v1/orders/{?}']);
+});
+
 test('a request function file that stops when it is run is replaced whole, and the summary says what that loses', async () => {
   const configFile = fixtureCopy({ ...SENDING, calledApiModules: ['contracts/api/broken.ts', ...SENDING.calledApiModules] }, {
     'contracts/api/broken.ts': "throw new Error('its own failure');\nexport const unused = () => 1;\n",
