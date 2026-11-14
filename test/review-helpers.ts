@@ -35,6 +35,7 @@ export type PageData = {
   tests: {
     importers: Record<string, { title: string }[]>;
     discarded: Record<string, { title: string; judgment: { reason: string } }[]>;
+    nodes: Record<string, { title: string; steps?: string }[]>;
     stories: Record<string, object[]>;
     untagged?: { title: string; ref: unknown; status: string }[];
     untaggedCount?: number;

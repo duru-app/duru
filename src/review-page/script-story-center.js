@@ -225,7 +225,7 @@ function renderStoryCenter() {
     h('div', { class: 'story-save' }, ...storyEdit(st), ...(st.source ? unacceptAction(st) : [])),
     storyWide(st),
     h('div', { class: 'story-tests' }, h('h2', {}, `스토리 테스트 ${storyTests.length}`),
-      storyTests.length ? storyTests.map((t) => testItem(t, { depth: true, hide: [`story:${st.id}`] })) : h('p', { class: 'muted' }, '없음')),
+      storyTests.length ? storyTests.map((t) => testItem(t, { depth: true, hide: [`story:${st.id}`], runs: [replayButton(st.id, t), traceButton(st.id, t)].filter(Boolean) })) : h('p', { class: 'muted' }, '없음')),
     ...savedStoryPath(st),
     storyFile(stepsFileStory(st))]);
 }
