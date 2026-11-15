@@ -185,7 +185,7 @@ test('in a browser, a screen picked in the flow view draws the app 1280 wide shr
         withServer(config, 'reviewer', (base) =>
           withPage(base, async (p) => {
             await p.setViewportSize({ width: 1920, height: 1080 });
-            await (await screenBox(p, '/home#Home')).click();
+            await (await screenBox(p, '/home#Home')).locator('.path').click();
             const frame = p.frameLocator('#center iframe.app');
             await frame.locator('#who:has-text("두루 관리자")').waitFor();
             const width = p.locator('#center .frame-bar select.app-width');
@@ -272,7 +272,7 @@ test('in a browser, the list view shrinks the app the same way, and the chosen w
             assertShrunk(await shownApp(p), 1440);
 
             await p.click('#view-flow');
-            await (await screenBox(p, '/home#Home')).click();
+            await (await screenBox(p, '/home#Home')).locator('.path').click();
             await frame.locator('#path:has-text("/home")').waitFor();
             assertShrunk(await shownApp(p), 1440);
 

@@ -591,6 +591,7 @@ test('in a browser, 「새 스토리」 in the flow bar opens the new-story scre
         assert.ok(steps.bottom <= diagram.top + 1 && steps.left === diagram.left, 'the steps stand above the diagram');
         assert.equal(await p.textContent('#center .no-steps'), '아직 넣은 화면이 없습니다.');
         assert.match((await (await screenBox(p, '/home#Home')).getAttribute('title'))!, /\n누르면 새 스토리의 단계로 넣습니다$/);
+        assert.equal(await (await screenBox(p, '/home#Home')).locator('button.api').getAttribute('aria-label'), '누르면 새 스토리의 단계로 넣습니다', 'the API count says it adds a step too');
 
         await pressBox(p, '/home#Home');
         await p.waitForFunction(() => document.querySelector('#flow .story-badge'));

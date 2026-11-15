@@ -73,7 +73,7 @@ const legendPill = (cls, ...tags) => h('span', { class: `box s-none${cls}`, 'ari
 
 function flowLegendItems() {
   return [
-    h('li', {}, h('span', { class: 'sample' }, legendPill('', h('span', { class: 'tag api' }, 'API 8'))), h('span', {}, '이 화면에서 부르는 API 호출의 수. 화면을 누르면 오른쪽에 호출마다 테스트가 보입니다')),
+    h('li', {}, h('span', { class: 'sample' }, legendPill('', h('span', { class: 'tag api' }, 'API 8 ▸'))), h('span', {}, '이 화면에서 부르는 API 호출의 수. 누르면 그 화면을 열고 호출마다 테스트가 보이는 곳으로 갑니다')),
     h('li', {}, h('span', { class: 'sample' }, legendPill('', h('span', { class: 'tag need' }, KIND_LABEL.role)), legendPill('', h('span', { class: 'tag need' }, KIND_LABEL.setting))),
       h('span', {}, '특정 역할이나 설정에서만 열리는 화면. 무엇이 필요한지는 마우스를 올리면 보입니다')),
     h('li', {}, h('span', { class: 'sample' }, legendPill(' jump')), h('span', {}, '고른 화면에서 다른 가지에 이미 그린 화면으로 가는 링크나 설정에 적은 이동이 닿는 화면, 또는 그런 화면을 품은 접힌 상자')),
