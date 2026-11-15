@@ -105,7 +105,13 @@ function readCandidate(from: string) {
   return body;
 }
 
-const config = loadConfig(configPath);
+let config: ReturnType<typeof loadConfig>;
+try {
+  config = loadConfig(configPath);
+} catch (err: any) {
+  console.error(err.message);
+  process.exit(1);
+}
 
 if (command === 'tasks') {
   process.stdout.write(taskList(config));

@@ -293,6 +293,19 @@ const runCli = (configFile: string, command: string, ...args: string[]) => {
   }
 };
 
+test('a config key of the wrong shape stops the command with one line naming the key and no stack', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    const configFile = path.join(dir, 'config.json');
+    const tests = { format: 'playwright', path: 'results/playwright', depth: 'ui' };
+    fs.writeFileSync(configFile, JSON.stringify({ srcRoot: 'src', routesFile: 'Routes.js', tests }));
+    const expected = `tests must be a list of { "format", "path", "depth" }, such as [{ "format": "playwright", "path": "results/playwright", "depth": "ui" }], not ${JSON.stringify(tests)}\n`;
+    for (const command of ['rebuild', 'tasks']) assert.deepEqual(runCli(configFile, command), { status: 1, stdout: '', stderr: expected }, command);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 function withCaseKinds(fn: (configFile: string, run: (...args: string[]) => { status: number | null; stdout: string; stderr: string }) => void) {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {

@@ -83,6 +83,16 @@ export function parseRoleEntry(entry: unknown) {
 }
 
 const isText = (v: unknown): v is string => typeof v === 'string' && v.length > 0;
+const isIdentifier = (v: unknown) => typeof v === 'string' && IDENTIFIER.test(v);
+const isElementName = (v: unknown) => typeof v === 'string' && DOTTED_NAME.test(v);
+const isTestSource = (t: unknown) => isPlainObject(t) && isText((t as Record<string, unknown>).path);
+const TEST_SOURCE = '{ "format", "path", "depth" }';
+
+function listOf<T>(key: string, value: unknown, fallback: T[], isEntry: (v: unknown) => boolean, expected: string, atLeastOne = false): T[] {
+  const list = value ?? fallback;
+  if (!Array.isArray(list) || !list.every(isEntry) || (atLeastOne && !list.length)) throw new Error(`${key} must be ${expected}, not ${JSON.stringify(value)}`);
+  return list;
+}
 export const isPlainObject = (v: unknown): boolean => typeof v === 'object' && v !== null && !Array.isArray(v);
 export const compare = <T>(a: T, b: T) => (a < b ? -1 : a > b ? 1 : 0);
 const isOneLine = (v: unknown) => typeof v === 'string' && /\S/.test(v) && !/[\r\n]/.test(v);
@@ -228,8 +238,18 @@ export function loadConfig(configPath: string) {
     if (!DEPTHS.includes(t.depth)) throw new Error(`${key}unknown depth "${t.depth}" for ${t.path} (expected one of ${DEPTHS.join(', ')})`);
     return { ...t, path: at(t.path) };
   });
-  const tests = testSources(raw.tests ?? []);
-  (raw.roleIdentifiers ?? []).forEach(parseRoleEntry);
+  const tests = testSources(listOf('tests', raw.tests, [], isTestSource, `a list of ${TEST_SOURCE}, such as [{ "format": "playwright", "path": "results/playwright", "depth": "ui" }]`));
+  const routeElements = listOf<string>('routeElements', raw.routeElements, ['Route'], isElementName, 'a list of the elements that declare routes, as the route files write them, such as ["Route"]', true);
+  const redirectElements = listOf<string>('redirectElements', raw.redirectElements, ['Redirect', 'Navigate'], isElementName, 'a list of the elements that redirect in the route files, such as ["Redirect", "Navigate"]');
+  const entryPaths = listOf<string>('entryPaths', raw.entryPaths, [], isRoutePath, 'a list of route paths as in the map, such as ["/home"]');
+  const endpoints = raw.serverEndpoints ?? [];
+  if (!isText(endpoints) && !(Array.isArray(endpoints) && endpoints.every(isText))) {
+    throw new Error(`serverEndpoints must be a server endpoint list file, or a list of them, as paths from the config file, such as ["server-endpoints.txt"], not ${JSON.stringify(raw.serverEndpoints)}`);
+  }
+  const settingsRoots = listOf<string>('settingsRoots', raw.settingsRoots, [], isIdentifier, 'a list of the identifiers through which settings are read, such as ["globalSettings"]');
+  const roleIdentifiers = listOf<string>('roleIdentifiers', raw.roleIdentifiers, [], () => true, 'a list of where the user\'s role is read, each an identifier (memberRole) or one member of an object (workspace[\'member.role\'])');
+  roleIdentifiers.forEach(parseRoleEntry);
+  const passThroughCalls = listOf<string>('passThroughCalls', raw.passThroughCalls, [], isIdentifier, 'a list of the names of functions that pass a URL through, such as ["stringFormat"]');
   const bodyArgKeys = raw.bodyArgKeys ?? [];
   if (!Array.isArray(bodyArgKeys) || !bodyArgKeys.every((k) => typeof k === 'string')) {
     throw new Error(`bodyArgKeys must be a list of property names, such as ["data"], not ${JSON.stringify(raw.bodyArgKeys)}`);
@@ -281,7 +301,7 @@ export function loadConfig(configPath: string) {
   }
   const settingsDefaults: Record<string, any> = raw.settingsDefaults ?? {};
   for (const [root, entry] of Object.entries(settingsDefaults)) {
-    if (!(raw.settingsRoots ?? []).includes(root)) throw new Error(`settingsDefaults root "${root}" is not listed in settingsRoots`);
+    if (!settingsRoots.includes(root)) throw new Error(`settingsDefaults root "${root}" is not listed in settingsRoots`);
     const fromFile = entry?.file !== undefined || entry?.const !== undefined;
     if (fromFile && entry?.constant !== undefined) {
       throw new Error(`settingsDefaults.${root} takes either "file" and "const" or "constant", not both`);
@@ -307,7 +327,7 @@ export function loadConfig(configPath: string) {
       + `such as [{ "import": "@/config/readSettings", "name": "readSettings", "root": "settings", "section": "SYSTEM" }], not ${JSON.stringify(raw.settingsFunctions)}`);
   }
   for (const { root } of settingsFunctions) {
-    if (!(raw.settingsRoots ?? []).includes(root)) throw new Error(`settingsFunctions root "${root}" is not listed in settingsRoots`);
+    if (!settingsRoots.includes(root)) throw new Error(`settingsFunctions root "${root}" is not listed in settingsRoots`);
   }
   const visitRecords = raw.visitRecords ?? [];
   if (!Array.isArray(visitRecords) || !visitRecords.every(isText)) {
@@ -385,9 +405,8 @@ export function loadConfig(configPath: string) {
   if (raw.baselineMap !== undefined && !isText(raw.baselineMap)) {
     throw new Error(`baselineMap must be the path of a map.json written by an earlier rebuild, such as "releases/1.5.0/map.json", not ${JSON.stringify(raw.baselineMap)}`);
   }
-  const isTestSource = (t: unknown) => isPlainObject(t) && isText((t as Record<string, unknown>).path);
   if (raw.baselineTests !== undefined && !(Array.isArray(raw.baselineTests) && raw.baselineTests.every(isTestSource))) {
-    throw new Error(`baselineTests must be a list of { "format", "path", "depth" } like tests, such as [{ "format": "playwright", "path": "releases/1.5.0/e2e.json", "depth": "ui" }], not ${JSON.stringify(raw.baselineTests)}`);
+    throw new Error(`baselineTests must be a list of ${TEST_SOURCE} like tests, such as [{ "format": "playwright", "path": "releases/1.5.0/e2e.json", "depth": "ui" }], not ${JSON.stringify(raw.baselineTests)}`);
   }
   const baselineTests = raw.baselineTests === undefined ? [] : testSources(raw.baselineTests, 'baselineTests: ');
   const sourcePackages = raw.sourcePackages ?? {};
@@ -417,7 +436,9 @@ export function loadConfig(configPath: string) {
     baselineMap: raw.baselineMap === undefined ? null : at(raw.baselineMap),
     baselineTests: baselineTests.length ? baselineTests : null,
     aliases: tsconfig || packageRules.length ? [...packageRules, ...(tsconfig ? loadAliases(tsconfig) : [])] : null,
-    roleIdentifiers: raw.roleIdentifiers ?? [],
+    roleIdentifiers,
+    settingsRoots,
+    passThroughCalls,
     caseKinds,
     roleGuards: Object.fromEntries(Object.entries<any>(roleGuards).map(([guard, roles]) => [guard, [...new Set(roles)].sort()])),
     apiModules,
@@ -435,9 +456,10 @@ export function loadConfig(configPath: string) {
     settingsDefaults,
     settingsFunctions,
     routeTabs,
-    redirectElements: raw.redirectElements ?? ['Redirect', 'Navigate'],
-    entryPaths: raw.entryPaths ?? [],
-    serverEndpoints: [raw.serverEndpoints ?? []].flat().map(at),
+    routeElements,
+    redirectElements,
+    entryPaths,
+    serverEndpoints: [endpoints].flat().map(at),
     outDir,
     marksDir: raw.marksDir ? at(raw.marksDir) : path.join(outDir, 'marks'),
     judgmentsDir: raw.judgmentsDir ? at(raw.judgmentsDir) : path.join(outDir, 'judgments'),
