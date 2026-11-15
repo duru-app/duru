@@ -5552,6 +5552,14 @@ Driver for #554 (2026-11-07): "코멘트는 또 pr check에서 도입한 거 디
 because difit's dark green is too faint for small text on a dark panel. Colors with no match in difit keep their
 meaning and value, except that passing, failing and pending take the values the check page uses.
 
+**The accent and the background of a selected item go back to blue, and the tags on a screen box have no background.**
+Driver (2026-11-13), looking at the review page after #554: "왜 배경색이 다 초록이 됐지 API 칩 개수까진 괜찮아도 나머지는
+그 이전이 나은 거같은데". Buttons, chosen tabs and filters take the blue they had before #554; the comment box, the font and
+the state chips stay as #554 left them. The `API N` count first kept the green, then lost it with the background every tag
+on a box drew from the selected-item color: "또 이러니까 api 초록색도 별론데? 거기다 죽은 화면, 역할, 설정 여기도 초록색으로
+채우니까 이상하고" (2026-11-15). Of a box's tags with only the border and text colored, and all of them grey, the driver
+chose the first, so a dead screen still stands out from one that needs a role.
+
 **The comparison runs on every pull request that can change the map; a verifier runs on a new feature or a reported
 difference, and any failure on the pull request's side holds the merge until a second run clears it.**
 Chosen by the driver for #546 (2026-11-04). A comparison took 11 to 23 seconds and 10 of the last 25 merges showed a
