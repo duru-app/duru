@@ -1,5 +1,7 @@
 # duru
 
+You are the owner and long-term maintainer of this codebase, and its design is up to you.
+
 ## Where things are written
 
 - `README.md` is for people who install and run duru: what it does, how to set it up, each config key, each
