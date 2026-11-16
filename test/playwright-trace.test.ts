@@ -751,7 +751,7 @@ test('a page opened at an address shows the last picture before the next step on
   ]);
 });
 
-test('a page opened at an address keeps the first picture after the move when the app moved it to another address before the next step, and takes the last one before a check starts when a check comes next, which then shows the picture it saw', () => {
+test('a page opened at an address keeps the first picture after the move when the app moved it to another address before the next step, and takes the last one before a check ends when a check comes next', () => {
   const act = (callId: string, method: string, startTime: number, endTime: number, params = {}) => [
     { type: 'before', callId, pageId: 'p', method, startTime, params },
     { type: 'after', callId, endTime },
@@ -769,8 +769,8 @@ test('a page opened at an address keeps the first picture after the move when th
     'open /login login.jpeg',
     'open /home home.jpeg',
     'write /home filled.jpeg',
-    'open /list empty.jpeg',
-    'assert /list rows.jpeg',
+    'open /list rows.jpeg',
+    'assert /list -',
   ]);
 });
 
@@ -846,7 +846,7 @@ test('a page with no step after its move shows its last picture', () => {
   ]);
 });
 
-test('a check that passed before the screen was drawn shows the last picture before the next step acts, and the page opened before it the last picture before the check starts', () => {
+test('a check that passed before the screen was drawn shows the last picture before the next step acts, and the page opened before it the last picture before the check ends', () => {
   assert.deepEqual(pictureLines([
     ...pageAct('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/list', 20),
     ...pageAct('2', 'expect', 50, 52), frameSnapshot('before@2', 'http://x/list', 50), frameSnapshot('after@2', 'http://x/list', 52),
@@ -876,7 +876,7 @@ test('a check with no picture between its end and the next step keeps the last p
     ...pageAct('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/list', 20),
     ...pageAct('2', 'expect', 45, 52), frameSnapshot('before@2', 'http://x/list', 45), frameSnapshot('after@2', 'http://x/list', 52),
     ...pageAct('3', 'reload', 60, 70), frameSnapshot('after@3', 'http://x/list', 70),
-  ], [['list', 25], ['seen', 48], ['blank', 65]]), [
+  ], [['list', 25], ['seen', 52], ['blank', 65]]), [
     'open /list list.jpeg',
     'assert /list seen.jpeg',
   ]);
@@ -910,5 +910,100 @@ test('a step that starts the moment the move or the check before it ends is the 
     'open /list list.jpeg',
     'assert /list checked.jpeg',
     'press /list clicked.jpeg',
+  ]);
+});
+
+test('a step that started during a check and acts the moment it ends is the next step, so the check keeps the last picture up to its end, not the last one of the test', () => {
+  assert.deepEqual(pictureLines([
+    ...pageAct('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/list', 20),
+    ...pageAct('2', 'expect', 40, 50), frameSnapshot('before@2', 'http://x/list', 40), frameSnapshot('after@2', 'http://x/list', 50),
+    ...pageAct('3', 'click', 45, 60), frameSnapshot('before@3', 'http://x/list', 45), frameSnapshot('input@3', 'http://x/list', 50), frameSnapshot('after@3', 'http://x/list', 60),
+  ], [['list', 30], ['checked', 48], ['clicked', 61], ['later', 200]]), [
+    'open /list checked.jpeg',
+    'assert /list -',
+    'press /list clicked.jpeg',
+  ]);
+});
+
+test('a step that acted before a check or a wait ended, as a click awaited together with it, is not the next step, so the page the check saw shows the picture before the step after it acts', () => {
+  const click = [
+    ...pageAct('3', 'click', 31, 40), frameSnapshot('before@3', 'http://x/home', 31), frameSnapshot('input@3', 'http://x/home', 35), frameSnapshot('after@3', 'http://x/home', 40),
+  ];
+  const fill = [
+    ...pageAct('4', 'fill', 60, 75, { selector: 'internal:label="메모"', value: 'a' }),
+    frameSnapshot('before@4', 'http://x/list', 60), frameSnapshot('input@4', 'http://x/list', 70), frameSnapshot('after@4', 'http://x/list', 75),
+  ];
+  const pictures: [string, number][] = [['home', 22], ['clicked', 36], ['blank', 46], ['drawn', 55], ['filled', 76]];
+  assert.deepEqual(pictureLines([
+    ...pageAct('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/home', 20),
+    ...pageAct('2', 'expect', 30, 45), frameSnapshot('before@2', 'http://x/home', 30), frameSnapshot('after@2', 'http://x/list', 45),
+    ...click, ...fill,
+  ], pictures), [
+    'open /home home.jpeg',
+    'press /home blank.jpeg',
+    'open /list drawn.jpeg',
+    'assert /list -',
+    'write /list filled.jpeg',
+  ]);
+  assert.deepEqual(pictureLines([
+    ...pageAct('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/home', 20),
+    ...pageAct('2', 'waitForSelector', 30, 45), frameSnapshot('before@2', 'http://x/home', 30), frameSnapshot('after@2', 'http://x/list', 45),
+    ...click, ...fill,
+  ], pictures), [
+    'open /home home.jpeg',
+    'press /home blank.jpeg',
+    'open /list drawn.jpeg',
+    'write /list filled.jpeg',
+  ]);
+});
+
+test('a picture taken the moment a check ends belongs to the check and not to the page opened before it, and one taken the moment the next step acts belongs to neither', () => {
+  assert.deepEqual(pictureLines([
+    ...pageAct('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/list', 20),
+    ...pageAct('2', 'expect', 40, 50), frameSnapshot('before@2', 'http://x/list', 40), frameSnapshot('after@2', 'http://x/list', 50),
+    ...pageAct('3', 'click', 70, 80), frameSnapshot('before@3', 'http://x/other', 70), frameSnapshot('input@3', 'http://x/other', 75), frameSnapshot('after@3', 'http://x/other', 80),
+  ], [['list', 30], ['atEnd', 50], ['other', 60], ['clicked', 85]]), [
+    'open /list list.jpeg',
+    'assert /list atEnd.jpeg',
+    'open /other other.jpeg',
+    'press /other clicked.jpeg',
+  ]);
+  assert.deepEqual(pictureLines([
+    ...pageAct('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/list', 20),
+    ...pageAct('2', 'expect', 40, 50), frameSnapshot('before@2', 'http://x/list', 40), frameSnapshot('after@2', 'http://x/list', 50),
+    ...pageAct('3', 'click', 70, 80), frameSnapshot('before@3', 'http://x/list', 70), frameSnapshot('input@3', 'http://x/list', 75), frameSnapshot('after@3', 'http://x/list', 80),
+  ], [['list', 30], ['drawn', 60], ['atTouch', 75], ['clicked', 85]]), [
+    'open /list list.jpeg',
+    'assert /list drawn.jpeg',
+    'press /list clicked.jpeg',
+  ]);
+});
+
+test('another address shown the moment the next step acts, as the old page a goto starts from or the address a check ends on, sends the page opened before back to its first picture', () => {
+  assert.deepEqual(pictureLines([
+    ...pageAct('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/login', 20),
+    ...pageAct('2', 'goto', 50, 60), frameSnapshot('before@2', 'http://x/home', 50), frameSnapshot('after@2', 'http://x/list', 60),
+  ], [['login', 22], ['home', 40], ['list', 65]]), [
+    'open /login login.jpeg',
+    'open /home home.jpeg',
+    'open /list list.jpeg',
+  ]);
+  assert.deepEqual(pictureLines([
+    ...pageAct('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/login', 20),
+    ...pageAct('2', 'expect', 50, 60), frameSnapshot('after@2', 'http://x/home', 60),
+  ], [['login', 22], ['late', 45]]), [
+    'open /login login.jpeg',
+    'open /home late.jpeg',
+    'assert /home -',
+  ]);
+});
+
+test('a page with no step after it keeps its first picture when a later snapshot, as one of a wait, shows another address', () => {
+  assert.deepEqual(pictureLines([
+    ...pageAct('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/login', 20),
+    ...pageAct('2', 'waitForSelector', 50, 60), frameSnapshot('before@2', 'http://x/home', 50), frameSnapshot('after@2', 'http://x/home', 60),
+  ], [['login', 22], ['home', 40], ['homeLater', 70]]), [
+    'open /login login.jpeg',
+    'open /home home.jpeg',
   ]);
 });

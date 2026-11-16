@@ -271,23 +271,26 @@ export function readTrace(file: string): TraceResult {
   };
   const seenOn = Map.groupBy(actions.flatMap((a) => [['before', a.startTime], ['input', snapshots.get(`input@${a.callId}`)?.timestamp], ['after', ends.get(a.callId)?.endTime ?? a.startTime]]
     .flatMap(([name, at]) => { const snapshot = snapshots.get(`${name}@${a.callId}`); return snapshot ? [{ page: a.pageId, at, url: snapshot.frameUrl }] : []; })), (e) => e.page);
-  const touchAfter = (action: any) => {
+  const touchOf = (step: any): number => kindOf(step.method) === 'assert'
+    ? ends.get(step.callId)?.endTime ?? step.startTime
+    : snapshots.get(`input@${step.callId}`)?.timestamp ?? step.startTime;
+  const touchAfter = (action: any, end: number) => {
     const steps = stepsOn.get(action.pageId) ?? [];
     const at = steps.indexOf(action);
-    const next = at >= 0 ? steps[at + 1] : steps.find((a) => a.startTime > action.startTime);
-    return next ? snapshots.get(`input@${next.callId}`)?.timestamp ?? next.startTime : Infinity;
+    const later = at >= 0 ? steps.slice(at + 1) : steps.filter((a) => a.startTime > action.startTime);
+    return later.map(touchOf).find((touch) => touch >= end) ?? Infinity;
   };
   const movedBetween = (page: string, from: number, to: number, url: string | undefined) =>
     url !== undefined && Boolean(seenOn.get(page)?.some((e) => e.at > from && e.at <= to && e.url !== url));
   const framesBetween = (page: string, from: number, to: number) => framesOn.get(page)?.filter((f) => f.timestamp >= from && f.timestamp < to) ?? [];
   const shotLoaded = (action: any, end: number, url: string) => {
     const page = action.pageId;
-    const touch = touchAfter(action);
+    const touch = touchAfter(action, end);
     return (!movedBetween(page, end, touch, url) && framesBetween(page, end, touch).at(-1)?.sha1 as string | undefined) || shotAfter(page, end);
   };
   const shotChecked = (action: any, end: number, url: string | undefined) => {
     const page = action.pageId;
-    const touch = touchAfter(action);
+    const touch = touchAfter(action, end);
     const between = framesBetween(page, end, touch);
     if (!between.length) return shotUntil(page, end);
     return (movedBetween(page, end, touch, url) ? between[0] : between.at(-1)).sha1 as string;
