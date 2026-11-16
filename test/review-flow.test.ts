@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
-import type { Page } from 'playwright-core';
+import type { Locator, Page } from 'playwright-core';
 import { startReviewServer } from '../src/review.ts';
 import { withRebuiltFixture, signer, withServer, browserMissing, withPage, openScreenInfo, screenBox, boxCount, flowButton, filterButton, pickedBoxes, textOutside, PICK_HINT, statusLine, tipLines, needTag, changeData, walkFlow, leafEntries, WALK, withPathStories, flowPlace } from './review-helpers.ts';
 import type { PageData, FlowView, FlowBox, FlowEdge, FlowColumns } from './review-helpers.ts';
@@ -387,7 +387,7 @@ test('in a browser, the flow bar counts the drawn screens on one button per stat
   );
 });
 
-test('in a browser, pressing a screen\'s API count in the flow picks the screen and brings its API calls into view, by mouse and by Enter', { skip: browserMissing }, async () => {
+test('in a browser, pressing a screen\'s API count in the flow picks the screen and brings its API calls into view, by mouse and by Enter, while it looks like the plain tag', { skip: browserMissing }, async () => {
   const headInView = (p: Page) => p.evaluate(() => {
     const head = document.querySelector('#center-body .calls-head')!;
     let box = head.parentElement!;
@@ -402,6 +402,14 @@ test('in a browser, pressing a screen\'s API count in the flow picks the screen 
       withPage(base, async (p) => {
         await p.setViewportSize({ width: 1280, height: 420 });
         const home = await screenBox(p, '/home#Home');
+        const look = (e: Locator) => e.evaluate((el) => {
+          const c = getComputedStyle(el);
+          return [c.color, c.backgroundColor, c.borderTopColor, c.borderTopWidth, c.borderRadius, c.padding, c.fontFamily, c.fontSize, c.fontWeight, c.lineHeight].join(' | ');
+        });
+        const count = home.locator('button.api');
+        await count.hover();
+        assert.equal(await look(count), await look(p.locator('#flowlegend .tag.api')), 'under the mouse the count still looks like the plain tag in the legend');
+        assert.equal(await count.evaluate((b) => getComputedStyle(b).cursor), 'pointer');
         await home.locator('button.api').click();
         assert.deepEqual(await pickedBoxes(p), ['/home#Home']);
         assert.equal(await p.evaluate(() => state.selected), '/home#Home');
@@ -424,12 +432,12 @@ test('in a browser, a screen in the flow is one line with its status as a square
         await p.waitForSelector('#flow .box.screen');
         const home = await screenBox(p, '/home#Home');
         assert.equal(await home.locator('.path').textContent(), '/home');
-        assert.deepEqual(await home.locator('.tag').allTextContents(), ['API 2 ▸', '죽은 화면']);
+        assert.deepEqual(await home.locator('.tag').allTextContents(), ['API 2', '죽은 화면']);
         assert.match((await home.getAttribute('class'))!, /s-fail/);
         assert.equal(await home.locator('.sr-only').textContent(), '실패');
         assert.equal(await statusLine(home), '실패 · 불러옴 1');
         assert.deepEqual(await tipLines(home), []);
-        assert.deepEqual(await home.locator('button').allTextContents(), ['API 2 ▸'], 'the API count is the only button a screen carries of its own');
+        assert.deepEqual(await home.locator('button').allTextContents(), ['API 2'], 'the API count is the only button a screen carries of its own');
 
         const audit = await screenBox(p, '/admin/audit#AdminAudit');
         assert.deepEqual(await needTag(audit), ['역할']);

@@ -61,7 +61,7 @@ function callsButton(n) {
     onkeydown: (e) => {
       if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
     },
-  }, `API ${n.calls.length} ▸`);
+  }, `API ${n.calls.length}`);
 }
 
 function foldButton(id, { below, open }) {
