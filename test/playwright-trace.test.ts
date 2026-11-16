@@ -893,3 +893,22 @@ test('a check after which the screen changes on the same address shows the scree
     'press /list clicked.jpeg',
   ]);
 });
+
+test('a step that starts the moment the move or the check before it ends is the next step, so the page and the check show the picture before it acts, not the last one of the test', () => {
+  assert.deepEqual(pictureLines([
+    ...pageAct('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/list', 20),
+    ...pageAct('2', 'click', 20, 30), frameSnapshot('before@2', 'http://x/list', 20), frameSnapshot('input@2', 'http://x/list', 25), frameSnapshot('after@2', 'http://x/list', 30),
+  ], [['drawn', 22], ['clicked', 31], ['later', 200]]), [
+    'open /list drawn.jpeg',
+    'press /list clicked.jpeg',
+  ]);
+  assert.deepEqual(pictureLines([
+    ...pageAct('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/list', 20),
+    ...pageAct('2', 'expect', 40, 50), frameSnapshot('before@2', 'http://x/list', 40), frameSnapshot('after@2', 'http://x/list', 50),
+    ...pageAct('3', 'click', 50, 60), frameSnapshot('before@3', 'http://x/list', 50), frameSnapshot('input@3', 'http://x/list', 55), frameSnapshot('after@3', 'http://x/list', 60),
+  ], [['list', 30], ['checked', 52], ['clicked', 61], ['later', 200]]), [
+    'open /list list.jpeg',
+    'assert /list checked.jpeg',
+    'press /list clicked.jpeg',
+  ]);
+});

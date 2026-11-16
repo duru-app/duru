@@ -271,19 +271,23 @@ export function readTrace(file: string): TraceResult {
   };
   const seenOn = Map.groupBy(actions.flatMap((a) => [['before', a.startTime], ['input', snapshots.get(`input@${a.callId}`)?.timestamp], ['after', ends.get(a.callId)?.endTime ?? a.startTime]]
     .flatMap(([name, at]) => { const snapshot = snapshots.get(`${name}@${a.callId}`); return snapshot ? [{ page: a.pageId, at, url: snapshot.frameUrl }] : []; })), (e) => e.page);
-  const touchAfter = (page: string, end: number) => {
-    const next = stepsOn.get(page)?.find((a) => a.startTime > end);
+  const touchAfter = (action: any) => {
+    const steps = stepsOn.get(action.pageId) ?? [];
+    const at = steps.indexOf(action);
+    const next = at >= 0 ? steps[at + 1] : steps.find((a) => a.startTime > action.startTime);
     return next ? snapshots.get(`input@${next.callId}`)?.timestamp ?? next.startTime : Infinity;
   };
   const movedBetween = (page: string, from: number, to: number, url: string | undefined) =>
     url !== undefined && Boolean(seenOn.get(page)?.some((e) => e.at > from && e.at <= to && e.url !== url));
   const framesBetween = (page: string, from: number, to: number) => framesOn.get(page)?.filter((f) => f.timestamp >= from && f.timestamp < to) ?? [];
-  const shotLoaded = (page: string, end: number, url: string) => {
-    const touch = touchAfter(page, end);
+  const shotLoaded = (action: any, end: number, url: string) => {
+    const page = action.pageId;
+    const touch = touchAfter(action);
     return (!movedBetween(page, end, touch, url) && framesBetween(page, end, touch).at(-1)?.sha1 as string | undefined) || shotAfter(page, end);
   };
-  const shotChecked = (page: string, end: number, url: string | undefined) => {
-    const touch = touchAfter(page, end);
+  const shotChecked = (action: any, end: number, url: string | undefined) => {
+    const page = action.pageId;
+    const touch = touchAfter(action);
     const between = framesBetween(page, end, touch);
     if (!between.length) return shotUntil(page, end);
     return (movedBetween(page, end, touch, url) ? between[0] : between.at(-1)).sha1 as string;
@@ -300,7 +304,7 @@ export function readTrace(file: string): TraceResult {
       const snapshot = snapshots.get(`${name}@${action.callId}`);
       if (!snapshot) continue;
       timeline.push({ at, page: action.pageId, url: snapshot.frameUrl });
-      const shot = name !== 'after' ? shotUntil(action.pageId, at) : shotLoaded(action.pageId, endTime, snapshot.frameUrl);
+      const shot = name !== 'after' ? shotUntil(action.pageId, at) : shotLoaded(action, endTime, snapshot.frameUrl);
       sightings.push({ at, page: action.pageId, from: action.startTime, shot, url: snapshot.frameUrl, navigated: name === 'after' && NAVIGATIONS.has(action.method) });
     }
     const kind = kindOf(action.method);
@@ -312,7 +316,7 @@ export function readTrace(file: string): TraceResult {
     if (kind) {
       const walkKind = kind === 'assert' ? 'assert' : action.method === 'fill' || VALUE_WRITES.has(action.method) ? 'write' : 'press';
       const shot = kind === 'assert'
-        ? shotChecked(action.pageId, endTime, (snapshots.get(`after@${action.callId}`) ?? snapshots.get(`before@${action.callId}`))?.frameUrl)
+        ? shotChecked(action, endTime, (snapshots.get(`after@${action.callId}`) ?? snapshots.get(`before@${action.callId}`))?.frameUrl)
         : shotAfter(action.pageId, endTime);
       walked.push({ at: kind === 'assert' ? endTime : input?.timestamp ?? action.startTime, page: action.pageId, shot, step: walkStepOf(action, walkKind, Boolean(end?.error)) });
     }
