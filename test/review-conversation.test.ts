@@ -87,7 +87,7 @@ test('in a browser, 취소 in the comment form clears the text and the status ba
   );
 });
 
-test('in a browser, the comment form is a rounded card in the colors of each theme with a pill save button, and a comment and its answer are rounded cards', { skip: browserMissing }, async () => {
+test('in a browser, the comment form is a rounded card in the colors of each theme with 남기기 in the corner radius and accent color of the other buttons, and a comment and its answer are rounded cards', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) => {
     const comment = addMark(config.marksDir, { target: { node: '/lab#Lab' }, note: 'is it tested?', author: 'reviewer' }, new Date('2026-10-12T01:00:00Z'));
     addReply(config.marksDir, { replyTo: comment.id, note: 'not yet' }, new Date('2026-10-12T02:00:00Z'));
@@ -96,16 +96,19 @@ test('in a browser, the comment form is a rounded card in the colors of each the
         await chooseScreen(p, '/lab');
         const style = (selector: string, ...names: string[]) => p.locator(selector).first().evaluate((e, want) => want.map((n) => getComputedStyle(e).getPropertyValue(n)), names);
         const themes = {
-          light: { card: 'rgb(255, 255, 255)', text: 'rgb(36, 41, 47)', field: 'rgb(246, 248, 250)', save: 'rgb(37, 99, 235)' },
-          dark: { card: 'rgb(26, 26, 26)', text: 'rgb(255, 255, 255)', field: 'rgba(255, 255, 255, 0.05)', save: 'rgb(60, 130, 247)' },
+          light: { card: 'rgb(255, 255, 255)', text: 'rgb(36, 41, 47)', field: 'rgb(246, 248, 250)' },
+          dark: { card: 'rgb(26, 26, 26)', text: 'rgb(255, 255, 255)', field: 'rgba(255, 255, 255, 0.05)' },
         };
         for (const colorScheme of ['light', 'dark'] as const) {
           await p.emulateMedia({ colorScheme });
-          const { card, text, field, save } = themes[colorScheme];
+          const { card, text, field } = themes[colorScheme];
           assert.deepEqual(await style('#right-dock', 'background-color', 'border-top-width'), ['rgba(0, 0, 0, 0)', '0px']);
           assert.deepEqual(await style('#right-dock > .mark-form', 'background-color', 'border-top-left-radius', 'color'), [card, '16px', text]);
           assert.deepEqual(await style('#right-dock textarea', 'border-top-left-radius', 'resize', 'background-color', 'color'), ['8px', 'none', field, text]);
-          assert.deepEqual(await style('#right-dock button.save', 'background-color', 'border-top-left-radius'), [save, '999px']);
+          const [accent, radius] = await style('#end-review', 'border-top-color', 'border-top-left-radius');
+          assert.equal(radius, '6px');
+          assert.deepEqual(await style('#right-dock button.save', 'background-color', 'border-top-color', 'border-top-left-radius'), [accent, accent, radius]);
+          assert.equal((await style('#right-dock button.cancel', 'border-top-left-radius'))[0], radius);
           assert.equal((await style('#right-dock .tag-label', 'font-style'))[0], 'italic');
           assert.equal((await style('#right-info .history > li', 'border-top-left-radius'))[0], '16px');
           assert.equal((await style('#right-info .history li.reply', 'border-top-left-radius'))[0], '16px');
