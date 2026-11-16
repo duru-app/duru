@@ -93,7 +93,7 @@ test('in a browser, a map.json built before links carried their conditions shows
         await p.waitForSelector('#screen-list li');
         await p.click('#view-story');
         assert.match((await p.textContent('#left'))!, /duru rebuild 로 맵을 다시 만드세요/);
-        assert.doesNotMatch((await p.textContent('#left'))!, /스토리 파일이 없습니다/);
+        assert.equal(await p.locator('#left .empty-stories').count(), 0);
         assert.equal(await p.locator('#story-list li').count(), 0);
         assert.equal(await p.locator('#left .notices li').count(), 1);
         assert.equal(await p.textContent('#left .notices li code'), 'lab-shortcut.json');
@@ -154,6 +154,18 @@ test('in a browser, the story list shows only the statuses that need a look, fil
       }),
     ),
   );
+});
+
+test('in a browser, with no story file the story list says only 스토리가 없습니다.', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, async (config) => {
+    await withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#view-story');
+        assert.equal(await p.textContent('#left .empty-stories'), '스토리가 없습니다.');
+      }),
+    );
+  });
 });
 
 test('in a browser, a story whose ID is the name of an object member shows like any other', { skip: browserMissing }, async () => {
