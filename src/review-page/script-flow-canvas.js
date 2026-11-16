@@ -18,6 +18,12 @@ function pickScreen(id) {
   openPicked(id);
 }
 
+function showCalls(id) {
+  if (composeDiagram()) return addComposeScreen(id, true);
+  openPicked(id);
+  document.querySelector('#center-body .calls-head')?.scrollIntoView({ block: 'start' });
+}
+
 // 다시 그리면 누른 단추가 사라지므로, 같은 묶음의 펴고 접는 단추로 초점을 옮긴다.
 function setFlowGroup(name, open) {
   if (open) state.openFlowGroups.add(name);

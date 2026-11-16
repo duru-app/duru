@@ -5677,6 +5677,20 @@ Compared:
 - Keeping no typed value at all: nothing could leak, but a candidate would lose the inputs a story is written with,
   and 「단계」 the values that tell what the test did.
 
+**A screen's `API N` count in the flow is a button that picks the screen and scrolls the centre to its API calls, and
+it looks like the other tags.**
+Chosen by the driver for #589 on the check page (2026-11-15), from mockups of the three shapes below. The count gave no
+sign that it could be pressed or what pressing showed, and a tooltip was not enough. The button first read `API N ▸`
+and turned blue under the mouse; on seeing it the driver read the ▸ as more screens below the box, so the ▸ and the
+blue were dropped (2026-11-16). The count keeps the grey border and no background of the other tags, and says what
+pressing does only in its title and the flow legend. While a story is composed in the flow, pressing it adds the
+screen as the box does.
+Compared:
+- The calls opening in a list under the box, `API N ▾`: the first flow graph (2026-09-30) did this and was dropped when
+  the flow came to show paths only.
+- An underlined text link, `API N 보기`: it does what the button does, but reads as text among the tags.
+- `API N ▸`: shows that the count can be pressed, but ▸ is how the flow marks a folded group of screens.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

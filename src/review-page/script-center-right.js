@@ -297,10 +297,10 @@ function callTable(s) {
   const depths = state.data.depths;
   const removed = removedCallRows(s, depths);
   const shared = commonCalls(s, common, depths);
-  if (!own.length && !removed.length) return [h('h2', {}, 'API 호출'), h('p', { class: 'muted' }, shared ? '이 화면만 부르는 API 호출이 없습니다.' : '부르는 API 호출이 없습니다.'), shared];
+  if (!own.length && !removed.length) return [h('h2', { class: 'calls-head' }, 'API 호출'), h('p', { class: 'muted' }, shared ? '이 화면만 부르는 API 호출이 없습니다.' : '부르는 API 호출이 없습니다.'), shared];
   const ownUnrecorded = unrecordedCount(own);
   return [
-    h('h2', {}, `API 호출 ${own.length}`, ownUnrecorded ? [' ', ownUnrecorded] : null, listAbsentNote('서버 목록 없음')),
+    h('h2', { class: 'calls-head' }, `API 호출 ${own.length}`, ownUnrecorded ? [' ', ownUnrecorded] : null, listAbsentNote('서버 목록 없음')),
     callTableBody(s, own, depths, removed),
     shared,
   ];

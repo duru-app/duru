@@ -38,7 +38,7 @@ function screenPill(n, fold = null) {
   },
     h('span', { class: 'sq' }), h('span', { class: 'sr-only' }, STATUS_WORD[status]),
     h('span', { class: 'path' }, pathText(n.label)),
-    n.calls.length ? h('span', { class: 'tag api' }, `API ${n.calls.length}`) : null,
+    n.calls.length ? callsButton(n) : null,
     need ? h('span', { class: 'tag need' }, need) : null,
     n.dead ? h('span', { class: 'tag dead' }, '죽은 화면') : null,
     talkCount(attachedTalk({ node: n.id })),
@@ -47,6 +47,23 @@ function screenPill(n, fold = null) {
 }
 
 // 상자를 누르면 화면을 고르므로, 단추의 누름과 키는 상자까지 올라가지 않게 한다.
+function callsButton(n) {
+  const label = composeDiagram() ? COMPOSE_TIP : `API 호출 ${n.calls.length}개 보기`;
+  return h('button', {
+    type: 'button',
+    class: 'tag api',
+    'aria-label': label,
+    title: label,
+    onclick: (e) => {
+      e.stopPropagation();
+      showCalls(n.id);
+    },
+    onkeydown: (e) => {
+      if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+    },
+  }, `API ${n.calls.length}`);
+}
+
 function foldButton(id, { below, open }) {
   const label = `밑의 화면 ${below.length}개 ${open ? '접기' : '펴기'}`;
   return h('button', {

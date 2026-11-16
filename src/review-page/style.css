@@ -601,6 +601,7 @@
   .box.off { opacity: .12; }
   .box .fold-branch { flex: none; min-width: 22px; padding: 0 4px; border: 1px solid var(--accent); border-radius: 3px; background: var(--panel); color: var(--accent-text); font: inherit; font-size: 10px; font-weight: 600; line-height: 14px; cursor: pointer; }
   .box .fold-branch:hover { background: var(--selected); }
+  .box button.tag.api { font: inherit; font-size: 10px; line-height: 14px; cursor: pointer; }
   .box.group { flex-direction: column; align-items: stretch; gap: 2px; box-shadow: 3px 3px 0 -1px var(--panel), 3px 3px 0 0 var(--line); }
   .box.group .group-line { display: flex; align-items: center; gap: 6px; }
   .box.group .tally { gap: 10px; color: var(--muted); }
