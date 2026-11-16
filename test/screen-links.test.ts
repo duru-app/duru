@@ -961,7 +961,8 @@ test('with React Router 6, a route whose element is a component that returns onl
   const map = await build(writeApp({ 'Routes.js': REDIRECTING_ROUTES, 'Desk.js': page('Desk'), 'ToLogin.js': TO_LOGIN }));
   assert.deepEqual(map.screens.map((s) => s.id).sort(), ['/desk#Desk', '/gate#Gate', '/home#Home', '/login#Login', '/maybe#Maybe', '/start#Start']);
   assert.equal(map.screens.find((s) => s.id === '/gate#Gate')!.componentInRouteFile, true);
-  assert.deepEqual([...new Set(map.entries.flatMap((e) => e.reasons.flatMap((r) => (r.kind === 'redirect' ? [r.file] : []))))], ['Routes.js'], 'a redirect in an imported component does not make its target an entry');
+  const redirectsTo = (screen: string) => map.entries.find((e) => e.screen === screen)?.reasons.filter((r) => r.kind === 'redirect').map((r) => (r as { file: string }).file);
+  assert.deepEqual(redirectsTo('/login#Login'), ['Routes.js', 'ToLogin.js'], 'a redirect in an imported component makes its target an entry too');
   const onlyRedirect = await build(writeApp({ 'Routes.js': REDIRECTING_ROUTES, 'Desk.js': page('Desk'), 'ToLogin.js': TO_LOGIN }, { redirectElements: ['Redirect'] }));
   assert.ok(onlyRedirect.screens.some((s) => s.id === '/old#ToHome'), 'Navigate is not a redirect element under this config');
 });
@@ -993,6 +994,83 @@ test('a route whose component, render function or child is a component that retu
   const map = await build(writeApp({ 'Routes.js': routes, 'Back.js': back }));
   assert.deepEqual(map.screens.map((s) => s.id).sort(), ['/help/:page?#Help', '/home#Home', '/login#Login', '/start#Start', '/team/:team#Team']);
   assert.equal(map.unreadRoutes, undefined);
+});
+
+test('with React Router 6, every redirect of an imported component that only redirects, on two branches, makes its target an entry screen', async () => {
+  const routes = `import { Route, Routes } from 'react-router-dom';
+import Root from './Root';
+import Home from './Home';
+import Login from './Login';
+import Start from './Start';
+
+export default function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/" element={<Root />} />
+      <Route path="/home" element={<Home />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/start" element={<Start />} />
+    </Routes>
+  );
+}
+`;
+  const root = `import { Navigate } from 'react-router-dom';
+import { useOk } from './session';
+
+export default function Root() {
+  const ok = useOk();
+  if (ok) return <Navigate to="/home" />;
+  return <Navigate to="/login" />;
+}
+`;
+  const linking = (name: string, to: string[]) => `import { Link } from 'react-router-dom';\n\nexport default function ${name}() {\n  return <nav>${to.map((t) => `<Link to="${t}">go</Link>`).join('')}</nav>;\n}\n`;
+  const map = await build(writeApp({ 'Routes.js': routes, 'Root.js': root, 'Login.js': linking('Login', ['/home']), 'Home.js': linking('Home', ['/start', '/login']) }));
+  assert.deepEqual(map.entries.map((e) => [e.screen, e.reasons.map((r) => [r.kind, (r as { file?: string }).file])]), [
+    ['/home#Home', [['redirect', 'Root.js']]],
+    ['/login#Login', [['redirect', 'Root.js']]],
+  ]);
+});
+
+test('with React Router 5, a link goes on through a route whose component only redirects to one target with no condition, and to none of the targets when it branches', async () => {
+  const routes = ROUTES
+    .replace("import Start from './Start';", "import Start from './Start';\n\nfunction ToHome() {\n  const x = 1;\n  return <Redirect to=\"/home\" />;\n}\n\nfunction Both() {\n  return useFrom() ? <Redirect to=\"/home\" /> : <Redirect to=\"/login\" />;\n}")
+    .replace('      <Redirect to="/home" />', '      <Route path="/old" component={ToHome} exact />\n      <Route path="/both" component={Both} />');
+  const start = "import { Link } from 'react-router-dom';\n\nexport default function Start() {\n  return <nav><Link to=\"/old\">go</Link><Link to=\"/both\">go</Link></nav>;\n}\n";
+  const map = await build(writeApp({ 'Routes.js': routes, 'Start.js': start }));
+  assert.deepEqual(linksOf(map, '/start#Start').map(([to, , , targets]) => [to, targets]), [['/old', ['/home#Home']], ['/both', []]]);
+});
+
+test('with React Router 6, a component that returns what a call gives back is not read as only redirecting, even when the call is given a redirect', async () => {
+  const routes = `import { Navigate, Route, Routes } from 'react-router-dom';
+import Home from './Home';
+import Start from './Start';
+
+function pick(a, b) {
+  return Math.random() > 0.5 ? a : b;
+}
+
+function EnterForm() {
+  return <form>enter</form>;
+}
+
+function Picker() {
+  return pick(<Navigate to="/home" />, <EnterForm />);
+}
+
+export default function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/home" element={<Home />} />
+      <Route path="/start" element={<Start />} />
+      <Route path="/pick" element={<Picker />} />
+    </Routes>
+  );
+}
+`;
+  const start = "import { Link } from 'react-router-dom';\n\nexport default function Start() {\n  return <Link to=\"/pick\">go</Link>;\n}\n";
+  const map = await build(writeApp({ 'Routes.js': routes, 'Start.js': start }));
+  assert.ok(map.screens.some((s) => s.id === '/pick#Picker'));
+  assert.deepEqual(linksOf(map, '/start#Start').map(([to, , , targets]) => [to, targets]), [['/pick', ['/pick#Picker']]]);
 });
 
 test('the decision record says when a route whose component only redirects is a redirect and what was compared for one that branches', () => {

@@ -160,6 +160,8 @@ interface DrawnNode {
   isRoute: boolean;
   isFragment: boolean;
   redirectAsElement: boolean;
+  // component= 로 리다이렉트만 하는 컴포넌트를 그리는 라우트가 보내는 주소
+  componentRedirect?: string;
   when: Side | null;
   children: DrawnNode[];
   frame?: () => FrameFile[];
@@ -1959,6 +1961,27 @@ export async function extractClient(config: any) {
       && !group!.findParent((up) => up.isJSXElement() && config.routeElements.includes(tagOf(up.node.openingElement.name) ?? ''));
   }
 
+  // 글자 값으로 끝까지 읽히는 to 는 그 값을 쓰고, 아니면 링크로 읽는다. 링크로도 읽지 못하면 글자 값을 남긴다.
+  function redirectTarget(p: NodePath<JSXElement>) {
+    const toExpr = attributeValue(p, 'to') ?? null;
+    const written = toExpr ? evaluate(toExpr) : undefined;
+    const read = typeof written === 'string' && !written.includes(UNKNOWN) ? written : toExpr ? oneAddress(toExpr) : UNKNOWN;
+    return read === UNKNOWN && typeof written === 'string' ? written : read;
+  }
+
+  // 라우트 파일의 리다이렉트는 그 파일을 읽을 때 두므로, 다른 파일에 선언된 컴포넌트의 리다이렉트만 둔다.
+  const importedRedirects = new WeakSet<Node>();
+  function addImportedRedirects(reached: NodePath<JSXElement>[]) {
+    for (const p of reached) {
+      const file = programFile.get(p.scope.getProgramParent().block);
+      if (!file || routeFileSet.has(file) || importedRedirects.has(p.node)) continue;
+      importedRedirects.add(p.node);
+      const { src } = parse(file);
+      const relFile = path.relative(config.srcRoot, file);
+      redirects.push({ to: redirectTarget(p), file: relFile, line: p.node.loc!.start.line, guards: guardsOf(p, src, guardNote(relFile, src)) });
+    }
+  }
+
   function stopOf(p: NodePath) {
     const file = programFile.get(p.scope.getProgramParent().block) ?? null;
     return { text: file ? sliceText(parse(file).src, p.node) : '?', file: rel(file), line: p.node.loc!.start.line };
@@ -1986,12 +2009,7 @@ export async function extractClient(config: any) {
         if (config.routeElements.includes(tag) || config.redirectElements.includes(tag)) hasRoutes = true;
         const attr = (name: string) => p.get('openingElement.attributes').find((a) => (a.node as JSXAttribute).name?.name === name) as NodePath<JSXAttribute> | undefined;
         if (config.redirectElements.includes(tag)) {
-          const toValue = attr('to')?.get('value');
-          const toExpr = toValue?.node ? (toValue.isJSXExpressionContainer() ? toValue.get('expression') : toValue) as NodePath : null;
-          // 글자 값으로 끝까지 읽히는 to 는 그 값을 쓰고, 아니면 링크로 읽는다. 링크로도 읽지 못하면 글자 값을 남긴다.
-          const written = toExpr ? evaluate(toExpr) : undefined;
-          const read = typeof written === 'string' && !written.includes(UNKNOWN) ? written : toExpr ? oneAddress(toExpr) : UNKNOWN;
-          const to = read === UNKNOWN && typeof written === 'string' ? written : read;
+          const to = redirectTarget(p);
           const holder = p.parentPath.isJSXExpressionContainer() ? p.parentPath.parentPath : null;
           const route = holder?.isJSXAttribute() && holder.node.name.name === 'element' ? holder.parentPath.parentPath as NodePath<JSXElement> : null;
           const routeAt = route && config.routeElements.includes(tagOf(route.node.openingElement.name) ?? '') && !/^[/.]|[{:]/.test(to) ? route : null;
@@ -2133,6 +2151,13 @@ export async function extractClient(config: any) {
     return Boolean(holder?.isJSXAttribute() && holder.node.name.name === 'element');
   };
 
+  // 닿는 리다이렉트가 조건 없이 하나일 때만 링크가 그 주소로 이어진다.
+  const forwarding = (reached: NodePath<JSXElement>[]) => {
+    const [only, ...more] = reached;
+    const to = more.length ? null : attributeValue(only, 'to');
+    return { kind: 'redirect' as const, to: to ? oneAddress(to) : UNKNOWN, redirectAsElement: true };
+  };
+
   function drawnTree(ast: ReturnType<typeof parseSource>['ast'], absFile: string, elementScreens: Map<Node, RouteScreen[]>, frames: ReturnType<typeof frameReader>) {
     const nodes = new Map<Node, DrawnNode>();
     const roots: DrawnNode[] = [];
@@ -2154,14 +2179,14 @@ export async function extractClient(config: any) {
           const to = attr('to');
           Object.assign(node, { kind: 'redirect', from: from === undefined ? null : text(from), to: to ? oneAddress(to) : UNKNOWN, redirectAsElement: isElementAttribute(p) });
         } else if (redirectsAsElement) {
-          // 닿는 리다이렉트가 조건 없이 하나일 때만 링크가 그 주소로 이어진다.
-          const [only, ...more] = redirectsAsElement;
-          const to = more.length ? null : attributeValue(only, 'to');
-          Object.assign(node, { kind: 'redirect', to: to ? oneAddress(to) : UNKNOWN, redirectAsElement: true });
+          Object.assign(node, forwarding(redirectsAsElement));
         } else if (config.routeElements.includes(tag)) {
           const at = attr('path');
           node.isRoute = true;
           node.path = node.screens.length ? node.screens[0].path : at === undefined ? null : at ? joinedRoutePath(p, readRoutePath(at), at).path : UNKNOWN;
+          const component = unwrapCalls(attr('component') ?? undefined);
+          const reached = component?.isIdentifier() ? redirectsReturned(component.scope, component.node.name) : null;
+          if (reached) node.componentRedirect = forwarding(reached).to;
         } else if (!/^[a-z]/.test(tag.split('.').pop()!) || (tag.includes('.') && !fromPackage(p.scope, tag, absFile))) {
           node.entry = resolveTag(p.scope, tag, absFile) ?? null;
           let frame: FrameFile[] | undefined;
@@ -2428,7 +2453,7 @@ export async function extractClient(config: any) {
   function returnedElements(fn: AddressFunction): NodePath<JSXElement>[] | null {
     const body = fn.get('body') as NodePath;
     const elementsOf = (p: NodePath | null) => {
-      const sides = p?.node ? bothSides(unwrapCalls(p)!) : [];
+      const sides = p?.node ? bothSides(p) : [];
       return sides.length && sides.every(redirectOrComponent) ? sides : null;
     };
     if (!body.isBlockStatement()) return elementsOf(body);
@@ -2914,7 +2939,11 @@ export async function extractClient(config: any) {
   function componentAttrPage(compAttr: NodePath<JSXAttribute>, routesFile: string): Page | typeof REDIRECT {
     const written = compAttr.get('value.expression') as NodePath;
     const compExpr = unwrapCalls(written)!;
-    if (onlyRedirects(compExpr)) return REDIRECT;
+    const reached = compExpr.isIdentifier() ? redirectsReturned(compExpr.scope, compExpr.node.name) : null;
+    if (reached) {
+      addImportedRedirects(reached);
+      return REDIRECT;
+    }
     const component = compExpr.node && memberChain(compExpr.node)?.join('.');
     const componentFile = component ? components.find(compExpr.scope, component, routesFile, written.isCallExpression()).file : null;
     return { component, componentFile, files: [] };
@@ -2994,7 +3023,11 @@ export async function extractClient(config: any) {
     const tag = tagOf(element.node.openingElement.name);
     if (!tag) return null;
     if (config.redirectElements.includes(tag)) return REDIRECT;
-    if (componentTag(tag) && redirectsReturned(element.scope, tag)) return REDIRECT;
+    const reached = componentTag(tag) ? redirectsReturned(element.scope, tag) : null;
+    if (reached) {
+      addImportedRedirects(reached);
+      return REDIRECT;
+    }
     const insides = element.get('children').flatMap(elementsIn).map((e) => pageOf(e, routesFile));
     const inner = insides.filter(isPage);
     const onlyRedirect = insides.length > 0 && insides.every((c) => c === REDIRECT);
@@ -3136,7 +3169,9 @@ export async function extractClient(config: any) {
         flatten(n.children, base, []);
         return [{ kind: 'routes', branches, indexes }];
       }
-      if (n.kind === 'switch') return [{ kind: 'switch', children: n.children.flatMap((c) => convert(c, file, base)) }];
+      // Switch 안에서 리다이렉트만 하는 컴포넌트를 그리는 라우트는 그 경로에서 보내는 Redirect 와 같다.
+      const redirectOf = (c: DrawnNode): RouteNode[] => [{ kind: 'redirect', from: c.path === null ? null : joinRoutePath(base, c.path), exact: c.exact, to: c.componentRedirect! }];
+      if (n.kind === 'switch') return [{ kind: 'switch', children: n.children.flatMap((c) => (c.componentRedirect === undefined ? convert(c, file, base) : redirectOf(c))) }];
       if (n.kind === 'redirect') return [{ kind: 'redirect', from: n.from, exact: n.exact, to: n.to }];
       const byPath = new Map<string, { routePath: string | null; itemValue: boolean | null | undefined; screens: number[] }>();
       for (const i of n.screens.map((s) => indexOf.get(s)!)) {

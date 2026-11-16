@@ -3299,11 +3299,14 @@ stops the reading. Both sides of a `? :` count as returns. A component that can 
 for `element={<X />}`, `component={X}`, `render={() => <X />}`, a child element and a table item, so an item whose
 component only redirects, which used to need a body of one `return`, is read by the same rule. No config key was
 added: the names come from `redirectElements` as for `<Navigate>` itself.
-Each `<Navigate>` inside a component declared in the routes file stays its own redirect with the conditions around it,
-as before. A link to such a route goes on to the redirect's `to`, as for `element={<Navigate to=… />}`, only when the
-component reaches exactly one redirect and no condition chooses it; when it branches, the link goes to none of the
-targets. The redirects of a component imported from another file do not make their targets entry screens, as for
-a table item.
+Each `<Navigate>` the component reaches, in the routes file or in the file the component is imported from, stays its
+own redirect with the conditions around it, so its target is an entry screen; a table item's component still makes
+no entry screen. A link to an `element=` or `component=` route of this kind goes on to the redirect's `to`, as for
+`element={<Navigate to=… />}`, only when the component reaches exactly one redirect and no condition chooses it; when
+it branches, the link goes to none of the targets. Inside a `<Switch>`, such a `component=` route is read as a
+`<Redirect>` from the route's path. A link to a `render=` route, or to a route whose child only redirects, reaches no
+screen, as for a `<Redirect>` written in those places. A `return` of what a call gives back is not a redirect, even
+when a redirect element is passed to the call, since the call may give back something else.
 Compared:
 - Several redirects, each with its condition (chosen): no screen is made up, and no target is picked for a link
   that the code does not pick.
