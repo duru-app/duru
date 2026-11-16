@@ -6,6 +6,7 @@ import { isAppPath, pathOf, screenFinder } from './address-match.ts';
 import type { ForwardedRequest } from './app-host.ts';
 import { compare, isPlainObject } from './config.ts';
 import { jsonFiles } from './json-files.ts';
+import { catchAllScreens } from './map-fitness.ts';
 import { loadMarks, orderKey, recordKind, recordName, targetsOf, writeNewRecord } from './marks.ts';
 import type { SentRequests } from './request-options.ts';
 import { addStory, CANDIDATES, checkFreeStoryId, DISCARDED, inputsProblem, joinedFields, keptSteps, RECORDS, isDate, isScreenList, isSource, isText, loadStories, sameBox, sourceAfterSteps, SOURCE_SHAPES, STEP_FIELDS, stepProblem, STORY_ID, writableStoriesFolder } from './stories.ts';
@@ -622,6 +623,8 @@ export function saveVisitRecord(dir: string, steps: unknown, now = new Date(), r
   return file;
 }
 
+export const recordedAddresses = (config: any) => loadVisitRecords(recordSources(config).sources, config.configDir).records.map((r) => r.addresses.map((a) => a.address));
+
 export function recordedRequests(config: any): SentRequests[] {
   const { records } = loadVisitRecords(recordSources(config).sources, config.configDir);
   return records.filter((r) => r.requests).map(({ record, requests }) => ({
@@ -717,8 +720,15 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   }
   // 출처에는 보고 파일을 하나만 적으므로, 같은 화면 순서라도 다른 보고의 시험은 붙이지 않는다.
   const fromTraces = new Map<string, TestsSource>();
+  const catchAlls = catchAllScreens(map);
+  let onlyCatchAll = 0;
   for (const { report, title, screens, inputs, skipped } of traced) {
     for (const screen of screens) found.add(screen);
+    // 연 주소가 모두 catch-all 로 간 시험은 시험이 지난 화면이 아니라 주소를 맞추지 못한 것을 적는다.
+    if (screens.length && screens.every((s) => catchAlls.has(s))) {
+      onlyCatchAll += 1;
+      continue;
+    }
     const base = { key: screens.join(' > '), name: titleWithoutTags(title), screens, source: { report, tests: [title] }, ...carried({ stepFields: inputFields(inputs), skipped }) } as Candidate;
     const candidate = ruledOrCut(base);
     const shownScreens = candidate?.screens ?? [];
@@ -767,7 +777,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
     const acceptProblem = stepsLeftProblem(stories, c);
     return { ...c, ...(originals && { originals }), ...(acceptProblem && { acceptProblem }) };
   });
-  return { list: checkStories(map, checked), discarded: shown, gone, notices: all, missedRules, cutByRules: cut.size };
+  return { list: checkStories(map, checked), discarded: shown, gone, notices: all, missedRules, cutByRules: cut.size, onlyCatchAll };
 }
 
 const AGENT_STEPS = 'screens 는 화면 ID 나 { "screen", "reason", "needs", "linkNeeds", "inputs", "expects" } 객체를 하나 이상 차례대로 담은 목록이어야 합니다';

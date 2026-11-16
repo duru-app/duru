@@ -472,6 +472,23 @@ test('two tests of one report that passed the same single screen give one candid
   });
 });
 
+test('a trace whose screens are all catch-alls is no candidate and is counted on its own, while a trace that also passed another screen or a route ending in * after a path stays one', () => {
+  const lost = { ...map.screens.find((s) => s.id === HELP)!, id: '*#Lost', path: '*' };
+  const gone = { ...lost, id: '/*#Gone', path: '/*' };
+  const docs = { ...lost, id: '/docs/*#Docs', path: '/docs/*' };
+  const withCatchAll = { ...map, screens: [...map.screens, lost, gone, docs] };
+  const traced = [
+    { report: 'results/playwright/e2e.json', title: 'opens an old address', screens: ['*#Lost'] },
+    { report: 'results/playwright/e2e.json', title: 'opens two old addresses', screens: ['*#Lost', '/*#Gone'] },
+    { report: 'results/playwright/e2e.json', title: 'leaves home for an old address', screens: [HOME, '*#Lost'] },
+    { report: 'results/playwright/e2e.json', title: 'reads the docs', screens: ['/docs/*#Docs'] },
+  ];
+  const listed = storyCandidates({ ...config, visitRecords: [], storiesDir: EXAMPLE_STORIES }, withCatchAll, path.join(config.outDir, 'map.json'), traced);
+  assert.deepEqual(listed.list.map((c) => c.name), ['leaves home for an old address', 'reads the docs']);
+  assert.equal(listed.onlyCatchAll, 2);
+  assert.equal(storyCandidates({ ...config, visitRecords: [], storiesDir: EXAMPLE_STORIES }, map, path.join(config.outDir, 'map.json'), []).onlyCatchAll, 0);
+});
+
 test('candidates from the visit records come first and keep their own source, and a trace whose screen order a record already gave is not a second candidate', () => {
   assert.deepEqual(tracedCandidatesOf({ visitRecords: [EXAMPLE_VISITS] }).list.map((c) => [c.name, c.source]), [
     ['open-help', { record: 'example-visits/open-help.json', steps: [1, 5] }],

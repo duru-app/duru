@@ -769,8 +769,17 @@ listing the places whose value the source does not show in full.
 - `write calls on screens no trace or visit record sent N | screens with them M` — printed by `rebuild` right after
   it, also when both are 0: how many calls carry `unrecorded` (see **Calls**) and how many screens reach at least one
   of them.
-- `rebuild` also prints the story and candidate counts, how many of the candidates came from traces, how many it
-  newly stored in `candidates/`, and the files skipped, the need files in `needs/`, how many conditions pick a need
+- `map not yet fit for story candidates or test matching: <what>` — printed by `rebuild` before the line of the
+  screens with tests, only when one of two counts reaches half. `N of M addresses opened by browser tests and visit
+  records reached only a catch-all screen or no screen` counts the addresses the traces opened and the addresses of the
+  visit records, an address once while a record stays on it, that landed on a screen whose path is `*` or `/*` or on
+  no screen; `/docs/*` is not a catch-all. `N of M screen paths are relative or start with {?}` counts the screens
+  whose path was not read whole. When both reach half, both are named, joined by `;`. On such a map the tests matched
+  to screens and the story candidates from traces and records stand for addresses that were not matched, so fix the
+  routes or the config the other lines name before writing stories or tests from them.
+- `rebuild` also prints the story and candidate counts, how many of the candidates came from traces, how many
+  traces gave no candidate because all their screens are catch-alls (`traces only on a catch-all N`, only when N is
+  not 0), how many it newly stored in `candidates/`, and the files skipped, the need files in `needs/`, how many conditions pick a need
   file that is not there and each need file it could not read with why, the links from untagged tests to screens and the trace or test files it could not read, the judged test
   pairs, and each judgment file it could not read or whose screen is gone from the map.
 
@@ -1017,7 +1026,9 @@ records should be the only ones. Name another folder, relative to the Cypress pr
 A Playwright test needs no visit record when its report is listed in `tests` and the test ran with Playwright's
 `trace` option on: the screens it passed through, read from its trace by `rebuild`, become a candidate whose source
 names the report and the test titles. The candidate is named after the first of those titles without its tags. Only a passing run counts: a test that failed gives no candidate, and a test
-that passed on a retry gives the screens of the retry that passed. The steps of such a candidate may come with the values the test typed in, shown before the candidate is accepted and
+that passed on a retry gives the screens of the retry that passed. A test whose screens are all catch-alls (a
+route whose path is `*` or `/*`) gives no candidate either: every address it opened fell through to the catch-all,
+so the order says the addresses were not matched, not where the test went. The steps of such a candidate may come with the values the test typed in, shown before the candidate is accepted and
 written into the story file with it; a line on the page says how many inputs were not carried over, a value typed into
 a box whose selector names a password, a secret or a token among them. These candidates
 follow the limits of reading traces:

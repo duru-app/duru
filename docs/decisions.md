@@ -5793,6 +5793,48 @@ Compared:
   known limits of the helper rule for one app, so it waits until a second app writes the shape (driver's decision on
   2026-11-16).
 
+**`rebuild` prints one line when the map is not yet fit for story candidates or test matching, and a trace whose
+screens are all catch-alls gives no candidate.**
+Driver's decision (2026-11-16). One private app's map, built before #564 and #565 fixed address matching and relative
+child paths, sent all 36 addresses its browser tests opened to one `*` screen, and left 35 of its 52 screen paths
+relative. Each line of the summary was right on its own, but none said the map could not be used yet, and an agent went
+on to write a story file from the one candidate it got: the `*` screen alone, standing for five unrelated tests. The
+line fires on either of two counts:
+- At least half of the addresses opened by browser tests (the `open` lines of the traces) and by visit records (each
+  address once while a record stays on it) reached only a catch-all screen or no screen. A catch-all is a screen
+  whose path is `*` or `/*`; `/docs/*` is not one, as for links above.
+- At least half of the screens have a path that is relative or starts with `{?}`, whether or not anything was opened,
+  so a map with no browser tests is caught too.
+The line names each count that fired. The four inputs compared were these two, the share of entry screens and the
+screens whose component file was not found. On that app, rebuilt with the old duru and with the fixed one from the
+same source and test report, the opened addresses went from 36 of 36 on a catch-all to 0 of 36, and the relative paths
+from 35 of 52 to 0. The entry screens stayed 45 of 52 and the component lines stayed five, all components declared in
+the route file. Those two did not move with the fix, so they say how the app is written, not whether its addresses
+match: a level low enough to catch the broken map would also flag the fixed one, and appsmith at 22 of 32 entry
+screens and outline at 26 of 42. On the current maps of appsmith, mattermost, outline, signoz and two private apps
+neither count reaches half: outline has 10 of 42 paths starting with `{?}`, the others none, and no opened address
+lands on a catch-all. Both levels of one half rest on that one failing app, so they are judgement, not fitted: any
+value between 0 and 1 separated the opened addresses, and one half leaves room for tests that open an unknown address
+on purpose to check a not-found page.
+A trace whose screens are all catch-alls is left out of the candidates and counted as `traces only on a catch-all N`
+in the candidate line. The one-screen candidates kept above stand for a real screen that can carry a story's steps; a
+catch-all is where an address lands when it matched nothing, so such a candidate records the failure, and since
+candidate files are never deleted it would stay on the list until someone discarded it. A test that opens only an
+unknown address to check the not-found page gives no candidate now. `candidateSkipScreens` with `"where": "any"`
+naming the catch-all screen was already the manual way to keep such traces out, and it still takes the screen out of
+the candidates from visit records, which this rule does not touch.
+Known limits: a route whose first segment is only a parameter, such as `/:workspaceId`, takes every one-segment
+address as a catch-all does, and the opened addresses that land on it are not counted; on the fixed app 7 of its 36
+opened addresses, `/signin`, land on such a layout screen. A candidate already stored by an earlier run from such a
+trace stays in `candidates/`.
+Compared:
+- Only the opened addresses: a map with no browser tests and no visit records would never print the line, though an
+  agent tags tests from it all the same.
+- All four inputs together: the fixed app, whose five traces now match real screens, would print the line, which
+  teaches an agent to pass over it.
+- Leaving the catch-all-only traces out only while the line is printed: the not-found-page test keeps its candidate on
+  a fit map, but two rules depend on each other and are harder to explain.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
