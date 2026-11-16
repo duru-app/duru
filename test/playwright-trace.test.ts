@@ -751,7 +751,7 @@ test('a page opened at an address shows the last picture before the next step on
   ]);
 });
 
-test('a page opened at an address keeps the first picture after the move when the app moved it to another address before the next step, and takes the last one before a check ends when a check comes next', () => {
+test('a page opened at an address keeps the first picture after the move when the app moved it to another address before the next step, and takes the last one before a check starts when a check comes next, which then shows the picture it saw', () => {
   const act = (callId: string, method: string, startTime: number, endTime: number, params = {}) => [
     { type: 'before', callId, pageId: 'p', method, startTime, params },
     { type: 'after', callId, endTime },
@@ -769,8 +769,8 @@ test('a page opened at an address keeps the first picture after the move when th
     'open /login login.jpeg',
     'open /home home.jpeg',
     'write /home filled.jpeg',
-    'open /list rows.jpeg',
-    'assert /list -',
+    'open /list empty.jpeg',
+    'assert /list rows.jpeg',
   ]);
 });
 
@@ -794,5 +794,102 @@ test('a page opened at an address whose part after # changes before the next ste
     'open /docs blank.jpeg',
     'open /docs#intro docs.jpeg',
     'press /docs#intro clicked.jpeg',
+  ]);
+});
+
+const pageAct = (callId: string, method: string, startTime: number, endTime: number, params = {}) => [
+  { type: 'before', callId, pageId: 'p', method, startTime, params },
+  { type: 'after', callId, endTime },
+];
+const pictureLines = (events: object[], pictures: [string, number][]) => inTempDir((dir) => walkOf(traceZip(dir, [
+  ...events,
+  ...pictures.map(([name, timestamp]) => ({ type: 'screencast-frame', pageId: 'p', sha1: `${name}.jpeg`, timestamp })),
+], [], Object.fromEntries(pictures.map(([name]) => [`resources/${name}.jpeg`, name]))))).map((line) => (line.kind === 'request' ? line.url : `${line.kind} ${line.url} ${line.shot ?? '-'}`));
+
+test('a page a click moved to shows the last picture before the next step on it acts, while the click keeps the first picture after it', () => {
+  assert.deepEqual(pictureLines([
+    ...pageAct('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/home', 20),
+    ...pageAct('2', 'click', 30, 40), frameSnapshot('before@2', 'http://x/home', 30), frameSnapshot('input@2', 'http://x/home', 35), frameSnapshot('after@2', 'http://x/list', 40),
+    ...pageAct('3', 'fill', 50, 70, { selector: 'internal:label="메모"', value: 'a' }),
+    frameSnapshot('before@3', 'http://x/list', 50), frameSnapshot('input@3', 'http://x/list', 60), frameSnapshot('after@3', 'http://x/list', 70),
+  ], [['home', 22], ['blank', 41], ['rows', 55], ['filled', 75]]), [
+    'open /home home.jpeg',
+    'press /home blank.jpeg',
+    'open /list rows.jpeg',
+    'write /list filled.jpeg',
+  ]);
+});
+
+test('a page the app moved away from before the next step acts keeps the first picture after it was reached, by a move or by a click', () => {
+  assert.deepEqual(pictureLines([
+    ...pageAct('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/login', 20),
+    ...pageAct('2', 'fill', 30, 50, { selector: 'internal:label="메모"', value: 'a' }),
+    frameSnapshot('before@2', 'http://x/home', 30), frameSnapshot('input@2', 'http://x/home', 40), frameSnapshot('after@2', 'http://x/home', 50),
+    ...pageAct('3', 'click', 60, 70), frameSnapshot('before@3', 'http://x/home', 60), frameSnapshot('input@3', 'http://x/home', 65), frameSnapshot('after@3', 'http://x/list', 70),
+    ...pageAct('4', 'click', 90, 100), frameSnapshot('before@4', 'http://x/other', 90), frameSnapshot('input@4', 'http://x/other', 95), frameSnapshot('after@4', 'http://x/other', 100),
+  ], [['login', 22], ['home', 25], ['filled', 55], ['loading', 72], ['other', 80], ['clicked', 105]]), [
+    'open /login login.jpeg',
+    'open /home home.jpeg',
+    'write /home filled.jpeg',
+    'press /home loading.jpeg',
+    'open /list -',
+    'open /other other.jpeg',
+    'press /other clicked.jpeg',
+  ]);
+});
+
+test('a page with no step after its move shows its last picture', () => {
+  assert.deepEqual(pictureLines([
+    ...pageAct('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/done', 20),
+  ], [['blank', 21], ['drawn', 60]]), [
+    'open /done drawn.jpeg',
+  ]);
+});
+
+test('a check that passed before the screen was drawn shows the last picture before the next step acts, and the page opened before it the last picture before the check starts', () => {
+  assert.deepEqual(pictureLines([
+    ...pageAct('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/list', 20),
+    ...pageAct('2', 'expect', 50, 52), frameSnapshot('before@2', 'http://x/list', 50), frameSnapshot('after@2', 'http://x/list', 52),
+    ...pageAct('3', 'click', 85, 95), frameSnapshot('before@3', 'http://x/list', 85), frameSnapshot('input@3', 'http://x/list', 90), frameSnapshot('after@3', 'http://x/list', 95),
+  ], [['old', 45], ['blank', 55], ['drawn', 70], ['clicked', 96]]), [
+    'open /list old.jpeg',
+    'assert /list drawn.jpeg',
+    'press /list clicked.jpeg',
+  ]);
+});
+
+test('a check after which the app moves to another address before the next step acts shows the first picture after the check', () => {
+  assert.deepEqual(pictureLines([
+    ...pageAct('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/list', 20),
+    ...pageAct('2', 'expect', 50, 52), frameSnapshot('before@2', 'http://x/list', 50), frameSnapshot('after@2', 'http://x/list', 52),
+    ...pageAct('3', 'click', 80, 90), frameSnapshot('before@3', 'http://x/other', 80), frameSnapshot('input@3', 'http://x/other', 85), frameSnapshot('after@3', 'http://x/other', 90),
+  ], [['list', 30], ['checked', 55], ['other', 70], ['clicked', 95]]), [
+    'open /list list.jpeg',
+    'assert /list checked.jpeg',
+    'open /other other.jpeg',
+    'press /other clicked.jpeg',
+  ]);
+});
+
+test('a check with no picture between its end and the next step keeps the last picture up to its end, not one taken after the next step began', () => {
+  assert.deepEqual(pictureLines([
+    ...pageAct('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/list', 20),
+    ...pageAct('2', 'expect', 45, 52), frameSnapshot('before@2', 'http://x/list', 45), frameSnapshot('after@2', 'http://x/list', 52),
+    ...pageAct('3', 'reload', 60, 70), frameSnapshot('after@3', 'http://x/list', 70),
+  ], [['list', 25], ['seen', 48], ['blank', 65]]), [
+    'open /list list.jpeg',
+    'assert /list seen.jpeg',
+  ]);
+});
+
+test('a check after which the screen changes on the same address shows the screen just before the next step acts, so a notice that came and went is not shown', () => {
+  assert.deepEqual(pictureLines([
+    ...pageAct('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/list', 20),
+    ...pageAct('2', 'expect', 50, 52), frameSnapshot('before@2', 'http://x/list', 50), frameSnapshot('after@2', 'http://x/list', 52),
+    ...pageAct('3', 'click', 88, 95), frameSnapshot('before@3', 'http://x/list', 88), frameSnapshot('input@3', 'http://x/list', 90), frameSnapshot('after@3', 'http://x/list', 95),
+  ], [['list', 30], ['notice', 55], ['gone', 80], ['clicked', 96]]), [
+    'open /list list.jpeg',
+    'assert /list gone.jpeg',
+    'press /list clicked.jpeg',
   ]);
 });
