@@ -1150,7 +1150,7 @@ export default function useGo() {
 import { openInPane } from 'pane-kit';
 import useGo from './useGo';
 
-export default function Home({ id, section, part, rest, base }) {
+export default function Home({ id, section, part, rest, base, flag }) {
   const navigate = useNavigate();
   const go = useGo();
   return (
@@ -1165,6 +1165,7 @@ export default function Home({ id, section, part, rest, base }) {
       <button onClick={() => navigate(\`/team/\${id}-\${part}\`)}>joined by text</button>
       <button onClick={() => navigate(\`/team/\${id}/\${part}\`)}>two segments</button>
       <button onClick={() => navigate(\`/team?\${id}\${part}\`)}>in the query</button>
+      <button onClick={() => navigate(\`/team/\${id}\${flag ? '?tab=1' : ''}\`)}>query from a choice</button>
       <button onClick={() => navigate(\`\${base}\${rest}\`)}>not from slash</button>
     </div>
   );
@@ -1181,10 +1182,34 @@ export default function Home({ id, section, part, rest, base }) {
     ['/team/{*}', at('>joined by text<')],
     ['/team/{*}/{*}', at('>two segments<')],
     ['/team', at('>in the query<')],
+    ['/team/{*}', at('>query from a choice<')],
     ['{?}', at('>not from slash<')],
   ]);
   const decisions = fs.readFileSync(path.join(import.meta.dirname, '../docs/decisions.md'), 'utf8');
   assert.match(decisions, /\*\*A move or a link whose address glues two values duru cannot read, with no `\/` between them, gives no link\.\*\*/);
+});
+
+test('a helper the source declares whose own move glues two values duru cannot read gives no link, at the move or at its calls', async () => {
+  const home = `import { useNavigate, useParams } from 'react-router-dom';
+
+export default function Home({ id, rest }) {
+  const navigate = useNavigate();
+  const { zone } = useParams();
+  const go = (to) => navigate(\`/\${zone}\${to}\`);
+  const open = (a, b) => navigate(\`/\${a}\${b}\`);
+  return (
+    <div>
+      <button onClick={() => go('/team/list')}>list</button>
+      <button onClick={() => go(id)}>by id</button>
+      <button onClick={() => open('team', '/new')}>new</button>
+      <button onClick={() => open(id, rest)}>both</button>
+      <button onClick={() => navigate('/help')}>help</button>
+    </div>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Routes.js': V6_ROUTES, 'Home.js': home }));
+  assert.deepEqual(linksOf(map, '/home#Home').map(([to, line]) => [to, line]), [['/help', lineOf(home, '>help<')]]);
 });
 
 const OPTION = "export default { ROUTE_PATH: { HOME: '/home', LOGIN: '/login', HELP: '/help', TEAM: '/team' } };\n";

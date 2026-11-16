@@ -5727,14 +5727,22 @@ or a catch-all, whatever `to` held: in one private app, a hook that puts the cur
 given gave 42 such links into 5 screens, and four of those screens had no other incoming link. Where the second value
 ends, and so how many segments the address has, cannot be told, so the address is treated as a move to a value as it
 is (no link, as decided in #392), the way the `window.open` rule above drops a fake value written right after something
-other than `/`. Only values glued directly to each other count: `` `/team/${id}` ``, `` `/${section}/list` ``,
-`` `/team/${id}-${part}` `` and a query after the path are read as before, and an address not written from `/`
-(`` `${base}${rest}` ``) stays `{?}`. The rule is in the one place a link's address is turned into its text, so it
-holds for a router link's `to`, a `navigate`, `push` or `replace` move (in a saga too), a `linkComponents` element, a
-`linkFunctions` call, and an address a declared helper or link component builds from what a call gives it. The `to`
-of a `Redirect` or `Navigate` in the route file is not a link and keeps `{*}`. Counted on 2026-11-16: the private app
-writes this shape in its hook and once in its route file; appsmith, mattermost, outline, signoz, metabase, redash,
-superset and another private app write no router move with two values glued after a leading `/`.
+other than `/`. Only an unknown value glued directly after another counts: `` `/team/${id}` ``, `` `/${section}/list` ``,
+`` `/team/${id}-${part}` `` and a query written as text after the path are read as before, and an address not written
+from `/` (`` `${base}${rest}` ``) stays `{?}`. A value that is, on every branch, empty or text starting with `?` or `#`
+(`` const param = flag ? `?tab=${tab}` : '' ``) ends the path, so `` `/db/${id}${param}` `` stays `/db/{*}`. A query
+value duru cannot read at all (`location.search`, a prop) is an unknown value like any other, so
+`` `/team/${id}${location.search}` `` gives no link where it gave `/team/{*}` before. A helper the source declares whose
+own move glues two values gives no link at that move, and its calls are not read either: reading them would read the
+value the helper puts in front, which waits with the hook below. The rule is in the one place a link's address is
+turned into its text, so it holds for a router link's `to`, a `navigate`, `push` or `replace` move (in a saga too), a
+`linkComponents` element, a `linkFunctions` call, and an address a declared helper or link component builds from what a
+call gives it. The `to` of a `Redirect` or `Navigate` in the route file is not a link and keeps `{*}`. Counted on
+2026-11-16: the private app writes this shape in its hook and once in its route file. Mattermost glues a team name to a
+product's path in a function whose result a menu item is given, and its map loses the 34 `/{*}` links that menu item gave
+into the team screen. Metabase and superset each glue a query chosen between texts after a value, a shape that keeps its
+link (no config for them here, so their maps were not built). Appsmith, outline and signoz build the same links with and
+without the rule; redash writes no move with two values glued, and another private app none after a leading `/`.
 Compared:
 - Dropping a value at the end of an address after any text: it would also drop `` (id) => history.push(`/doc/${id}`) ``
   and `` `/notes/${action.payload}` ``, which are links by the rules above.

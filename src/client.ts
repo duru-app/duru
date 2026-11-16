@@ -1192,9 +1192,10 @@ export async function extractClient(config: any) {
     moves: {
       moveOf: (p) => screenLinks.moveOf(p),
       component: (p) => linkComponentOf(p),
-      linked: (p) => addresses(p).length > 0 && linkAddresses(p).length > 0,
-      linkedCall: (p) => addressesOf(linkReading.helperBranches(p) ?? { branches: [] }, () => UNKNOWN).length > 0,
-      linkedUse: (p) => addressesOf(linkReading.useBranches(p) ?? { branches: [] }, () => UNKNOWN).length > 0,
+      // 붙은 값 때문에 링크를 내지 않는 자리도 링크가 있는 자리로 보아, 함수를 부른 곳에서 앞에 붙인 값을 읽지 않는다.
+      linked: (p) => addresses(p).length > 0 && linkAddresses(p, true).length > 0,
+      linkedCall: (p) => addressesOf(linkReading.helperBranches(p) ?? { branches: [] }, () => UNKNOWN, true).length > 0,
+      linkedUse: (p) => addressesOf(linkReading.useBranches(p) ?? { branches: [] }, () => UNKNOWN, true).length > 0,
       isHistory: (p) => screenLinks.isHistory(p),
       holdsRouteConstant: (p) => Boolean(routeChain) && holdsRouteConstant(p),
     },
@@ -1227,8 +1228,30 @@ export async function extractClient(config: any) {
     return segments ? `/${segments.map((s) => (s.includes(UNREADABLE_PIECE) ? VARIABLE_SEGMENT : s)).join('/')}` : UNKNOWN;
   };
 
-  // 알 수 없는 값 둘이 / 없이 붙은 세그먼트는 어디서 끊기는지 알 수 없어 어느 라우트와 맞는지도 알 수 없다.
-  const gluedUnknowns = (text: string) => Boolean(pathSegments(text)?.some((s) => s.includes(UNREADABLE_PIECE + UNREADABLE_PIECE)));
+  // 갈래마다 빈 문자열이거나 ? · # 로 시작하는 글자라서 경로가 끝난 뒤에만 붙는 값
+  function afterPath(p: NodePath<any>, depth = 0): boolean {
+    if (depth > FOLLOWED) return false;
+    if (p.isStringLiteral()) return /^([?#]|$)/.test(p.node.value);
+    if (p.isTemplateLiteral()) return /^[?#]/.test(p.node.quasis[0].value.cooked ?? '') || (!p.node.expressions.length && p.node.quasis[0].value.cooked === '');
+    if (p.isConditionalExpression()) return afterPath(p.get('consequent'), depth + 1) && afterPath(p.get('alternate'), depth + 1);
+    if (p.isLogicalExpression() && p.node.operator !== '&&') return afterPath(p.get('left'), depth + 1) && afterPath(p.get('right'), depth + 1);
+    const init = p.isIdentifier() ? declaredValue(p.scope, p.node.name) : null;
+    return Boolean(init) && afterPath(init!, depth + 1);
+  }
+
+  // 알 수 없는 값 바로 뒤에 / 없이 또 알 수 없는 값이 붙은 경로는 뒤의 값이 어디서 끝나는지 알 수 없어 어느 라우트와 맞는지도 알 수 없다.
+  // stops 는 text 의 읽지 못한 조각마다 그 식이다.
+  const gluedUnknowns = (text: string, stops: NodePath[] = []) => {
+    const pathText = text.split(/[?#]/)[0];
+    if (!pathText.startsWith('/')) return false;
+    let piece = -1;
+    for (let i = 0; i < pathText.length; i++) {
+      if (pathText[i] !== UNREADABLE_PIECE) continue;
+      piece++;
+      if (pathText[i - 1] === UNREADABLE_PIECE && !(stops[piece] && afterPath(stops[piece]))) return true;
+    }
+    return false;
+  };
 
   // 링크 요소의 to 나 history 이동에 적은 주소. 동적 세그먼트는 {*} 로 두고, 값으로 시작하는 주소는 {?} 다.
   // 갈래가 너무 많으면 함수를 따라가지 않고, 호출마다 읽지 못한 조각으로 둔 주소 하나를 준다.
@@ -1237,7 +1260,7 @@ export async function extractClient(config: any) {
   // 주소 함수가 돌려준 갈래 가운데 끝까지 읽었는데 / 로 시작하지 않는 것은 링크가 아니고, // 가 생기는 것은 {?} 다.
   // sides 는 그 주소를 내는 갈래가 모두 같은 쪽에서만 생길 때 그 설정 값들이다.
   function addressesOf(read: Read, tooMany: () => string, keepGlued = false): { to: string; sides?: Side[] }[] {
-    const linkable = (text: string) => keepGlued || !gluedUnknowns(text);
+    const linkable = (text: string, stops?: NodePath[]) => keepGlued || !gluedUnknowns(text, stops);
     const one = () => {
       const text = tooMany();
       return linkable(text) ? [{ to: writtenAddress(text) }] : [];
@@ -1248,11 +1271,11 @@ export async function extractClient(config: any) {
       const before = found.get(to);
       found.set(to, !found.has(to) ? sides : before && sides ? before.filter((a) => sides.some((b) => a.key === b.key && a.on === b.on)) : null);
     };
-    for (const { text, made, whole, sides } of read.branches) {
+    for (const { text, stops, made, whole, sides } of read.branches) {
       if (made && whole && !addresses(whole).length) continue;
       if (made && text.split(/[?#]/)[0].includes('//')) add(UNKNOWN, null);
       else if (pathSegments(text)) {
-        if (linkable(text)) add(writtenAddress(text), sides ?? null);
+        if (linkable(text, stops)) add(writtenAddress(text), sides ?? null);
       } else if (!made || text.includes(UNREADABLE_PIECE)) add(UNKNOWN, null);
     }
     if (found.size > MOST_ADDRESSES) return one();
