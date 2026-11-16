@@ -192,8 +192,9 @@ const testRecordKey = (t) => JSON.stringify([t.file, t.line, t.title, t.project 
 // 후보의 출처에는 테스트 제목만 남으므로, 같은 보고에서 나온 테스트 기록을 제목으로 찾는다.
 function reportTests(report, title) {
   const { nodes, stories, passed, awaitingTag, discarded } = state.data.tests;
+  const untaggedRuns = untaggedTests().flatMap((t) => (t.projects ? Object.entries(t.projects).map(([project, status]) => ({ ...t, project, status })) : [t]));
   const seen = new Set();
-  return [nodes, stories, passed, awaitingTag, discarded].flatMap((byId) => Object.values(byId ?? {}).flat())
+  return [...[nodes, stories, passed, awaitingTag, discarded].flatMap((byId) => Object.values(byId ?? {}).flat()), ...untaggedRuns]
     .filter((t) => t.title === title && t.source.replaceAll('\\', '/') === report && !seen.has(testRecordKey(t)) && seen.add(testRecordKey(t)));
 }
 

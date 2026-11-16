@@ -496,6 +496,23 @@ test('in a browser, a story candidate from browser tests lists under a candidate
       }, { setup: addReplayed })));
 });
 
+test('in a browser, a story candidate whose screen order is all off the map lists its untagged test with its status, depth and trace link, not as 기록 없음', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ ...CANDIDATES, ...STEPS }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#candidate-list li:has-text("wanders off the map")');
+        const list = p.locator('#center .candidate-tests');
+        assert.equal(await list.locator('h2').textContent(), '후보 테스트 1');
+        assert.equal(await list.locator('.test-missing').count(), 0);
+        assert.deepEqual(await list.locator('.test > .depth').allTextContents(), ['UI/E2E']);
+        assert.deepEqual(await list.locator('.test > .chip').allTextContents(), ['통과']);
+        const traces = await list.locator('.test a.trace').evaluateAll((links) => links.map((a) => new URLSearchParams(decodeURIComponent(a.getAttribute('href')!.split('trace=')[1]).split('?')[1]).get('steps')));
+        assert.deepEqual(traces.map((steps) => JSON.parse(steps!)[3]), ['wanders off the map']);
+      })));
+});
+
 test('in a browser, an accepted story has a replay button and a trace link beside each of its story tests that left steps, and a story whose tests left none has neither', { skip: browserMissing }, async () => {
   const replayed = 'shows the screen after each step @screen:/home#Home';
   const tagReplayed = changeData((data) => {
