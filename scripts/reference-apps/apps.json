@@ -1,0 +1,51 @@
+[
+  {
+    "name": "appsmith",
+    "repo": "appsmithorg/appsmith",
+    "commit": "4f8e99186e7b4d65e2d702db60a9cfcf4fb7ed45",
+    "paths": ["/app/client/src/", "/app/client/package.json", "/app/client/tsconfig*.json"],
+    "configs": ["appsmith"]
+  },
+  {
+    "name": "mattermost",
+    "repo": "mattermost/mattermost",
+    "commit": "4d94455ab041c0eed6676064cd8b033e9912fc5b",
+    "paths": ["/webapp/channels/src/", "/webapp/channels/package.json", "/webapp/channels/tsconfig*.json", "/webapp/platform/", "/webapp/package.json", "/webapp/tsconfig*.json"],
+    "configs": ["mattermost"]
+  },
+  {
+    "name": "outline",
+    "repo": "outline/outline",
+    "commit": "d4603413621b3612c2a32ff529fdb7b5f4e3ba43",
+    "paths": ["/app/", "/server/", "/shared/"],
+    "configs": ["outline"]
+  },
+  {
+    "name": "signoz",
+    "repo": "SigNoz/signoz",
+    "commit": "9ba2a25eb98a8e3c27740dc49827c0dc85e65ccc",
+    "paths": ["/frontend/src/", "/frontend/package.json", "/frontend/tsconfig*.json"],
+    "configs": ["signoz", "signoz-api"]
+  },
+  {
+    "name": "metabase",
+    "repo": "metabase/metabase",
+    "commit": "9a81ed47222bfb4108ea2abff8df235c37d77db7",
+    "paths": ["/frontend/src/", "/enterprise/frontend/src/"],
+    "configs": []
+  },
+  {
+    "name": "redash",
+    "repo": "getredash/redash",
+    "commit": "e170795256ae028930e4760192e5dc3f59bb420c",
+    "paths": ["/client/app/", "/client/tsconfig*.json"],
+    "configs": []
+  },
+  {
+    "name": "superset",
+    "repo": "apache/superset",
+    "commit": "f4c16eb3a4f699464c761f76066a4fe50a681770",
+    "paths": ["/superset-frontend/src/", "/superset-frontend/packages/superset-ui-core/", "/superset-frontend/package.json", "/superset-frontend/tsconfig*.json"],
+    "configs": []
+  }
+]

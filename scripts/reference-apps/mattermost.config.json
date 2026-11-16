@@ -1,0 +1,44 @@
+{
+  "srcRoot": "src/webapp/channels/src",
+  "tsconfig": "src/webapp/channels/tsconfig.json",
+  "outDir": "out",
+  "routesFile": [
+    "components/root/root.tsx",
+    "components/team_controller/team_controller.tsx",
+    "components/admin_console/admin_console.tsx",
+    "components/backstage/backstage_controller.tsx",
+    "components/integrations/commands_container/commands_container.tsx",
+    "components/channel_layout/center_channel/center_channel.tsx",
+    "components/claim/claim_controller.tsx",
+    "components/create_team/create_team.tsx",
+    "components/mfa/mfa_controller/mfa_controller.tsx",
+    "components/login/login.tsx",
+    "components/signup/signup.tsx",
+    "components/popout_controller/popout_controller.tsx",
+    "components/rhs_popout/rhs_popout.tsx"
+  ],
+  "routeElements": [
+    "Route",
+    "LoggedInRoute",
+    "HFRoute",
+    "HFTRoute",
+    "LoggedInHFTRoute",
+    "BackstageRoute",
+    "CommandRoute"
+  ],
+  "settingsRoots": [],
+  "routeTables": [
+    {
+      "route": "components/admin_console/admin_console.tsx",
+      "table": {
+        "file": "components/admin_console/admin_definition.tsx",
+        "const": "AdminDefinition"
+      },
+      "items": "*.subsections.*"
+    }
+  ],
+  "history": {
+    "import": "utils/browser_history",
+    "name": "getHistory"
+  }
+}
