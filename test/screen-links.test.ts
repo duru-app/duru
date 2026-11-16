@@ -1029,6 +1029,8 @@ export default function Root() {
     ['/home#Home', [['redirect', 'Root.js']]],
     ['/login#Login', [['redirect', 'Root.js']]],
   ]);
+  const readme = fs.readFileSync(path.join(import.meta.dirname, '..', 'README.md'), 'utf8');
+  assert.match(readme, /`redirect`, the target of a redirect among the routes;/);
 });
 
 test('with React Router 5, a link goes on through a route whose component only redirects to one target with no condition, and to none of the targets when it branches', async () => {
