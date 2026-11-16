@@ -882,6 +882,125 @@ export default function Start() {
   ]);
 });
 
+const REDIRECTING_ROUTES = `import { useEffect } from 'react';
+import { Navigate, Route, Routes } from 'react-router-dom';
+import Home from './Home';
+import Login from './Login';
+import Start from './Start';
+import Desk from './Desk';
+import ToLogin from './ToLogin';
+import { useSignedIn } from './session';
+
+const ToHome = () => <Navigate to="/home" replace />;
+
+function ToDesk() {
+  useEffect(() => {
+    return () => console.log('left');
+  }, []);
+  return <Navigate to="/desk" />;
+}
+
+function BySession() {
+  const signedIn = useSignedIn();
+  if (signedIn) return <Navigate to="/home" />;
+  return <Navigate to="/login" />;
+}
+
+function Outer() {
+  const signedIn = useSignedIn();
+  return signedIn ? <Navigate to="/desk" /> : <ToHome />;
+}
+
+function Through() {
+  return <ToHome />;
+}
+
+function EnterForm() {
+  return <form>enter</form>;
+}
+
+function Gate() {
+  const signedIn = useSignedIn();
+  if (!signedIn) return <EnterForm />;
+  return <Navigate to="/home" />;
+}
+
+function Maybe() {
+  const signedIn = useSignedIn();
+  if (signedIn) return <Navigate to="/home" />;
+}
+
+export default function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/home" element={<Home />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/start" element={<Start />} />
+      <Route path="/desk" element={<Desk />} />
+      <Route path="/old" element={<ToHome />} />
+      <Route path="/tab" element={<ToDesk />} />
+      <Route path="/" element={<BySession />} />
+      <Route path="/outer" element={<Outer />} />
+      <Route path="/through" element={<Through />} />
+      <Route path="/enter" element={<ToLogin />} />
+      <Route path="/gate" element={<Gate />} />
+      <Route path="/maybe" element={<Maybe />} />
+    </Routes>
+  );
+}
+`;
+const TO_LOGIN = `import { Navigate, useLocation } from 'react-router-dom';
+
+export default function ToLogin() {
+  const { search } = useLocation();
+  return <Navigate to="/login" state={{ search }} />;
+}
+`;
+
+test('with React Router 6, a route whose element is a component that returns only redirects, on every branch or through another such component, is a redirect and not a screen, and one that also returns a screen or nothing stays a screen', async () => {
+  const map = await build(writeApp({ 'Routes.js': REDIRECTING_ROUTES, 'Desk.js': page('Desk'), 'ToLogin.js': TO_LOGIN }));
+  assert.deepEqual(map.screens.map((s) => s.id).sort(), ['/desk#Desk', '/gate#Gate', '/home#Home', '/login#Login', '/maybe#Maybe', '/start#Start']);
+  assert.equal(map.screens.find((s) => s.id === '/gate#Gate')!.componentInRouteFile, true);
+  assert.deepEqual([...new Set(map.entries.flatMap((e) => e.reasons.flatMap((r) => (r.kind === 'redirect' ? [r.file] : []))))], ['Routes.js'], 'a redirect in an imported component does not make its target an entry');
+  const onlyRedirect = await build(writeApp({ 'Routes.js': REDIRECTING_ROUTES, 'Desk.js': page('Desk'), 'ToLogin.js': TO_LOGIN }, { redirectElements: ['Redirect'] }));
+  assert.ok(onlyRedirect.screens.some((s) => s.id === '/old#ToHome'), 'Navigate is not a redirect element under this config');
+});
+
+test('with React Router 6, a link goes on through a route whose element only redirects when the component has one target and no condition, and to none of the targets when it branches', async () => {
+  const start = `import { Link } from 'react-router-dom';
+
+export default function Start() {
+  return <nav>${['/old', '/tab', '/', '/outer', '/through', '/enter', '/gate'].map((to) => `<Link to="${to}">go</Link>`).join('')}</nav>;
+}
+`;
+  const map = await build(writeApp({ 'Routes.js': REDIRECTING_ROUTES, 'Desk.js': page('Desk'), 'ToLogin.js': TO_LOGIN, 'Start.js': start }));
+  assert.deepEqual(linksOf(map, '/start#Start').map(([to, , , targets]) => [to, targets]), [
+    ['/old', ['/home#Home']],
+    ['/tab', ['/desk#Desk']],
+    ['/', []],
+    ['/outer', []],
+    ['/through', ['/home#Home']],
+    ['/enter', ['/login#Login']],
+    ['/gate', ['/gate#Gate']],
+  ]);
+});
+
+test('a route whose component, render function or child is a component that returns only redirects is a redirect, not a screen, also without a path, and gives no route not read line', async () => {
+  const routes = ROUTES
+    .replace("import Start from './Start';", "import Start from './Start';\nimport Back from './Back';\n\nfunction ToHome() {\n  const from = useFrom();\n  return from ? <Redirect to=\"/home\" /> : <Redirect to=\"/start\" />;\n}")
+    .replace('      <Redirect to="/home" />', '      <Route path="/old" component={ToHome} exact />\n      <Route path="/back" component={Back} />\n      <Route path="/later" render={() => <ToHome />} />\n      <Route path="/kid"><Back /></Route>\n      <Route component={ToHome} />');
+  const back = "import { Redirect } from 'react-router-dom';\n\nexport default function Back() {\n  return <Redirect to=\"/start\" />;\n}\n";
+  const map = await build(writeApp({ 'Routes.js': routes, 'Back.js': back }));
+  assert.deepEqual(map.screens.map((s) => s.id).sort(), ['/help/:page?#Help', '/home#Home', '/login#Login', '/start#Start', '/team/:team#Team']);
+  assert.equal(map.unreadRoutes, undefined);
+});
+
+test('the decision record says when a route whose component only redirects is a redirect and what was compared for one that branches', () => {
+  const decisions = fs.readFileSync(path.join(import.meta.dirname, '../docs/decisions.md'), 'utf8');
+  assert.match(decisions, /\*\*A route whose element or component is a function component that only redirects is a redirect, not a screen\.\*\*/);
+  assert.match(decisions, /Compared:\n- Several redirects, each with its condition \(chosen\)[\s\S]*\n- Only the first branch[\s\S]*\n- Only a component with one redirect and no condition/);
+});
+
 test('Routes picks the most specific path whatever the order, and a path fits only the whole address unless it ends in /*', async () => {
   const routes = `import { Route, Routes } from 'react-router-dom';
 import Docs from './Docs';

@@ -3285,6 +3285,33 @@ Alternatives compared:
   are: not chosen for the reason above. `component=` and `element=` routes keep their screens, since taking them off
   would move IDs on maps already reviewed.
 
+**A route whose element or component is a function component that only redirects is a redirect, not a screen.**
+Driver's decision in #575 (2026-11-16). outline (`RedirectDocument`, written `component={RedirectDocument}`),
+metabase (`MonitorIndexRedirect` declared in the routes file, `QuestionHashRedirect` imported) and a private client
+draw a route with a component whose every branch sends the reader on with `<Navigate>` or `<Redirect>`; each of those
+routes was a screen with no file of its own, which a reviewer could never open. duru now reads the component's
+declaration, in the routes file or in the file it is imported from, and takes the route as a redirect when every
+`return` in the component, leaving out the functions written inside it, gives a redirect element (a name in
+`redirectElements`) or another component that only redirects, followed to the end; a component met again on the way
+stops the reading. Both sides of a `? :` count as returns. A component that can reach the end of its body without a
+`return`, or has a bare `return`, gives nothing on that path and stays a screen, as does one that returns a screen,
+`null` or a loading element on any branch, such as a sign-in form shown to a reader who is not signed in. This holds
+for `element={<X />}`, `component={X}`, `render={() => <X />}`, a child element and a table item, so an item whose
+component only redirects, which used to need a body of one `return`, is read by the same rule. No config key was
+added: the names come from `redirectElements` as for `<Navigate>` itself.
+Each `<Navigate>` inside a component declared in the routes file stays its own redirect with the conditions around it,
+as before. A link to such a route goes on to the redirect's `to`, as for `element={<Navigate to=… />}`, only when the
+component reaches exactly one redirect and no condition chooses it; when it branches, the link goes to none of the
+targets. The redirects of a component imported from another file do not make their targets entry screens, as for
+a table item.
+Compared:
+- Several redirects, each with its condition (chosen): no screen is made up, and no target is picked for a link
+  that the code does not pick.
+- Only the first branch: the map would show one target out of two, sending every link to a home route on to that
+  home screen and never to sign-in; a redirect reads exactly one target or none, as for a `to` with two addresses.
+- Only a component with one redirect and no condition: the routes that send a reader on by whether they are signed
+  in would stay screens with no file, and those were most of the routes that raised this.
+
 **A reviewer's status is 「테스트 필요」 or 「충분」; a mark an older duru saved as `missing` reads as 「테스트 필요」.**
 Driver's decision in #343. 「없음」 and 「더 필요」 both meant that tests have to be written, and the only difference, whether
 any test exists, is what duru already counts and shows on the same row as 「테스트 없음」 or 「테스트 N」, so a row read
@@ -3468,8 +3495,8 @@ and of every component the item names, and gets the outer screen's path in front
   the admin page screens that send them. Kept, each page's code would show twice, and a reviewer marking
   `/admin_console` 「충분」 would vouch for 112 pages they never opened.
 - An item whose components all only redirect gives no screen. duru reads the component's declaration, in another
-  file too, and takes it as a redirect when it is a function component whose one returned value is a redirect
-  element, as mattermost's `user_attributes_redirect` is.
+  file too, and takes it as a redirect when it only redirects, by the rule a route's `element=` and `component=`
+  read (#575), as mattermost's `user_attributes_redirect` does.
 - An item that has no value for the field the route reads, or whose value could not be read in full, gives no screen
   and a `route not read` line naming the item.
 - Two routes made for each item of a list in one route file named in `routeTables` stop the run, with the entry and
