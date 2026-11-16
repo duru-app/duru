@@ -2997,16 +2997,17 @@ trace recorded with screenshots has `screencast-frame` lines with the page, the 
 JPEG) and a time on the actions' clock. A picture is taken when the screen changes, and comes after the change: in
 the trace of `steps-shows-the-screen-after-each-step` (recorded with `playwright-core` 1.60.0) the `fill` ends at
 286.5 and the first picture with the value in its box is at 294.8, after the next `click` started at 287.5; the click
-ends at 332.5 and the page it moved to is pictured at 345.6, after two waits between 335.0 and 343.2. So a step takes
-the first picture of its page taken after its action ended and before the next step on that page (a press, a write,
-a check or a move to an address) ended, or, when there is none, the last picture taken before its action ended; a wait
-in between does not count as a step. A page opened takes the picture after the action whose last snapshot showed its
-address, and the last picture until then when it was first seen as an action started, as after a click whose last
-snapshot still shows the old address: the picture after that next action is its own. A page opened by a move (`goto`,
-`reload`, `goBack`, `goForward`) takes instead the last picture of its page taken after the move ended and before the
-next step on it acts: at its `input` snapshot, at the end of a check, or else as it starts. It takes the rule above
-when there is no such picture or no next step, and when a snapshot in between shows another address, as when the app
-sends `/login` on to `/home`, or `#/login` on to `#/home` in an app that routes after `#`: the trace does not say
+ends at 332.5 and the page it moved to is pictured at 345.6, after two waits between 335.0 and 343.2. So a press or a
+write takes the first picture of its page taken after its action ended and before the next step on that page (a
+press, a write, a check or a move to an address) ended, or, when there is none, the last picture taken before its
+action ended; a wait in between does not count as a step. A page first seen as an action started takes the last
+picture until then, as after a click whose last snapshot still shows the old address: the picture after that next
+action is its own. A page first seen in an action's last snapshot, whatever the action (`goto`, `reload`, a click, a
+key press), takes the last picture of its page taken after the action ended and before the next step on it acts: at
+its `input` snapshot, or else as it starts, a check as well as the rest; when no step follows on the page, the last
+picture of the page taken after the action ended. It takes the first picture after the action, as a press does, when
+there is no such picture, and when a snapshot in between, or a later one when no step follows, shows another address,
+as when the app sends `/login` on to `/home`, or `#/login` on to `#/home` in an app that routes after `#`: the trace does not say
 when the address changed, so a later picture may be the other page's. The whole address is compared, as the step
 lines are split on it, rather than the address without what follows `#`, which put the picture of `#/home` on the
 line of `#/login`; so an anchor the app adds, as `#intro`, also brings back the first picture after the move, which
@@ -3017,8 +3018,35 @@ and the one at 279.6, before the `fill` acts at 284.1, shows the page. In the 28
 `~/qa/out` (`playwright-core` 1.60.0) there are 50 pages opened at an address: 39 had a blank first picture or a
 loading spinner and now show the page drawn, 7 were drawn and now show a picture taken later, and 4 stay blank, 2
 because the only picture before the next step acts is the blank one and 2 because there is none; the pages reached by
-a click keep their pictures. Only `goto` was measured. A line whose picture is the one of the line before shows none,
-as the 「열기」 after a click that moved the page would.
+a click kept their pictures then: only `goto` was measured.
+A check takes the last picture of its page taken after it ended and before the next step on it acts; the first one in
+that time when a snapshot in between shows another address, and the last one up to its end when there is none, as
+when the next step is a `reload` that starts before a picture comes. A screen that changes after a check on the same
+address, as a notice that shows and goes before the next step, shows as it was last, without the notice. Asked for in
+#576 (2026-11-16): lines after a click, a move by the app or a check showed a loading screen or a white one, though
+the test passed and the next line showed the page drawn. Measured on the traces of two apps (`playwright-core` 1.60.0
+and 1.62.1), counting pictures under 4 KB, which were a grey screen with a spinner or white: 153 of 482 「열기」 and 3
+of 27 「확인」 in the first app, 11 of 14 and 11 of 58 in the second. The picture each line got was estimated with a copy
+of the reader that carried the candidate rules, with a page's last picture before a following check ends rather than
+starts: taking the last picture before the next step acts for a page however it was reached, and the page's last
+picture when no step follows, brings the first app to 97 of 492 「열기」; for checks it brings the two apps to 2 of 23 and
+4 of 56. A page is now pictured before a following check starts because that check now has a picture of its own, the
+one it saw. Compared:
+- The last picture up to the check's end, which #576 proposed: 1 of 19 in the first app but 17 of 45 in the second,
+  where 8 drawn pictures turned blank, and an address check such as `toHaveURL`, which passes as soon as the address
+  changes, showed the page before it.
+- The first picture after the check but before the next step acts: 2 of 26 and 11 of 58.
+- Waiting 50 ms past the time the next step acts: 83 lines got worse in the first app. Waiting only before a `fill` made
+  none worse, but about 50 「넣기」 lost their picture as the same as the line before, and it puts a fixed number of
+  milliseconds into the rule.
+Of the checks whose picture moved from one drawn screen to a later one, 5 pairs with the largest gaps were opened: 4
+were better (a spinner over the page gone, a dialog fully open) and 1 the same. No check in these traces was followed
+by a screen that changed on its own; showing the later screen of a notice that came and went was chosen by the driver
+(2026-11-16), since the rule is read from the trace's times alone. Known limits: most of what stays blank is a step
+that acts 1–40 ms before the picture of the drawn screen arrives, as a second `goto` or a `fill` right after the page
+answered; no window bounded by the next step's action can fix it, and it is left to a later decision. A press or a
+write keeps the first picture after it: a click that moved the page shows the blank of the move, and the 「열기」 after
+it now shows the page drawn. A line whose picture is the one of the line before shows none.
 `rebuild` copies only the pictures the steps name into `test-shots/` under `outDir`, in place of the ones there
 before, so they show as long as the steps do, also when the traces have been moved. In that trace that is 3 of its 4
 pictures, 13.5 KB of 18.1 KB; there is no limit on the folder's size.
