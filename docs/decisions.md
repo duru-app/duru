@@ -5721,6 +5721,28 @@ Compared:
 - An underlined text link, `API N 보기`: it does what the button does, but reads as text among the tags.
 - `API N ▸`: shows that the count can be pressed, but ▸ is how the flow marks a folded group of screens.
 
+**A move or a link whose address glues two values duru cannot read, with no `/` between them, gives no link.**
+`` navigate(`/${zone}${to}`) `` was a link to `/{*}`, so it reached every screen whose path is one variable segment
+or a catch-all, whatever `to` held: in one private app, a hook that puts the current zone in front of the address it is
+given gave 42 such links into 5 screens, and four of those screens had no other incoming link. Where the second value
+ends, and so how many segments the address has, cannot be told, so the address is treated as a move to a value as it
+is (no link, as decided in #392), the way the `window.open` rule above drops a fake value written right after something
+other than `/`. Only values glued directly to each other count: `` `/team/${id}` ``, `` `/${section}/list` ``,
+`` `/team/${id}-${part}` `` and a query after the path are read as before, and an address not written from `/`
+(`` `${base}${rest}` ``) stays `{?}`. The rule is in the one place a link's address is turned into its text, so it
+holds for a router link's `to`, a `navigate`, `push` or `replace` move (in a saga too), a `linkComponents` element, a
+`linkFunctions` call, and an address a declared helper or link component builds from what a call gives it. The `to`
+of a `Redirect` or `Navigate` in the route file is not a link and keeps `{*}`. Counted on 2026-11-16: the private app
+writes this shape in its hook and once in its route file; appsmith, mattermost, outline, signoz, metabase, redash,
+superset and another private app write no router move with two values glued after a leading `/`.
+Compared:
+- Dropping a value at the end of an address after any text: it would also drop `` (id) => history.push(`/doc/${id}`) ``
+  and `` `/notes/${action.payload}` ``, which are links by the rules above.
+- Reading the address the hook builds (`linkFunctions` with a prefix and a condition, or following the hook held by
+  `useCallback`): it would give the hook's calls the links they lead to, but it adds config keys or reverses the
+  known limits of the helper rule for one app, so it waits until a second app writes the shape (driver's decision on
+  2026-11-16).
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

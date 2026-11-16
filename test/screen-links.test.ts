@@ -1133,6 +1133,60 @@ export default function Home({ flag }) {
   ]);
 });
 
+test('a move or a link whose address glues two values duru cannot read with no / between them gives no link, while a value standing alone between slashes, or glued to text, is still {*}', async () => {
+  const useGo = `import { useCallback } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+
+export default function useGo() {
+  const navigate = useNavigate();
+  const { zone } = useParams();
+  return useCallback((to) => {
+    if (/^\\/(team|help)(\\/|$)/.test(to)) navigate(\`/\${zone}\${to}\`);
+    else navigate(to);
+  }, [navigate, zone]);
+}
+`;
+  const home = `import { Link, useNavigate } from 'react-router-dom';
+import { openInPane } from 'pane-kit';
+import useGo from './useGo';
+
+export default function Home({ id, section, part, rest, base }) {
+  const navigate = useNavigate();
+  const go = useGo();
+  return (
+    <div>
+      <button onClick={() => go('/team/list')}>list</button>
+      <button onClick={() => navigate(\`/\${section}\${rest}\`)}>glued</button>
+      <Link to={\`/team/\${id}\${rest}\`}>glued later</Link>
+      <button onClick={() => navigate(\`/\${section}\${part}/new\`)}>glued before more</button>
+      <button onClick={() => openInPane(\`/\${section}\${rest}\`)}>glued in a pane</button>
+      <button onClick={() => navigate(\`/team/\${id}\`)}>team</button>
+      <button onClick={() => navigate(\`/\${section}/list\`)}>section</button>
+      <button onClick={() => navigate(\`/team/\${id}-\${part}\`)}>joined by text</button>
+      <button onClick={() => navigate(\`/team/\${id}/\${part}\`)}>two segments</button>
+      <button onClick={() => navigate(\`/team?\${id}\${part}\`)}>in the query</button>
+      <button onClick={() => navigate(\`\${base}\${rest}\`)}>not from slash</button>
+    </div>
+  );
+}
+`;
+  const map = await build(writeApp(
+    { 'Routes.js': V6_ROUTES, 'Home.js': home, 'useGo.js': useGo },
+    { linkFunctions: [{ import: 'pane-kit', name: 'openInPane', address: '0' }] },
+  ));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home').map(([to, line]) => [to, line]), [
+    ['/team/{*}', at('>team<')],
+    ['/{*}/list', at('>section<')],
+    ['/team/{*}', at('>joined by text<')],
+    ['/team/{*}/{*}', at('>two segments<')],
+    ['/team', at('>in the query<')],
+    ['{?}', at('>not from slash<')],
+  ]);
+  const decisions = fs.readFileSync(path.join(import.meta.dirname, '../docs/decisions.md'), 'utf8');
+  assert.match(decisions, /\*\*A move or a link whose address glues two values duru cannot read, with no `\/` between them, gives no link\.\*\*/);
+});
+
 const OPTION = "export default { ROUTE_PATH: { HOME: '/home', LOGIN: '/login', HELP: '/help', TEAM: '/team' } };\n";
 const withRouteConstant = (files: Record<string, string>, keys: Record<string, unknown> = {}) => writeApp(
   { 'Option.js': OPTION, ...files },
