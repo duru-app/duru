@@ -690,7 +690,8 @@ test('in a browser, the tests with a trace are candidates beside the visit recor
         assert.equal(await p.locator('#center .story-path .step .records').count(), 0);
         assert.equal(await p.locator('#center .source').evaluate((e) => e.firstChild!.textContent), 'results/playwright-traced/visits.json');
         const titles = ['opens home and then help', 'follows a link while waiting for the new address', 'uses the mouse right after the address changes', 'clicks a button that appears after the address changes'];
-        assert.deepEqual(await p.locator('#center .source li .source-test').allTextContents(), titles);
+        const rows = await p.locator('#center .candidate-tests .test').allTextContents();
+        assert.deepEqual(rows.map((row, i) => row.includes(titles[i])), titles.map(() => true));
         assert.equal(await placeOf(p), '#story?candidate=/home#Home+>+/help#Help');
         await p.reload();
         await p.waitForSelector('#candidate-list li.selected:has-text("opens home and then help")');

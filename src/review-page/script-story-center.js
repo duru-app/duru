@@ -187,6 +187,29 @@ const needCenter = (n) => [
     h('pre', { class: 'mono' }, JSON.stringify({ name: n.name, text: n.text }, null, 2))),
 ];
 
+const testRecordKey = (t) => JSON.stringify([t.file, t.line, t.title, t.project ?? null]);
+
+// 후보의 출처에는 테스트 제목만 남으므로, 같은 보고에서 나온 테스트 기록을 제목으로 찾는다.
+function reportTests(report, title) {
+  const { nodes, stories, passed, awaitingTag, discarded } = state.data.tests;
+  const seen = new Set();
+  return [nodes, stories, passed, awaitingTag, discarded].flatMap((byId) => Object.values(byId ?? {}).flat())
+    .filter((t) => t.title === title && t.source.replaceAll('\\', '/') === report && !seen.has(testRecordKey(t)) && seen.add(testRecordKey(t)));
+}
+
+const missingTest = (title) => h('div', { class: 'test' }, titleWithTags({ title }), ' ',
+  h('span', { class: 'muted test-missing', title: '지금 테스트 결과에 이 테스트가 없습니다. 테스트를 다시 돌리고 duru rebuild 를 실행하면 다시 보입니다' }, '기록 없음'));
+
+function candidateTests(c) {
+  if (!('tests' in c.source)) return null;
+  const { report, tests } = c.source;
+  const rows = tests.flatMap((title) => {
+    const found = reportTests(report, title);
+    return found.length ? found.map((t) => testItem(t, { depth: true, runs: [replayButton(c.key, t), traceButton(c.key, t)].filter(Boolean) })) : [missingTest(title)];
+  });
+  return h('div', { class: 'story-tests candidate-tests' }, h('h2', { title: '이 후보의 화면 순서를 차례로 지나간 테스트' }, `후보 테스트 ${rows.length}`), rows);
+}
+
 function renderStoryCenter() {
   if (walkShown()) return renderWalkCenter();
   if (storyAppShown()) return renderPointCenter();
@@ -200,11 +223,12 @@ function renderStoryCenter() {
     return fillStoryCenter(center, c, [
       h('div', { class: 'title-row' }, h('h3', {}, c.name), c.storyId ? storyIdTag(c.storyId) : null, nameButton(c), byAgent(c) ? agentChip('candidate') : null, walkChip(c), ...reachChips(c), candidateActions(c)),
       storyErrorLine(),
-      sourceView(c.source, '후보가 나온', true),
+      'tests' in c.source ? h('div', { class: 'muted mono source', title: '후보가 나온 시험 보고' }, c.source.report) : sourceView(c.source, '후보가 나온'),
       foundOrder(c),
       ...replacedOrders(c),
       needsFold(c, `candidate\n${c.key}`),
       c.skipped ? h('div', { class: 'muted skipped-inputs', title: '기록에는 있었지만 이 후보의 단계에 입력값으로 옮기지 못한 입력' }, `옮기지 못한 입력 ${c.skipped}개`) : null,
+      candidateTests(c),
       ...storyPath(c, c.stepRanges, undefined, byAgent(c) ? c.source.added : [], linePicker(c), (i) => stepOff(c, i)),
       c.acceptProblem ? h('p', { class: 'error accept-problem', role: 'status' }, c.acceptProblem) : null]);
   }

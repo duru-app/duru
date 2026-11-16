@@ -456,11 +456,11 @@ test('the review server sends a test\'s trace and screen pictures only for what 
   }));
 });
 
-test('in a browser, a story candidate from browser tests has a replay button and a trace link beside each test it came from, the replay opening the same window as on a test line, and a candidate from a visit record has neither', { skip: browserMissing }, async () => {
+test('in a browser, a story candidate from browser tests lists under a candidate tests heading with its count each test that walked its screen order with its status, depth and file, a replay button and a trace link, the replay opening the same window as on a test line; the source line keeps only the report, a title missing from the results stays as a row marked 기록 없음, and a candidate from a visit record has no list', { skip: browserMissing }, async () => {
   const replayed = 'shows the screen after each step @screen:/home#Home';
   const addReplayed = changeData((data) => {
     const c = structuredClone(data.candidates.list.find((x) => x.name === 'opens home and then help')!);
-    data.candidates.list.push({ ...c, key: `${c.key} > again`, name: 'replays home', source: { report: 'results/playwright-steps/report.json', tests: [replayed] } });
+    data.candidates.list.push({ ...c, key: `${c.key} > again`, name: 'replays home', source: { report: 'results/playwright-steps/report.json', tests: [replayed, 'a test the results no longer hold'] } });
   });
   await withRebuiltFixture({ ...CANDIDATES, ...STEPS }, (config) =>
     withServer(config, 'reviewer', (base) =>
@@ -468,19 +468,30 @@ test('in a browser, a story candidate from browser tests has a replay button and
         await p.waitForSelector('#screen-list li');
         await p.click(storiesTab);
         await p.click('#candidate-list li:has-text("opens home and then help")');
+        const list = p.locator('#center .candidate-tests');
+        assert.equal(await list.locator('h2').textContent(), '후보 테스트 4');
+        const titles = ['opens home and then help', 'follows a link while waiting for the new address', 'uses the mouse right after the address changes', 'clicks a button that appears after the address changes'];
+        const traces = await list.locator('.test a.trace').evaluateAll((links) => links.map((a) => new URLSearchParams(decodeURIComponent(a.getAttribute('href')!.split('trace=')[1]).split('?')[1]).get('steps')));
+        assert.deepEqual(traces.map((steps) => JSON.parse(steps!)[3]), titles);
+        assert.deepEqual(await list.locator('.test > .depth').allTextContents(), Array(4).fill('UI/E2E'));
+        assert.deepEqual(await list.locator('.test > .chip').allTextContents(), Array(4).fill('통과'));
+        assert.equal(await list.locator('button.replay').count(), 0);
         const source = p.locator('#center .source');
-        const traces = await source.locator('li a.trace').evaluateAll((links) => links.map((a) => new URLSearchParams(decodeURIComponent(a.getAttribute('href')!.split('trace=')[1]).split('?')[1]).get('steps')));
-        assert.deepEqual(traces.map((steps) => JSON.parse(steps!)[3]), ['opens home and then help', 'follows a link while waiting for the new address', 'uses the mouse right after the address changes', 'clicks a button that appears after the address changes']);
-        assert.equal(await source.locator('button.replay').count(), 0);
+        assert.equal(await source.textContent(), 'results/playwright-traced/visits.json');
 
         await p.click('#candidate-list li:has-text("replays home")');
-        await source.locator('li', { hasText: replayed }).locator('button.replay').click();
+        assert.equal(await list.locator('h2').textContent(), '후보 테스트 2');
+        await list.locator('.test', { hasText: 'shows the screen after each step' }).locator('button.replay').click();
         const view = p.locator('#replay-view');
         assert.ok(await view.evaluate((d: HTMLDialogElement) => d.open));
         assert.match((await view.locator('.replay-count').textContent())!, /^1\/\d+$/);
         await view.locator('button.close').click();
+        const gone = list.locator('.test', { hasText: 'a test the results no longer hold' });
+        assert.equal(await gone.locator('.test-missing').textContent(), '기록 없음');
+        assert.equal(await gone.locator('.replay, .trace').count(), 0);
 
         await p.click('#candidate-list li:has-text("open-help")');
+        assert.equal(await p.locator('#center .candidate-tests').count(), 0);
         assert.equal(await p.locator('#center .source').locator('button.replay, a.trace').count(), 0);
       }, { setup: addReplayed })));
 });
