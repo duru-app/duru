@@ -23,6 +23,12 @@ test('the line counts the addresses opened by browser tests and visit records th
   assert.equal(mapFitnessLine(SHELF_MAP, {}, []), null);
 });
 
+test('a visit record address that reached no screen counts on a map without a catch-all, and an address the record leaves and comes back to counts again', () => {
+  const noCatchAll = { screens: [screen('/shelf', 'Shelf'), screen('/docs/*', 'Docs')] };
+  assert.equal(mapFitnessLine(noCatchAll, {}, [['/nowhere', '/shelf']]), `${NOT_FIT}1 of 2 addresses opened by browser tests and visit records reached only a catch-all screen or no screen`);
+  assert.equal(mapFitnessLine(SHELF_MAP, {}, [['/void', '/shelf', '/void']]), `${NOT_FIT}2 of 3 addresses opened by browser tests and visit records reached only a catch-all screen or no screen`);
+});
+
 test('a screen whose path is * or /* is a catch-all, and one whose path ends in * after a path is not', () => {
   const rooted = { screens: [screen('/shelf', 'Shelf'), screen('/*', 'Lost')] };
   assert.match(mapFitnessLine(rooted, opens({ path: '/a', screen: '/*#Lost' }), [])!, /1 of 1 addresses/);
