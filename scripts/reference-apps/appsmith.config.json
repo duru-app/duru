@@ -1,0 +1,21 @@
+{
+  "srcRoot": "src/app/client/src",
+  "tsconfig": "src/app/client/tsconfig.json",
+  "outDir": "out",
+  "routesFile": [
+    "ce/AppRouter.tsx",
+    "pages/UserAuth/index.tsx",
+    "pages/workspace/index.tsx",
+    "pages/Templates/index.tsx",
+    "ce/components/WorkspaceSettingsTabs/index.tsx"
+  ],
+  "routeElements": [
+    "Route",
+    "SentryRoute"
+  ],
+  "settingsRoots": [],
+  "history": {
+    "import": "utils/history",
+    "name": "default"
+  }
+}

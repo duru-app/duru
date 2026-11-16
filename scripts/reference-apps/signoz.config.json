@@ -1,0 +1,23 @@
+{
+  "srcRoot": "src/frontend/src",
+  "tsconfig": "src/frontend/tsconfig.json",
+  "outDir": "out",
+  "routesFile": "AppRoutes/index.tsx",
+  "routeElements": [
+    "Route"
+  ],
+  "routeConstant": "ROUTES",
+  "constants": {
+    "ROUTES": "constants/routes.ts"
+  },
+  "routeTables": [
+    {
+      "route": "AppRoutes/index.tsx",
+      "table": {
+        "file": "AppRoutes/routes.ts",
+        "const": "routes"
+      },
+      "items": "*"
+    }
+  ]
+}

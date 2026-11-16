@@ -1,0 +1,20 @@
+{
+  "srcRoot": "src/app",
+  "tsconfig": "src/tsconfig.json",
+  "outDir": "out",
+  "routesFile": [
+    "routes/index.tsx",
+    "routes/authenticated.tsx",
+    "routes/settings.tsx",
+    "scenes/Collection/index.tsx",
+    "scenes/Home.tsx"
+  ],
+  "routeElements": [
+    "Route"
+  ],
+  "settingsRoots": [],
+  "history": {
+    "import": "~/utils/history",
+    "name": "default"
+  }
+}

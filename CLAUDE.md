@@ -44,7 +44,8 @@
 - duru reads any app, so a new reader is a rule about what the code does. It does not name one app's components, paths
   or keys, and a test for it uses made-up names.
 - Before proposing a reader, count the shape in the reference apps under `~/duru-target-apps` and in the app that raised
-  it, and say the counts. A shape only one app writes gets a reader only as an extension of a rule duru already reads;
+  it, and say the counts. `node scripts/fetch-reference-apps.mjs` puts those apps there at fixed commits, with a duru
+  config beside each app that has one (`node src/cli.ts extract ~/duru-target-apps/<app>/<name>.config.json`). A shape only one app writes gets a reader only as an extension of a rule duru already reads;
   otherwise it waits in an issue until a second app writes it.
 - After the change, build the maps of those apps with and without it, and say what moved.
 
