@@ -3004,8 +3004,10 @@ action ended; a wait in between does not count as a step. A page first seen as a
 picture until then, as after a click whose last snapshot still shows the old address: the picture after that next
 action is its own. A page first seen in an action's last snapshot, whatever the action (`goto`, `reload`, a click, a
 key press), takes the last picture of its page taken after the action ended and before the next step on it acts: at
-its `input` snapshot, or else as it starts, a check as well as the rest; when no step follows on the page, the last
-picture of the page taken after the action ended. It takes the first picture after the action, as a press does, when
+its `input` snapshot, or else as it starts, and a check as it ends; when no step follows on the page, the last
+picture of the page taken after the action ended. The next step is the first step after the action on its page that
+acts at or after the moment the action ended: a step that acted before, as a click awaited together with a check in
+`Promise.all`, which starts after the check but acts before it ends, is not the next step. It takes the first picture after the action, as a press does, when
 there is no such picture, and when a snapshot in between, or a later one when no step follows, shows another address,
 as when the app sends `/login` on to `/home`, or `#/login` on to `#/home` in an app that routes after `#`: the trace does not say
 when the address changed, so a later picture may be the other page's. The whole address is compared, as the step
@@ -3021,17 +3023,20 @@ because the only picture before the next step acts is the blank one and 2 becaus
 a click kept their pictures then: only `goto` was measured.
 A check takes the last picture of its page taken after it ended and before the next step on it acts; the first one in
 that time when a snapshot in between shows another address, and the last one up to its end when there is none, as
-when the next step is a `reload` that starts before a picture comes. A screen that changes after a check on the same
+when the next step is a `reload` that starts before a picture comes. When no step follows a check on its page, it
+takes the last picture of the page however long after the check that picture was taken; the trace gives nothing else
+to end the window, and this is a known limit. A screen that changes after a check on the same
 address, as a notice that shows and goes before the next step, shows as it was last, without the notice. Asked for in
 #576 (2026-11-16): lines after a click, a move by the app or a check showed a loading screen or a white one, though
 the test passed and the next line showed the page drawn. Measured on the traces of two apps (`playwright-core` 1.60.0
-and 1.62.1), counting pictures under 4 KB, which were a grey screen with a spinner or white: 153 of 482 「열기」 and 3
-of 27 「확인」 in the first app, 11 of 14 and 11 of 58 in the second. The picture each line got was estimated with a copy
-of the reader that carried the candidate rules, with a page's last picture before a following check ends rather than
-starts: taking the last picture before the next step acts for a page however it was reached, and the page's last
-picture when no step follows, brings the first app to 97 of 492 「열기」; for checks it brings the two apps to 2 of 23 and
-4 of 56. A page is now pictured before a following check starts because that check now has a picture of its own, the
-one it saw. Compared:
+and 1.62.1), counting pictures under 4 KB, which were a grey screen with a spinner or white: before this rule 153 of 482
+「열기」 and 3 of 27 「확인」 in the first app, 11 of 14 and 11 of 58 in the second. Measured with this rule on the same
+traces (2026-11-16): 97 of 492 「열기」 and 2 of 23 「확인」 in the first app, where the tests with at least one such
+picture went from 108 to 77, and 12 of 22 and 4 of 56 in the second. A page opened before a check takes its last
+picture before the check ends rather than as it starts: measured on the same traces, the first app's counts are the
+same either way, and the second app shows 22 「열기」 with a picture of their own rather than 14, 12 and 10 of them
+blank, the rest left off as the picture of the line before; the end also matches the estimates made while choosing
+the rule. Compared:
 - The last picture up to the check's end, which #576 proposed: 1 of 19 in the first app but 17 of 45 in the second,
   where 8 drawn pictures turned blank, and an address check such as `toHaveURL`, which passes as soon as the address
   changes, showed the page before it.
