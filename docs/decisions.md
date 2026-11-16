@@ -2275,6 +2275,15 @@ some file already holds that order.
 Undoing a story whose steps were edited after it was accepted also keeps the edited order as a candidate, beside the
 one found, because dropping it would lose what the reviewer wrote.
 
+**The ✕ on a candidate's step shows only while the pointer is over that step card or the keyboard is in it, and
+always on a step already taken out.**
+The ✕ was always in sight on every card, and the driver asked that it show only on hover (driver's request,
+2026-11-16). It is hidden by `opacity`, as the pencil of a step card is, so the button stays in the tab order and shows
+as soon as Tab reaches it or anything else in its card; hiding it with `display` or `visibility` would take it out of
+the keyboard's way. A step struck through keeps its ✕ in sight, since that ✕ is the only way to put it back and
+nothing else on the card says so. A screen without hover, or with a coarse pointer, shows every ✕, as it shows the
+pencil, because there is no pointer to reveal it.
+
 **Undoing an accepted candidate deletes its story file; the discarded candidates are listed, folded, below the
 candidates.**
 #249 asked for a way back from 「스토리로 받기」 and 「버리기」. A story file is already rewritten in place when its name
