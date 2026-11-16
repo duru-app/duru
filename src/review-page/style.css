@@ -353,10 +353,10 @@
   .mark-form .tag-pick { color: var(--text); }
   .mark-form .error { color: var(--fail); }
   .mark-form .save-row { justify-content: flex-end; gap: 6px; }
-  .mark-form .save-row button { padding: 5px 14px; border-radius: 999px; font: inherit; cursor: pointer; }
+  .mark-form .save-row button { padding: 5px 14px; border-radius: 6px; font: inherit; cursor: pointer; }
   .mark-form .save-row button:disabled { opacity: .5; cursor: default; }
   .mark-form button.cancel { border: 1px solid transparent; background: transparent; color: var(--pop-muted); }
-  .mark-form button.save { border: 1px solid var(--pop-blue); background: var(--pop-blue); color: #fff; }
+  .mark-form button.save { border: 1px solid var(--accent); background: var(--accent); color: #fff; }
   .talk .history .tag, .talk-line .tag { padding: 0; border: 0; background: none; color: var(--muted); font-style: italic; }
   .talk-state { display: inline-flex; flex: none; align-items: center; gap: 4px; height: 20px; padding: 0 8px; border: 1px solid currentColor; border-radius: 999px; font-size: 10px; font-style: normal; font-weight: 500; white-space: nowrap; vertical-align: middle; margin-right: 2px; }
   .talk-state.waiting { color: var(--muted); }
