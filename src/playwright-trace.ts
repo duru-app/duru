@@ -271,11 +271,29 @@ export function readTrace(file: string): TraceResult {
   };
   const seenOn = Map.groupBy(actions.flatMap((a) => [['before', a.startTime], ['input', snapshots.get(`input@${a.callId}`)?.timestamp], ['after', ends.get(a.callId)?.endTime ?? a.startTime]]
     .flatMap(([name, at]) => { const snapshot = snapshots.get(`${name}@${a.callId}`); return snapshot ? [{ page: a.pageId, at, url: snapshot.frameUrl }] : []; })), (e) => e.page);
-  const shotLoaded = (page: string, end: number, url: string) => {
-    const next = stepsOn.get(page)?.find((a) => a.startTime > end);
-    const touch = next && (snapshots.get(`input@${next.callId}`)?.timestamp ?? (kindOf(next.method) === 'assert' ? ends.get(next.callId)?.endTime : undefined) ?? next.startTime);
-    const moved = touch !== undefined && seenOn.get(page)?.some((e) => e.at > end && e.at <= touch && e.url !== url);
-    return (touch !== undefined && !moved && framesOn.get(page)?.findLast((f) => f.timestamp >= end && f.timestamp < touch)?.sha1 as string | undefined) || shotAfter(page, end);
+  const touchOf = (step: any): number => kindOf(step.method) === 'assert'
+    ? ends.get(step.callId)?.endTime ?? step.startTime
+    : snapshots.get(`input@${step.callId}`)?.timestamp ?? step.startTime;
+  const touchAfter = (action: any, end: number) => {
+    const steps = stepsOn.get(action.pageId) ?? [];
+    const at = steps.indexOf(action);
+    const later = at >= 0 ? steps.slice(at + 1) : steps.filter((a) => a.startTime > action.startTime);
+    return later.map(touchOf).find((touch) => touch >= end) ?? Infinity;
+  };
+  const movedBetween = (page: string, from: number, to: number, url: string | undefined) =>
+    url !== undefined && Boolean(seenOn.get(page)?.some((e) => e.at > from && e.at <= to && e.url !== url));
+  const framesBetween = (page: string, from: number, to: number) => framesOn.get(page)?.filter((f) => f.timestamp >= from && f.timestamp < to) ?? [];
+  const shotLoaded = (action: any, end: number, url: string) => {
+    const page = action.pageId;
+    const touch = touchAfter(action, end);
+    return (!movedBetween(page, end, touch, url) && framesBetween(page, end, touch).at(-1)?.sha1 as string | undefined) || shotAfter(page, end);
+  };
+  const shotChecked = (action: any, end: number, url: string | undefined) => {
+    const page = action.pageId;
+    const touch = touchAfter(action, end);
+    const between = framesBetween(page, end, touch);
+    if (!between.length) return shotUntil(page, end);
+    return (movedBetween(page, end, touch, url) ? between[0] : between.at(-1)).sha1 as string;
   };
   const timeline: TimelineEntry[] = [];
   const walked: WalkEntry[] = [];
@@ -289,7 +307,7 @@ export function readTrace(file: string): TraceResult {
       const snapshot = snapshots.get(`${name}@${action.callId}`);
       if (!snapshot) continue;
       timeline.push({ at, page: action.pageId, url: snapshot.frameUrl });
-      const shot = name !== 'after' ? shotUntil(action.pageId, at) : NAVIGATIONS.has(action.method) ? shotLoaded(action.pageId, endTime, snapshot.frameUrl) : shotAfter(action.pageId, endTime);
+      const shot = name !== 'after' ? shotUntil(action.pageId, at) : shotLoaded(action, endTime, snapshot.frameUrl);
       sightings.push({ at, page: action.pageId, from: action.startTime, shot, url: snapshot.frameUrl, navigated: name === 'after' && NAVIGATIONS.has(action.method) });
     }
     const kind = kindOf(action.method);
@@ -300,7 +318,10 @@ export function readTrace(file: string): TraceResult {
     }
     if (kind) {
       const walkKind = kind === 'assert' ? 'assert' : action.method === 'fill' || VALUE_WRITES.has(action.method) ? 'write' : 'press';
-      walked.push({ at: kind === 'assert' ? endTime : input?.timestamp ?? action.startTime, page: action.pageId, shot: shotAfter(action.pageId, endTime), step: walkStepOf(action, walkKind, Boolean(end?.error)) });
+      const shot = kind === 'assert'
+        ? shotChecked(action, endTime, (snapshots.get(`after@${action.callId}`) ?? snapshots.get(`before@${action.callId}`))?.frameUrl)
+        : shotAfter(action.pageId, endTime);
+      walked.push({ at: kind === 'assert' ? endTime : input?.timestamp ?? action.startTime, page: action.pageId, shot, step: walkStepOf(action, walkKind, Boolean(end?.error)) });
     }
   }
   // 문서를 새로 받지 않고 주소만 바뀐 동작 사이에 나간 요청은 바뀌기 전과 뒤 어느 화면이 보냈는지 trace 로 가릴 수 없다.
