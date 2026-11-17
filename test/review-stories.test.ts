@@ -546,6 +546,7 @@ test('in a browser, the ✕ of a candidate step shows only while the pointer is 
         await p.click('#center button[name="step-off-3"]');
         await p.mouse.move(0, 0);
         await untilSet(() => offStepsIn(config.storiesDir)?.length === 1, 'the step taken out in the candidate file');
+        await p.waitForSelector('#center fieldset.candidate-acts:not([disabled])');
         await blur();
         assert.deepEqual(await shown(), ['0', '0', '1', '0']);
 
