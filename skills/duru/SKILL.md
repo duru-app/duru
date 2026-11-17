@@ -264,6 +264,12 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
 1. **Rebuild the map.** Run `duru rebuild <config>`. It writes `map.json` and `tests.json` and prints a summary.
    Stop and report if it fails. When it fails with `JavaScript heap out of memory`, run it once more with
    `NODE_OPTIONS=--max-old-space-size=4096` in front, and tell the user it needed a larger Node heap.
+   When the summary prints a line starting with `map not yet fit for story candidates or test matching`, most of the
+   addresses the tests and visit records opened fell through to a catch-all route or no screen, or most screen paths
+   were not read whole, so the screens the tests are matched to and the story candidates do not say where the tests
+   went. Stop before any story or test work, tell the user the line as printed, and do not write a story file or a
+   tag from that map. A `traces only on a catch-all N` count in the candidate line is the same cause: those tests
+   gave no candidate.
    When the summary also prints an `unchecked` count and a line saying the server API list is absent, the
    config has no server endpoint list (or one with no endpoint lines), so no call was compared with the server:
    a call's server match is `unchecked`, no call is dead and no screen is a dead screen. The task list then
