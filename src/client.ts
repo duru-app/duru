@@ -160,6 +160,8 @@ interface DrawnNode {
   isRoute: boolean;
   isFragment: boolean;
   redirectAsElement: boolean;
+  // component= 로 리다이렉트만 하는 컴포넌트를 그리는 라우트가 보내는 주소
+  componentRedirect?: string;
   when: Side | null;
   children: DrawnNode[];
   frame?: () => FrameFile[];
@@ -1959,6 +1961,27 @@ export async function extractClient(config: any) {
       && !group!.findParent((up) => up.isJSXElement() && config.routeElements.includes(tagOf(up.node.openingElement.name) ?? ''));
   }
 
+  // 글자 값으로 끝까지 읽히는 to 는 그 값을 쓰고, 아니면 링크로 읽는다. 링크로도 읽지 못하면 글자 값을 남긴다.
+  function redirectTarget(p: NodePath<JSXElement>) {
+    const toExpr = attributeValue(p, 'to') ?? null;
+    const written = toExpr ? evaluate(toExpr) : undefined;
+    const read = typeof written === 'string' && !written.includes(UNKNOWN) ? written : toExpr ? oneAddress(toExpr) : UNKNOWN;
+    return read === UNKNOWN && typeof written === 'string' ? written : read;
+  }
+
+  // 라우트 파일의 리다이렉트는 그 파일을 읽을 때 두므로, 다른 파일에 선언된 컴포넌트의 리다이렉트만 둔다.
+  const importedRedirects = new WeakSet<Node>();
+  function addImportedRedirects(reached: NodePath<JSXElement>[]) {
+    for (const p of reached) {
+      const file = programFile.get(p.scope.getProgramParent().block);
+      if (!file || routeFileSet.has(file) || importedRedirects.has(p.node)) continue;
+      importedRedirects.add(p.node);
+      const { src } = parse(file);
+      const relFile = path.relative(config.srcRoot, file);
+      redirects.push({ to: redirectTarget(p), file: relFile, line: p.node.loc!.start.line, guards: guardsOf(p, src, guardNote(relFile, src)) });
+    }
+  }
+
   function stopOf(p: NodePath) {
     const file = programFile.get(p.scope.getProgramParent().block) ?? null;
     return { text: file ? sliceText(parse(file).src, p.node) : '?', file: rel(file), line: p.node.loc!.start.line };
@@ -1986,12 +2009,7 @@ export async function extractClient(config: any) {
         if (config.routeElements.includes(tag) || config.redirectElements.includes(tag)) hasRoutes = true;
         const attr = (name: string) => p.get('openingElement.attributes').find((a) => (a.node as JSXAttribute).name?.name === name) as NodePath<JSXAttribute> | undefined;
         if (config.redirectElements.includes(tag)) {
-          const toValue = attr('to')?.get('value');
-          const toExpr = toValue?.node ? (toValue.isJSXExpressionContainer() ? toValue.get('expression') : toValue) as NodePath : null;
-          // 글자 값으로 끝까지 읽히는 to 는 그 값을 쓰고, 아니면 링크로 읽는다. 링크로도 읽지 못하면 글자 값을 남긴다.
-          const written = toExpr ? evaluate(toExpr) : undefined;
-          const read = typeof written === 'string' && !written.includes(UNKNOWN) ? written : toExpr ? oneAddress(toExpr) : UNKNOWN;
-          const to = read === UNKNOWN && typeof written === 'string' ? written : read;
+          const to = redirectTarget(p);
           const holder = p.parentPath.isJSXExpressionContainer() ? p.parentPath.parentPath : null;
           const route = holder?.isJSXAttribute() && holder.node.name.name === 'element' ? holder.parentPath.parentPath as NodePath<JSXElement> : null;
           const routeAt = route && config.routeElements.includes(tagOf(route.node.openingElement.name) ?? '') && !/^[/.]|[{:]/.test(to) ? route : null;
@@ -2026,8 +2044,11 @@ export async function extractClient(config: any) {
         const missed = () => void (item && unreadLoopRoutes.push({ line, field: item.field }));
         let page: Page | null;
         let drawnInFunctionOrChildren = false;
-        if (compAttr) page = componentAttrPage(compAttr, absFile);
-        else if (elementAttr) page = elementPage(elementAttr, absFile);
+        if (compAttr) {
+          const drawn = componentAttrPage(compAttr, absFile);
+          if (drawn === REDIRECT) return;
+          page = drawn;
+        } else if (elementAttr) page = elementPage(elementAttr, absFile);
         else {
           if (holdsRoutes(p) || definesRouteElement(p)) return;
           const drawn = drawnBy(Boolean(item));
@@ -2125,6 +2146,18 @@ export async function extractClient(config: any) {
     return null;
   }
 
+  const isElementAttribute = (p: NodePath<JSXElement>) => {
+    const holder = p.parentPath.isJSXExpressionContainer() ? p.parentPath.parentPath : null;
+    return Boolean(holder?.isJSXAttribute() && holder.node.name.name === 'element');
+  };
+
+  // 닿는 리다이렉트가 조건 없이 하나일 때만 링크가 그 주소로 이어진다.
+  const forwarding = (reached: NodePath<JSXElement>[]) => {
+    const [only, ...more] = reached;
+    const to = more.length ? null : attributeValue(only, 'to');
+    return { kind: 'redirect' as const, to: to ? oneAddress(to) : UNKNOWN, redirectAsElement: true };
+  };
+
   function drawnTree(ast: ReturnType<typeof parseSource>['ast'], absFile: string, elementScreens: Map<Node, RouteScreen[]>, frames: ReturnType<typeof frameReader>) {
     const nodes = new Map<Node, DrawnNode>();
     const roots: DrawnNode[] = [];
@@ -2139,16 +2172,21 @@ export async function extractClient(config: any) {
         const node: DrawnNode = { kind: 'route', path: null, exact: exact === null || exactValue === true, exactUnread: Boolean(exact) && typeof exactValue !== 'boolean', from: null, to: UNKNOWN, screens: elementScreens.get(p.node) ?? [], entry: null, isRoute: false, isFragment: false, redirectAsElement: false, when: drawnSide(p), children: [] };
         node.isFragment = isReactFragment(p);
         const group = groupKind(p);
+        const redirectsAsElement = componentTag(tag) && isElementAttribute(p) ? redirectsReturned(p.scope, tag) : null;
         if (group) node.kind = group;
         else if (config.redirectElements.includes(tag)) {
           const from = attr('from');
           const to = attr('to');
-          const holder = p.parentPath.isJSXExpressionContainer() ? p.parentPath.parentPath : null;
-          Object.assign(node, { kind: 'redirect', from: from === undefined ? null : text(from), to: to ? oneAddress(to) : UNKNOWN, redirectAsElement: Boolean(holder?.isJSXAttribute() && holder.node.name.name === 'element') });
+          Object.assign(node, { kind: 'redirect', from: from === undefined ? null : text(from), to: to ? oneAddress(to) : UNKNOWN, redirectAsElement: isElementAttribute(p) });
+        } else if (redirectsAsElement) {
+          Object.assign(node, forwarding(redirectsAsElement));
         } else if (config.routeElements.includes(tag)) {
           const at = attr('path');
           node.isRoute = true;
           node.path = node.screens.length ? node.screens[0].path : at === undefined ? null : at ? joinedRoutePath(p, readRoutePath(at), at).path : UNKNOWN;
+          const component = unwrapCalls(attr('component') ?? undefined);
+          const reached = component?.isIdentifier() ? redirectsReturned(component.scope, component.node.name) : null;
+          if (reached) node.componentRedirect = forwarding(reached).to;
         } else if (!/^[a-z]/.test(tag.split('.').pop()!) || (tag.includes('.') && !fromPackage(p.scope, tag, absFile))) {
           node.entry = resolveTag(p.scope, tag, absFile) ?? null;
           let frame: FrameFile[] | undefined;
@@ -2385,12 +2423,63 @@ export async function extractClient(config: any) {
     return [...found.values()];
   }
 
-  // 함수 컴포넌트가 돌려주는 것이 다른 주소로 보내는 요소 하나뿐인가. 다른 파일에 있으면 그 파일의 선언을 읽는다.
-  function onlyRedirects(expr: NodePath) {
-    const fn = expr.isIdentifier() ? declaredFunction(expr.scope, expr.node.name) : null;
-    const element = fn && onlyReturned(fn);
-    const tag = element?.isJSXElement() && tagOf(element.node.openingElement.name);
-    return Boolean(tag) && config.redirectElements.includes(tag);
+  const onlyRedirects = (expr: NodePath) => Boolean(expr.isIdentifier() && redirectsReturned(expr.scope, expr.node.name));
+  const componentTag = (tag: string | null): tag is string => Boolean(tag) && /^[A-Z]/.test(tag!) && !tag!.includes('.');
+
+  // 함수 컴포넌트가 돌려주는 값이 모두 다른 주소로 보내는 요소이거나 그런 컴포넌트일 때, 끝까지 따라가 닿는 그 요소들. 다른 파일에 있으면 그 파일의 선언을 읽는다.
+  function redirectsReturned(scope: Scope, name: string, seen = new Set<Node>()): NodePath<JSXElement>[] | null {
+    const fn = declaredFunction(scope, name);
+    const values = fn && !seen.has(fn.node) ? returnedElements(fn) : null;
+    if (!values) return null;
+    const reached: NodePath<JSXElement>[] = [];
+    const inner = new Set(seen).add(fn!.node);
+    for (const value of values) {
+      const tag = tagOf(value.node.openingElement.name)!;
+      const through = config.redirectElements.includes(tag) ? [value] : redirectsReturned(value.scope, tag, inner);
+      if (!through) return null;
+      reached.push(...through);
+    }
+    return reached;
+  }
+
+  const bothSides = (p: NodePath): NodePath[] => (p.isConditionalExpression() ? [...bothSides(p.get('consequent')), ...bothSides(p.get('alternate'))] : [p]);
+  const redirectOrComponent = (p: NodePath): p is NodePath<JSXElement> => {
+    const tag = p.isJSXElement() ? tagOf(p.node.openingElement.name) : null;
+    return Boolean(tag) && (config.redirectElements.includes(tag!) || componentTag(tag));
+  };
+
+  // 함수 안의 함수를 빼고 return 마다 돌려주는 요소. 리다이렉트 요소나 컴포넌트가 아닌 값을 돌려줄 수 있으면 null 이다.
+  // 본문 끝에 return 없이 닿는 길과 값 없는 return 은 undefined 를 돌려준다.
+  function returnedElements(fn: AddressFunction): NodePath<JSXElement>[] | null {
+    const body = fn.get('body') as NodePath;
+    const elementsOf = (p: NodePath | null) => {
+      const sides = p?.node ? bothSides(p) : [];
+      return sides.length && sides.every(redirectOrComponent) ? sides : null;
+    };
+    if (!body.isBlockStatement()) return elementsOf(body);
+    if (!endsInReturn(body)) return null;
+    let found: NodePath<JSXElement>[] | null = [];
+    body.traverse({
+      Function: (p) => p.skip(),
+      ReturnStatement(p) {
+        const sides = elementsOf(p.get('argument') as NodePath);
+        if (sides) found!.push(...sides);
+        else {
+          found = null;
+          p.stop();
+        }
+      },
+    });
+    return found;
+  }
+
+  function endsInReturn(statement: NodePath): boolean {
+    if (statement.isReturnStatement()) return true;
+    if (statement.isBlockStatement()) {
+      const last = statement.get('body').at(-1);
+      return Boolean(last) && endsInReturn(last!);
+    }
+    return statement.isIfStatement() && Boolean(statement.node.alternate) && endsInReturn(statement.get('consequent')) && endsInReturn(statement.get('alternate') as NodePath);
   }
 
   function declaredFunction(scope: Scope, name: string): AddressFunction | null {
@@ -2818,7 +2907,7 @@ export async function extractClient(config: any) {
       const attr = (name: string) => route.get('openingElement.attributes').find((x) => x.isJSXAttribute() && x.node.name.name === name) as NodePath<JSXAttribute> | undefined;
       const compAttr = attr('component');
       const page = compAttr ? componentAttrPage(compAttr, absFile) : elementPage(attr('element'), absFile);
-      return page ? [page.componentFile, ...page.files].filter((f): f is string => Boolean(f)) : [];
+      return isPage(page) ? [page.componentFile, ...page.files].filter((f): f is string => Boolean(f)) : [];
     };
     return { of: climb };
   }
@@ -2847,9 +2936,14 @@ export async function extractClient(config: any) {
     return p;
   };
 
-  function componentAttrPage(compAttr: NodePath<JSXAttribute>, routesFile: string): Page {
+  function componentAttrPage(compAttr: NodePath<JSXAttribute>, routesFile: string): Page | typeof REDIRECT {
     const written = compAttr.get('value.expression') as NodePath;
     const compExpr = unwrapCalls(written)!;
+    const reached = compExpr.isIdentifier() ? redirectsReturned(compExpr.scope, compExpr.node.name) : null;
+    if (reached) {
+      addImportedRedirects(reached);
+      return REDIRECT;
+    }
     const component = compExpr.node && memberChain(compExpr.node)?.join('.');
     const componentFile = component ? components.find(compExpr.scope, component, routesFile, written.isCallExpression()).file : null;
     return { component, componentFile, files: [] };
@@ -2929,6 +3023,11 @@ export async function extractClient(config: any) {
     const tag = tagOf(element.node.openingElement.name);
     if (!tag) return null;
     if (config.redirectElements.includes(tag)) return REDIRECT;
+    const reached = componentTag(tag) ? redirectsReturned(element.scope, tag) : null;
+    if (reached) {
+      addImportedRedirects(reached);
+      return REDIRECT;
+    }
     const insides = element.get('children').flatMap(elementsIn).map((e) => pageOf(e, routesFile));
     const inner = insides.filter(isPage);
     const onlyRedirect = insides.length > 0 && insides.every((c) => c === REDIRECT);
@@ -3070,7 +3169,9 @@ export async function extractClient(config: any) {
         flatten(n.children, base, []);
         return [{ kind: 'routes', branches, indexes }];
       }
-      if (n.kind === 'switch') return [{ kind: 'switch', children: n.children.flatMap((c) => convert(c, file, base)) }];
+      // Switch 안에서 리다이렉트만 하는 컴포넌트를 그리는 라우트는 그 경로에서 보내는 Redirect 와 같다.
+      const redirectOf = (c: DrawnNode): RouteNode[] => [{ kind: 'redirect', from: c.path === null ? null : joinRoutePath(base, c.path), exact: c.exact, to: c.componentRedirect! }];
+      if (n.kind === 'switch') return [{ kind: 'switch', children: n.children.flatMap((c) => (c.componentRedirect === undefined ? convert(c, file, base) : redirectOf(c))) }];
       if (n.kind === 'redirect') return [{ kind: 'redirect', from: n.from, exact: n.exact, to: n.to }];
       const byPath = new Map<string, { routePath: string | null; itemValue: boolean | null | undefined; screens: number[] }>();
       for (const i of n.screens.map((s) => indexOf.get(s)!)) {

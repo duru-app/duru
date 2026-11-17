@@ -541,7 +541,7 @@ the screen's own such calls while the 「공통」 line counts the shared ones. 
 menu named in `routeTables` gives for its table item), `roleValues` (the role values that
 can open it, or `null` when they cannot be read) and the setting values it needs. A restricted screen with empty
 `kinds` is one whose links ask for different kinds. Entry screens are listed under `entries` with their reasons:
-`redirect`, the target of a redirect in the route files; `no-incoming-link`, a screen no link leads to;
+`redirect`, the target of a redirect among the routes; `no-incoming-link`, a screen no link leads to;
 `menu-links-only`, a screen only the links a menu named in `routeTables` gives for its table item lead to; and
 `config`, a path in `entryPaths`. A screen is open when an entry screen reaches it without a setting or role guard on
 the way; the links a menu gives for table items are not counted for that.

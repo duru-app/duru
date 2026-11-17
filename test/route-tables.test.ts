@@ -268,6 +268,25 @@ test('an item whose components only redirect gives no screen and no line, while 
   }, { edits });
 });
 
+test('an item whose component reads values before it returns, or redirects on every branch through another such component, also only redirects', async () => {
+  const redirects: Record<string, string> = {
+    'admin/ToFirstTab.js': "import { Redirect } from 'react-router-dom';\nimport { useFirstTab } from './tabs';\n\nexport default function ToFirstTab() {\n  const tab = useFirstTab();\n  return <Redirect to={`/admin_console/users/${tab}`} />;\n}\n",
+    'admin/ByRole.js': "import { Redirect } from 'react-router-dom';\nimport ToFirstTab from './ToFirstTab';\n\nexport default function ByRole({ admin }) {\n  if (admin) return <ToFirstTab />;\n  return <Redirect to=\"/admin_console\" />;\n}\n",
+  };
+  const items = Object.entries({ first: 'ToFirstTab', role: 'ByRole' })
+    .map(([key, component]) => `      ${key}: {\n        url: 'users/${key}',\n        schema: { id: '${component}', component: ${component} },\n      },\n`).join('');
+  const edits: [string, string, string][] = [
+    [TABLE, '      plain: {', `${items}      plain: {`],
+    [TABLE, "import License from './License';", "import License from './License';\nimport ToFirstTab from './ToFirstTab';\nimport ByRole from './ByRole';"],
+  ];
+  await withTableCopy(async ({ configFile, src, cli }) => {
+    for (const [file, text] of Object.entries(redirects)) fs.writeFileSync(path.join(src, file), text);
+    const paths = tableScreens(await build(configFile)).map((s) => s.path);
+    assert.ok(!paths.includes('/admin_console/users/first') && !paths.includes('/admin_console/users/role'), paths.join(', '));
+    assert.deepEqual(routeLines(cli('extract')), []);
+  }, { edits });
+});
+
 test('an item whose address is not read, or that has none while others do, gives no screen and a route not read line naming the item and where reading stopped', async () => {
   const edits: [string, string, string][] = [
     [TABLE, '      plain: {', "      computed: {\n        url: pathOf('users'),\n        schema: { id: 'Computed', component: Users },\n      },\n      nameless: {\n        schema: { id: 'Nameless', component: Users },\n      },\n      elsewhere: {\n        url: OTHER_URL,\n        schema: { id: 'Elsewhere', component: Users },\n      },\n      plain: {"],
