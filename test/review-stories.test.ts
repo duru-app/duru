@@ -518,6 +518,49 @@ test('in a browser, a ✕ keeps the focus and its state when the page draws the 
   );
 });
 
+test('in a browser, the ✕ of a candidate step shows only while the pointer is over its step card or the keyboard is in the card, and always once the step is taken out', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await postAgentCandidate(base, 'lab-path');
+        await openHelpCandidate(p);
+        const shown = () => p.locator('#center .story-path .step button.step-off').evaluateAll((buttons) => buttons.map((b) => getComputedStyle(b).opacity));
+        const tabTo = async (sel: string) => {
+          for (let i = 0; i < 300 && !(await p.evaluate((s) => document.activeElement?.matches(s), sel)); i += 1) await p.keyboard.press('Tab');
+          assert.ok(await p.evaluate((s) => document.activeElement?.matches(s), sel), sel);
+        };
+        const blur = () => p.evaluate(() => (document.activeElement as HTMLElement).blur());
+        await p.mouse.move(0, 0);
+        assert.deepEqual(await shown(), ['0', '0', '0', '0']);
+
+        await p.hover('#center .story-path .step[data-step="1"] .no');
+        assert.deepEqual(await shown(), ['0', '1', '0', '0']);
+        await p.mouse.move(0, 0);
+        assert.deepEqual(await shown(), ['0', '0', '0', '0']);
+
+        await tabTo('#center button[name="step-off-2"]');
+        assert.deepEqual(await shown(), ['0', '1', '0', '0']);
+        await blur();
+        assert.deepEqual(await shown(), ['0', '0', '0', '0']);
+
+        await p.click('#center button[name="step-off-3"]');
+        await p.mouse.move(0, 0);
+        await untilSet(() => offStepsIn(config.storiesDir)?.length === 1, 'the step taken out in the candidate file');
+        await blur();
+        assert.deepEqual(await shown(), ['0', '0', '1', '0']);
+
+        await p.click('#candidate-list li:has-text("lab-path")');
+        await p.waitForSelector('#center .line-count');
+        await p.mouse.move(0, 0);
+        const off2 = () => p.locator('#center button[name="step-off-2"]').evaluate((b) => getComputedStyle(b).opacity);
+        assert.equal(await off2(), '0');
+        await tabTo('#center input[name="line-2-inputs-1"]');
+        assert.equal(await off2(), '1');
+      }),
+    ),
+  );
+});
+
 const chipsIn = (p: Page, list: string) => p.locator(`${list} li`).evaluateAll((items) => items.map((li) => [...li.querySelectorAll('.chip')].map((c) => c.textContent)));
 
 test('in a browser, the story list has a group of candidates, a chosen candidate shows its path like a story with the record steps behind each screen, and accepting it writes a story file under the name of the record and moves it to the story list', { skip: browserMissing }, async () => {
