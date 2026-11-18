@@ -85,6 +85,7 @@ const STATIC_FILE = /\.([mc]?js|jsx|tsx?|vue|svelte|css|scss|sass|less|png|jpe?g
 const DEV_SERVER_FILE = /\/@(vite|id|fs|react-refresh)(\/|$)|\.hot-update\.json$|^\/(sockjs-node|__webpack_hmr|_next\/webpack-hmr)(\/|$)/;
 const PAGE_TYPE = /^(text\/html|application\/xhtml\+xml)/i;
 const NOT_THE_APP = /^(about|data|blob|chrome|chrome-error):/;
+const DRAWN_PICTURE_BYTES = 4096;
 const END_OF_DIRECTORY = 0x06054b50;
 const DIRECTORY_ENTRY = 0x02014b50;
 
@@ -283,17 +284,18 @@ export function readTrace(file: string): TraceResult {
   const movedBetween = (page: string, from: number, to: number, url: string | undefined) =>
     url !== undefined && Boolean(seenOn.get(page)?.some((e) => e.at > from && e.at <= to && e.url !== url));
   const framesBetween = (page: string, from: number, to: number) => framesOn.get(page)?.filter((f) => f.timestamp >= from && f.timestamp < to) ?? [];
+  const drawn = (shot: string | undefined) => (shot !== undefined && entries.get(`resources/${shot}`)!().length >= DRAWN_PICTURE_BYTES ? shot : undefined);
   const shotLoaded = (action: any, end: number, url: string) => {
     const page = action.pageId;
     const touch = touchAfter(action, end);
-    return (!movedBetween(page, end, touch, url) && framesBetween(page, end, touch).at(-1)?.sha1 as string | undefined) || shotAfter(page, end);
+    return drawn((!movedBetween(page, end, touch, url) && framesBetween(page, end, touch).at(-1)?.sha1 as string | undefined) || shotAfter(page, end));
   };
   const shotChecked = (action: any, end: number, url: string | undefined) => {
     const page = action.pageId;
     const touch = touchAfter(action, end);
     const between = framesBetween(page, end, touch);
-    if (!between.length) return shotUntil(page, end);
-    return (movedBetween(page, end, touch, url) ? between[0] : between.at(-1)).sha1 as string;
+    if (!between.length) return drawn(shotUntil(page, end));
+    return drawn((movedBetween(page, end, touch, url) ? between[0] : between.at(-1)).sha1 as string);
   };
   const timeline: TimelineEntry[] = [];
   const walked: WalkEntry[] = [];

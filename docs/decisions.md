@@ -3045,7 +3045,13 @@ picture went from 108 to 77, and 12 of 22 and 4 of 56 in the second. A page open
 picture before the check ends rather than as it starts: measured on the same traces, the first app's counts are the
 same either way, and the second app shows 22 「열기」 with a picture of their own rather than 14, 12 and 10 of them
 blank, the rest left off as the picture of the line before; the end also matches the estimates made while choosing
-the rule. Compared:
+the rule. These counts are of lines with a picture of their own, so the first app's 「열기」 went from 482 to 492 and its
+「확인」 from 27 to 23 though no line was added or taken away: a page a click moved to took the first picture after the
+click, the one the click itself shows, and left it off as the picture of the line before; it now takes a later one
+and shows it. A check whose last picture is that of the line before leaves it off in turn. Measured on the 5 traces of
+two private apps that could be read on 2026-11-19 (the traces above were not at hand): 35 「열기」 before and after,
+those with a picture of their own going from 16 to 30, each of the 14 right after a press, and 「확인」 with a picture of
+their own going from 57 to 52. Compared:
 - The last picture up to the check's end, which #576 proposed: 1 of 19 in the first app but 17 of 45 in the second,
   where 8 drawn pictures turned blank, and an address check such as `toHaveURL`, which passes as soon as the address
   changes, showed the page before it.
@@ -3058,9 +3064,9 @@ were better (a spinner over the page gone, a dialog fully open) and 1 the same. 
 by a screen that changed on its own; showing the later screen of a notice that came and went was chosen by the driver
 (2026-11-16), since the rule is read from the trace's times alone. Known limits: most of what stays blank is a step
 that acts 1–40 ms before the picture of the drawn screen arrives, as a second `goto` or a `fill` right after the page
-answered; no window bounded by the next step's action can fix it, and it is left to a later decision. A press or a
-write keeps the first picture after it: a click that moved the page shows the blank of the move, and the 「열기」 after
-it now shows the page drawn. A line whose picture is the one of the line before shows none.
+answered; no window bounded by the next step's action can fix it, and such a line shows no picture, as the next
+entry says. A press or a write keeps the first picture after it: a click that moved the page shows the blank of the
+move, and the 「열기」 after it now shows the page drawn. A line whose picture is the one of the line before shows none.
 `rebuild` copies only the pictures the steps name into `test-shots/` under `outDir`, in place of the ones there
 before, so they show as long as the steps do, also when the traces have been moved. In that trace that is 3 of its 4
 pictures, 13.5 KB of 18.1 KB; there is no limit on the folder's size.
@@ -3079,8 +3085,9 @@ Alternatives compared:
   ends.
 - Opening `trace.playwright.dev`: needs the internet, and the trace has to be fetched from the review server by a page
   on another origin.
-Known limits: a page opened by a move still shows a blank screen when no drawn picture was taken before the next step
-on it acts, when it is the last step on its page, or when the app moved it to another address; when a check comes
+Known limits: a page opened by a move shows no picture, rather than a blank screen, when the picture it takes is not
+drawn, as the next entry says: when no drawn picture was taken before the next step on it acts, when it is the last
+step on its page, or when the app moved it to another address; when a check comes
 next, its picture is the screen the check waited for; when no picture comes before the next step acts, the one after
 that step can show what it did; a step whose change was painted only after the next step ended shows the screen from
 before it; a step that changed nothing on the screen shows the first picture after it, which can already show what
@@ -3091,6 +3098,34 @@ until then, which is still the old page when the new one was painted later, and 
 as on the first action in a popup; 「trace」 is greyed out only when the trace file is gone, not when it was
 replaced by another run's trace at the same place; `rebuild` reads each trace a second time to copy its pictures, and
 the review server checks that each trace file is there every time it sends the page's data.
+
+**A page opened or a check whose picture is under 4 KB, a screen not drawn yet, shows no picture.**
+Asked for in #615 (2026-11-19), left from #576: when the next step acts 1–40 ms before the drawn screen is pictured,
+as a second `goto` or a `fill` right after the page answered, the time up to that step holds only a white screen or a
+spinner, and the line showed it. The picture an opened page or a check takes by the rules above, whichever of them
+found it, is left off when it is under 4 KB: `rebuild` writes `shot: null` on the line, as for a page with no picture
+yet, so the line shows no small picture and 「재생」 says 「화면 그림 없음」. A press or a write keeps the first picture
+after it, blank or not. Measured on the 5 traces of two private apps that could be read on 2026-11-19 (`playwright-core`
+1.60.0): 14 of 35 「열기」 and 3 of 67 「확인」 showed a picture under 4 KB, and now show none; the other lines are the same.
+What tells such a picture: of the 1,260 pictures in those traces, the 449 under 4 KB are a white screen, a grey one
+with a spinner or a white one with a notice in a corner; 30 more white screens with a notice are 4.0–4.4 KB; of the 781
+above 4.5 KB, all but one above 7 KB, every one opened was a drawn screen. The plainest drawn page in duru's own trace
+fixtures, a heading and one box, is 4.5 KB, so 4 KB, the limit #576 was measured with, is kept. A picture the same as
+the one of the line before is no sign: such a line already leaves its picture off. Compared:
+- The first picture after the time up to the next step: the next picture after the blank one is drawn on 6 of the 17
+  lines and blank again on 11, and it was taken after the next step began to act, so it can show what that step did,
+  a box filled or the next page, on the line before that step.
+- Keeping the blank picture with a mark that it is not drawn: a field in `tests.json` and `PageData`, a mark and its
+  label on the page, for a picture that shows nothing of the screen.
+- Telling a blank picture by its pixels, as a screen nearly of one colour: needs a JPEG decoder duru does not have,
+  and the white screen with a notice spreads its pixels more than the plainest drawn page does, so no limit takes the
+  one without the other.
+- A limit of 4.5 KB: takes the 30 white screens with a notice, but sits on the size of the plainest drawn page.
+Known limits: the size of a picture depends on its size on screen, 800×450 or 600×450 in these traces, so a page shown
+much smaller, or a drawn page with almost nothing on it, can fall under 4 KB and lose its picture; a white screen with
+a notice over it can be over 4 KB and still show; only the picture the rules above chose is weighed, so a drawn one
+taken earlier in the same time, most often the page before the move, is not used instead; a press that moved the page
+still shows the blank of the move, as 6 of 59 「누르기」 in these traces do.
 
 **「재생」 shows a test's steps one at a time in a window on the review page, about two seconds each with the step's
 screen picture, and the trace viewer stays under 「trace」.**
