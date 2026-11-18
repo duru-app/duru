@@ -1194,106 +1194,79 @@ judge several pairs at once.
 
 **Stories.** The story tab lists the stories with their status and link verdicts, a search box by name or ID and
 filters by status and missing links; `part-pass` shows as 「일부 단계만 통과」, and a passing story whose steps are
-not known shows 「단계 확인 못 함」. Choosing one shows its steps,
-the link between each two with how many story tests went across it, in grey when none did, and its 「사전 조건」, and lets its name and memo be
-changed. The story's own `needs` and
-`expects` show in a 「스토리 전체」 box, apart from the 「사전 조건」 duru found in the code, a step's own ones and its `inputs`
-show inside its card, and its `linkNeeds` show as 「들어오는 링크 조건」 on the link row before it. The pencil on the box, a
+not known shows 「단계 확인 못 함」. Choosing one shows its steps, the link between each two with how many story tests
+went across it, and its 「사전 조건」, and lets its name and memo be changed. The story's own `needs` and `expects` show
+in a 「스토리 전체」 box, apart from the 「사전 조건」 duru found in the code, a step's own ones and its `inputs` show
+inside its card, and its `linkNeeds` show as 「들어오는 링크 조건」 on the link row before it. The pencil on the box, a
 card or a link row, shown while the pointer is over it or the keyboard is on it and always on a touch screen, opens a
-table there to add, change and remove these lines;
-「저장」 writes them into the story file and names the file, and 「취소」 leaves the file as it is. If the file changed
-elsewhere after the table opened, the save is refused and what was typed stays; 「새로 읽기」 then fills the table from the
-changed file and drops what was typed, and 「덮어쓰기」 writes what was typed over the change. Each condition line chooses
-「글로 적기」, to type the condition, or 「공통 조건 고르기」, to pick one of the need files in `needs/` by its name and file; it is
-saved as `{ "use": "<file>" }`. The last choice, 「새 공통 조건 만들기…」, opens fields there for a file name (`.json` is
-added), a name and a text: 「만들기」 writes the need file and the line picks it, and 「그만두기」 closes the fields. A file name
-that breaks the story ID rule or is already in `needs/` is refused with why. A line picking a file that is not there
-shows 「needs/… 없음」 and can pick another need file or be removed. A link row where the map has no link lists the
-screens the step before leads to, here and while a new story is written. Each input reads like
-「안내 글 「이메일」 또는 테스트 ID 「login-email」」, with 「· 2 번째」 when it has `nth`, then the value and 「확인 안 됨」.
-With `app` set, pressing an input line on a story's or a candidate's card puts 「앱 화면」 at the top of the right pane,
-above the story's own pane: the app at that step's screen, the account it is opened with, and the app cut down to the
-boxes those words find, zoomed in. 「가운데에 앱 화면 전체 열기」
-opens the whole app in the middle pane until 「단계 카드로 돌아가기」, and 「닫기」 closes 「앱 화면」. The line then says
-「화면에서 찾음」, or 「못 찾음」 with why under it: no box has those words, or fewer boxes have them than the number
-written. A box that shows only with certain data, such as a second signer's memo, is found only when the running app
-has that data, so the result lasts only until the page is reloaded and is written to no file and not to the task list.
-The line keeps 「확인 안 됨」, and 「앱 화면」 says why, when the step's screen needs path values that are missing, when the
-app moves to another screen, when the app never answers, as an app whose security policy blocks inline scripts
-does not, or when the box is not found while the account the app is opened with could not sign in or no account meets
-the screen's role condition; 「앱 화면」 shows that sign-in error or account note in red, as the middle pane does.
-A picked need file shows as 「공통 조건」 and its name, hovering shows its file and text, and pressing it opens it.
-At the bottom of the story tab, 「공통 조건 N」 lists the need files with their name, file and how many stories pick them, followed
-by the need files that could not be read and why. Pressing one shows its name, its text, the stories that pick it and
-the file itself in the middle, with its file name in the address, as `#story?need=member-account.json`. 「고치기」 there
-opens its name and text; 「저장」 writes them into the need file, and every story that picks it shows the new name and
-text, since stories pick it by its file name. If the need file changed elsewhere since it was opened, the save is
-refused and 「새로 읽기」 and 「덮어쓰기」 are offered, as in the story table. If it is deleted or can no longer be
-read, the editor closes with a note that what was typed was not saved. 「스토리 파일」 at the bottom unfolds
-the story in the shape of its file, with the steps that have any of these lines written as objects. 「순서 고치기」 at the
-end of the 「화면 순서」 heading changes which screens the story passes: the left column becomes a screen picker.
-Pressing a step, or Enter on it, shows 「이전 단계 추가」 above it and 「다음 단계 추가」 below it, which mark where the
-next screen picked goes (「취소」 on the mark sends it to the end again), and 「제외」 on it. Steps are not moved or
-dragged; a step in the wrong place is taken out and put in again. A kept step keeps its conditions, inputs and
-expected results, a step put in has none, and the conditions of the link into a step stay only while the step
-before it is the one it had, which its link row says before the order is saved. Taking out a step with lines written
-asks first, naming what goes with it, with 「제외」 and 「취소」. The verdict chip beside the name and
-「사전 조건 N」 follow the order being changed, and 「순서 저장」 and 「취소」 take the place of 「순서 고치기」 in the
-「화면 순서」 heading; an order with the same screen twice in a row or with no step is not saved and says why, and a
-file changed elsewhere is refused with
-「새로 읽기」 and 「덮어쓰기」 as in the table. A comment on a step whose number no longer holds its screen then shows under 「떨어져 나감」. Candidates are
-listed below; a chosen one has ✎ right after its name and 「스토리로 받기」 and 「버리기」 at the right end of its title row; the
-address of a chosen candidate holds its screen order, as `#story?candidate=/home#Home+>+/help#Help`. A candidate
-posted with `candidate` has a purple 「에이전트」 chip beside its name in the list and in the title, and under the title,
-in place of the record file, the first line of the comment that asked for it, who left it and the day; pressing that
-line opens 「전체」 of the conversation at the comment. Each screen the agent put in has the same chip beside its name
-and, below its ID, 「이유」 in bold with the reason. The screens and lines the reviewer chose carry no mark. Each line
-the agent wrote, an input, a condition of the link into a step, a condition or an expected result, has a box in
-front of it, on at first. A line switched off is struck through, and above 「스토리로 받기」 the number of lines on
-shows out of all the agent's lines, as 「3 / 4」. Each press is saved into the candidate file, so a line switched off
-stays off after a reload or when the page is opened again. 「스토리로 받기」 then writes into the
-story file only the lines on, together with the reviewer's lines, which have no box. ✎ opens a window with the story
-ID and the name the candidate is accepted under; 「저장」 there writes no story file but keeps both in the candidate file,
-as `storyId` and `name`, making the file if there is none, so the title shows the new name with the ID beside it, also
-after a reload. 「스토리로 받기」 accepts under them; without them it takes the ID from the name. When that ID breaks the
-story ID rule or a story already has it, it asks for another in the same window, and an ID kept with ✎ that a story
-takes later shows red beside the name. A screen the agent put in is
-taken out after accepting, with 「순서 고치기」. A story accepted from it shows the same comment line under its name. 「버리기」 opens
-the window that 「제외」 opens, naming the candidate and its screen order, and the candidate is discarded only once a
-reason is written there. 「버리기」 in the window or Ctrl+Enter saves it and moves on to the next candidate. If
-the discard is not saved, the window stays open with the reason and the error. A story accepted from a candidate has
-「받기 되돌리기」 below its name and memo: it deletes the story file and the candidate is listed again and chosen. It
-asks first only when conditions, inputs or expected results are written in the story, and its title then says they go
-with the file. The comments left on that story then show under 「떨어져 나감」, as for any story file that is gone. A story
-made with 「새 스토리」 or written by hand has no such button. Below the candidates, 「버린 후보 N」 opens the discarded
-candidates, newest first, each with its name, its screens, the reason and the date; a screen order discarded more
-than once shows its latest discard. Each has 「복원」: it writes the undo file, without asking, and the
-candidate is listed again and chosen; if the undo is refused, why shows under the list. A candidate of an order an agent
-posted in place of others has 「되돌리기」, also when a test or a record gives its card: without asking, it puts the
-candidate under 「버린 후보」 with the reason `원래대로 되돌림` and lists the originals again, also after the next `rebuild`.
-「복원」 on that entry brings the candidate back and takes the originals off the list.
+table there to add, change and remove these lines; 「저장」 writes them into the story file and names the file, and
+「취소」 leaves the file as it is. If the file changed elsewhere after the table opened, the save is refused and what
+was typed stays; 「새로 읽기」 then fills the table from the changed file and drops what was typed, and 「덮어쓰기」
+writes what was typed over the change. Each condition line chooses 「글로 적기」, to type the condition, or
+「공통 조건 고르기」, to pick one of the need files in `needs/`; it is saved as `{ "use": "<file>" }`. The last choice,
+「새 공통 조건 만들기…」, takes a file name (`.json` is added), a name and a text: 「만들기」 writes the need file and the
+line picks it. A file name that breaks the story ID rule or is already in `needs/` is refused. A line picking a file
+that is not there shows 「needs/… 없음」; pick another need file or remove the line.
+With `app` set, pressing an input line on a story's or a candidate's card opens 「앱 화면」: the app at that step's
+screen, the account it is opened with, and the app cut down to the boxes the line's words find.
+「가운데에 앱 화면 전체 열기」 opens the whole app in the middle pane until 「단계 카드로 돌아가기」, and 「닫기」 closes
+「앱 화면」. The line, 「확인 안 됨」 until then, says 「화면에서 찾음」, or 「못 찾음」 with why: no box has those words, or
+fewer boxes have them than the number written. A box that shows only with certain data, such as a second signer's
+memo, is found only when the running app has that data, so the result lasts only until the page is reloaded and is
+written to no file and not to the task list. The line keeps 「확인 안 됨」, and 「앱 화면」 says why, when the step's
+screen needs path values that are missing, when the app moves to another screen or never answers, or when the box is
+not found while the account the app is opened with could not sign in or no account meets the screen's role condition.
+A picked need file shows as 「공통 조건」 and its name, and pressing it opens it. 「공통 조건 N」 at the bottom of the
+story tab lists the need files with how many stories pick each, and the need files that could not be read and why.
+Pressing one shows it with the stories that pick it, at an address such as `#story?need=member-account.json`.
+「고치기」 there edits its name and text; 「저장」 writes them into the need file, which changes them for every story
+that picks it. A need file changed elsewhere since it was opened is refused with 「새로 읽기」 and 「덮어쓰기」, as in the
+story table. 「스토리 파일」 at the bottom shows the story in the shape of its file.
+「순서 고치기」 in the 「화면 순서」 heading changes which screens the story passes: the left column becomes a screen
+picker. Pressing a step shows 「이전 단계 추가」 and 「다음 단계 추가」, which mark where the next screen picked goes
+(「취소」 on the mark sends it to the end again), and 「제외」, which takes the step out. Steps are not dragged; a step in
+the wrong place is taken out and put in again. A kept step keeps its conditions, inputs and expected results, a step
+put in has none, and the conditions of the link into a step stay only while the step before it is the one it had.
+Taking out a step with lines written asks first. 「순서 저장」 writes the order; an order with the same screen twice in a
+row or with no step is not saved, and a file changed elsewhere is refused with 「새로 읽기」 and 「덮어쓰기」 as in the
+table. A comment on a step whose number no longer holds its screen then shows under 「떨어져 나감」.
+Candidates are listed below. A chosen one has ✎, 「스토리로 받기」 and 「버리기」; its address holds its screen order, as
+`#story?candidate=/home#Home+>+/help#Help`. A candidate posted with `candidate` carries 「에이전트」 beside its name and,
+under the title, the first line of the comment that asked for it, who left it and the day; pressing that line opens
+the comment in 「전체」. Each screen the agent put in carries 「에이전트」 too, with its 「이유」. Each line the agent
+wrote, an input, a condition of the link into a step, a condition or an expected result, has a box, on at first, and
+the number of lines on shows above 「스토리로 받기」, as 「3 / 4」. Each press is saved into the candidate file, and
+「스토리로 받기」 writes into the story file only the lines on, together with the reviewer's lines, which have no box. ✎
+sets the story ID and the name the candidate is accepted under; 「저장」 there writes no story file but keeps both in
+the candidate file, as `storyId` and `name`. 「스토리로 받기」 accepts under them; without them it takes the ID from the
+name. When that ID breaks the story ID rule or a story already has it, it asks for another, and an ID kept with ✎
+that a story takes later is marked as taken beside the name. A screen the agent put in is taken out after accepting,
+with 「순서 고치기」. A story accepted from it shows the same comment line under its name. 「버리기」 asks for a reason,
+naming the candidate and its screen order; the candidate is discarded only once a reason is written, and the page
+moves on to the next candidate. A story accepted from a candidate has 「받기 되돌리기」: it deletes the story file and
+the candidate is listed again and chosen. It asks first only when conditions, inputs or expected results are written
+in the story. The comments left on that story then show under 「떨어져 나감」, as for any story file that is gone. A
+story made with 「새 스토리」 or written by hand has no such button. 「버린 후보 N」, below the candidates, lists the
+discarded candidates with their reason and date; 「복원」 on one writes the undo file and lists the candidate again. A
+candidate an agent posted in place of others has 「되돌리기」: it puts the candidate under 「버린 후보」 with the reason
+`원래대로 되돌림` and lists the originals again, also after the next `rebuild`. 「복원」 on that entry brings the
+candidate back and takes the originals off the list.
 
-**Changes to the stories folder.** While the review runs it watches `storiesDir` and every folder in it, such as
-`candidates/` and `discarded/`, and every open page reads the stories again a moment after files there change from
-outside the page: edited in an editor, brought in by `git pull`, or written by another duru command. A story file
-added or deleted comes and goes in the lists, and the chosen story and the flow follow its new content, with no
-reload. A name or memo being typed keeps what was typed, while one not touched shows the file's new value. A `storiesDir` that does not exist yet is
-watched once it is made. These changes are not printed on standard error, and `wait` does not exit for them.
+**Changes to the stories folder.** While the review runs, every open page reads the stories again shortly after
+files in `storiesDir` or any folder in it change from outside the page: edited in an editor, brought in by
+`git pull`, or written by another duru command. No reload is needed, and a name or memo being typed keeps what was
+typed. These changes are not printed on standard error, and `wait` does not exit for them.
 
 **Marks.** A mark targets a screen, a call, one depth of either, one value of a call's option, or a story, and
 records a status, a note, the author and the date. The status buttons are 「테스트 필요」, saved as `needs-more`, and
 「충분」, saved as `fine`; 「충분」 can be put on a screen or call with no tests, for one that needs none. A mark saved as
-`missing` by an older duru shows and counts as 「테스트 필요」. A mark left with text and no
-status is a comment: it shows in the conversation with no status, keeps the current status as it was, and in the task list
-follows the open mark it was written after. Pressing a picked status again lets it go, so a comment can be left on
-a target that already has one. Each mark and each judgment
-is its own new file, `<marksDir>/<node>/<date>-<author>-<short ID>.json`, so marks made on two machines merge in
-git without a conflict and the newest is the current state. A mark on a screen or call, or on a depth, option,
-case or part of one, also keeps `codeHash`, the screen's or call's hash on the map when it was saved; a judgment keeps
-`codeHash` for its screen or call and `testFileHash` for its test file when the test file was found under
-`srcRoot`. A mark whose target is gone from a rebuilt map shows
-under 「떨어져 나감」. A case kind picked or taken out on a screen or call is kept the same way, as a mark with the
-status `needed` or `not-needed`, and one whose kind has left `caseKinds` shows under 「떨어져 나감」. A `not-needed`
+`missing` by an older duru counts as 「테스트 필요」. A mark left with text and no status is a comment: it keeps the
+current status as it was, and in the task list follows the open mark it was written after. Pressing a picked status
+again lets it go, so a comment can be left on a target that already has one. Each mark and each judgment is its own
+new file, `<marksDir>/<node>/<date>-<author>-<short ID>.json`, so marks made on two machines merge in git without a
+conflict and the newest is the current state. A mark whose target is gone from a rebuilt map shows under
+「떨어져 나감」. A case kind picked or taken out on a screen or call is kept the same way, as a mark with the status
+`needed` or `not-needed`, and one whose kind has left `caseKinds` shows under 「떨어져 나감」. A `not-needed`
 mark on a screen or call that a rule of its kind picks needs a note, and the
 review server refuses one without; it also carries `rule`, `{ "index": <place in picks, from 0>, "pick": <the
 rule as written> }`, naming the rule it took the target out of. Only such a mark wins over a rule; a `not-needed`
@@ -1304,118 +1277,88 @@ takes nothing out until a reviewer accepts it. The mark a reviewer saves by acce
 `"of": "<ID of the agent's mark>"`: accepting saves `not-needed` with the agent's note, and reverting saves again the
 mark a person left before the agent's, or a `not-needed` without a note when there was none.
 
-**Test rows.** A test row under a screen, call or story shows the test's title without its tags. The tags of the screen, call, story and depth
-the row sits under are left out, and every other tag (a role, a setting, a story, another screen …) follows the
-title as a small label of its own.
-
 **Comments on a test row.** A test row under a screen or call (its own tests, 「불러오는 테스트」, 「지나간 테스트」
-and 「호출한 테스트」) has a speech bubble that shows on hover. Pressing it puts that test in as the tag of the comment
-being written; the comment is saved with the screen or call as its target plus
+and 「호출한 테스트」) has a speech bubble. Pressing it puts that test in as the tag of the comment being written; the
+comment is saved with the screen or call as its target plus
 `"part": { "kind": "test", "key": { "source", "file", "title" } }`, naming the test by its result file, test file and
-title without tags, as a judgment does. A part takes a comment only: a status sent with one is refused with the
-reason, and it never changes the current status of the screen or call. A row with comments shows their number;
-pressing it narrows the conversation to that test. A comment whose test is no longer among the results after a
-`rebuild` (its title or file changed, or it left the results) shows under 「떨어져 나감」 with the test title.
+title without tags, as a judgment does. A part takes a comment only and never changes the current status of the
+screen or call. A row with comments shows their number; pressing it narrows the conversation to that test. A comment
+whose test is no longer among the results after a `rebuild` shows under 「떨어져 나감」.
 
 **Marks on a key to check.** A mark on one of the `inputsToCheck` entries is saved as `"part": { "kind": "input",
-"key": { "fn", "key" } }`, the API function and the key, with the screen in `target.node` and no line number, so
-it stays while only the lines move. It takes a status: `fine` says the screen is right not to send that key, so a
-`rebuild` leaves it out of `input keys to check` until the code of its screen changes; any other status, or a
-mark whose screen changed since it was saved, keeps the key in. The mark shows under 「떨어져 나감」 once a
-`rebuild` no longer lists that key of that function on the screen.
+"key": { "fn", "key" } }`, the API function and the key, with no line number, so it stays while only the lines move.
+It takes a status: `fine` says the screen is right not to send that key, so a `rebuild` leaves it out of
+`input keys to check` until the code of its screen changes; any other status, or a mark whose screen changed since it
+was saved, keeps the key in. The mark shows under 「떨어져 나감」 once a `rebuild` no longer lists that key of that
+function on the screen.
 
 **Comments on a condition or an incoming link.** Under 「접근 조건」 in 「화면 정보」, each role (「필요한 역할: …」, one
 line per role) and each setting (「필요한 설정: …」) has the same bubble and count, and so has the head line of each
-incoming link (the screen it starts on and its file and line), also when the screen is picked in the flow. A
-condition is saved as `"part": { "kind": "condition", "key": … }` with the key `role:<role>`, or for a setting its
-path with the state it asks, `setting:<path>=on`, `=off` or `=present`, or with the value for a list that must hold
-it or a setting that must equal it, `setting:<path>:<value>`. A link is saved as
+incoming link. A condition is saved as `"part": { "kind": "condition", "key": … }` with the key `role:<role>`, or for
+a setting its path with the state it asks, `setting:<path>=on`, `=off` or `=present`, or with the value for a list
+that must hold it or a setting that must equal it, `setting:<path>:<value>`. A link is saved as
 `"part": { "kind": "link", "key": { "from", "conditions" } }`, the screen it starts on and the roles and settings
-read from it in the same names, or `{ "from", "guards" }` with its guards as written when none was read; links from
-one screen that read the same share one count. No line number is in either key, so a comment stays when only the
-lines move; it shows under 「떨어져 나감」 once a `rebuild` no longer finds the condition on the screen or such a link
-into it.
+read from it in the same names, or `{ "from", "guards" }` with its guards as written when none was read. A comment
+shows under 「떨어져 나감」 once a `rebuild` no longer finds the condition on the screen or such a link into it.
 
-**Comments on a candidate.** Each story candidate has a speech bubble that shows on hover. Pressing it chooses the
-candidate and puts it in as the tag of the comment being written; the comment is saved with `"target": { "candidate":
-"<key>" }` and nothing else in its target. The key is the candidate's screen IDs joined with ` > `, the same key the
-page puts in its address. The comment is written to `<marksDir>/stories/candidates/<key>/`, with each character a file
-name cannot hold replaced by `_` and a key longer than 80 characters cut and given a short hash, apart from the marks
-on stories. A candidate takes comments only: a status sent with one is refused with the reason, and its comments never
-enter the task list, so they reach a coding agent only as the lines printed while the review runs. A candidate with
-comments shows their number; pressing it opens the candidate's conversation. Once the candidate is accepted or
-discarded and leaves the list, its comments show under 「떨어져 나감」 of the story tab with the candidate's name.
+**Comments on a candidate.** Each story candidate has a speech bubble. Pressing it chooses the candidate and puts it
+in as the tag of the comment being written; the comment is saved with `"target": { "candidate": "<key>" }` and
+nothing else in its target. The key is the candidate's screen IDs joined with ` > `, the same key the page puts in
+its address. The comment is written to `<marksDir>/stories/candidates/<key>/`. A candidate takes comments only, and
+its comments never enter the task list, so they reach a coding agent only as the lines printed while the review
+runs. Once the candidate is accepted or discarded and leaves the list, its comments show under 「떨어져 나감」 of the
+story tab with the candidate's name.
 
 **Comments on a screen order.** While a new story is written, the form under 「에이전트와 대화」 carries the steps
 chosen so far as the tag 「화면 순서 …」, so the reviewer can ask the coding agent to fill in the way between them, often
-after choosing only its ends. Pressing 「링크 없음」 between two steps, or the mark 「✕」 that stands for it on the two
-boxes of the flow diagram, adds that gap to the tag as 「2-3 링크 없음」, to ask for that gap only, and pressing it again
-takes it out; a gap moves with its two steps, also when a rebuilt map drops a step before them, and leaves the tag when
-one of them is taken out, when a step is put in between them, or when the link between them is checked again and is no
-longer 「링크 없음」. 「남기기」 saves the comment with
+after choosing only its ends. Pressing 「링크 없음」 between two steps adds that gap to the tag as 「2-3 링크 없음」, to
+ask for that gap only, and pressing it again takes it out. 「남기기」 saves the comment with
 `"target": { "screens": [ … ] }`, the screen IDs in order, with `"gaps": [[2, 3]]` for the gaps pressed and
 `"steps": [{ "step": 3, "expects": [ … ] }]` for the conditions, values and expected results typed at each step so
-far, under the names a story file uses. It is written to
-`<marksDir>/stories/orders/<key>/`, the key being the IDs joined with ` > ` and shortened as for a candidate, so
-comments on the same order share one conversation whatever gaps they carry. A screen order takes comments only: a
-status sent with one is refused with the reason, and its comments never enter the task list, so they reach a coding
-agent only as the lines printed while the review runs. The new story stays open with what was typed, and the comment
-shows at the top of 「에이전트와 대화」 while the same order is chosen. Under 「전체」 it shows under the order with its
-replies in place. The coding agent answers with a reply, and with a story candidate posted by `candidate` when it
-finds a way (see **Candidates from a comment**). Once a screen of the order leaves the map, the comment shows under 「떨어져 나감」 of the screens list
-with the order.
+far, under the names a story file uses. It is written to `<marksDir>/stories/orders/<key>/`, the key made as for a
+candidate, so comments on the same order share one conversation whatever gaps they carry. A screen order takes
+comments only, and its comments never enter the task list, so they reach a coding agent only as the lines printed
+while the review runs. The coding agent answers with a reply, and with a story candidate posted by `candidate` when
+it finds a way (see **Candidates from a comment**). Once a screen of the order leaves the map, the comment shows under
+「떨어져 나감」 of the screens list with the order.
 
 **Comments on a step or a link of a story.** In the story tab each step of the chosen story and each link between
 two of its steps has the same bubble and count. Pressing such a comment under 「전체」 opens the story and brings its
 card up under the line. A step is saved as `"part": {
 "kind": "step", "key": { "step", "screen" } }`, its number counted from 1 and its screen; a link as `"part": { "kind":
 "hop", "key": { "step", "from", "to" } }`, the number of the step it leaves and the screens it leaves and reaches,
-both with the story's ID in `target.story`. A step or link takes comments only; a status sent with one is refused with
-the reason. The comment stays while the story has that screen at that step, and shows under 「떨어져 나감」 of the stories
-tab, named with the step or link, once the story file has another screen there or is gone; while the story file cannot
-be read it stays under 「목록 밖 스토리 코멘트」.
+both with the story's ID in `target.story`. A step or link takes comments only. The comment stays while the story
+has that screen at that step, and shows under 「떨어져 나감」 of the stories tab, named with the step or link, once the
+story file has another screen there or is gone; while the story file cannot be read it stays under 「목록 밖 스토리 코멘트」.
 
 **Comments on several places or on none.** A comment can carry more than one tag, or none. It is saved once, with
-`"targets": [ … ]` in place of `"target"`, each entry in the shape a single target has; a comment with one tag keeps
-`"target"`, so marks saved before are read as they were. A comment with several tags is written to the folder of its
-first target, and one with no tag, saved with `"targets": []`, to `<marksDir>/general/`. Such a comment takes no
-status, and none of its targets may be a case kind or appear twice; a save that breaks this is refused with the
-reason. A reply carries the targets of the comment it answers. A comment with several tags counts once on each row,
-screen, call and story it is on and shows in each of their conversations; when a `rebuild` no longer finds one of its
-targets, it stays on the others and shows under 「떨어져 나감」 with the target that is gone.
+`"targets": [ … ]` in place of `"target"`, each entry in the shape a single target has; one with no tag is saved with
+`"targets": []`. Such a comment takes no status, and none of its targets may be a case kind. A reply carries the
+targets of the comment it answers. A comment with several tags shows in the conversation of each place it is on;
+when a `rebuild` no longer finds one of its targets, it stays on the others and shows under 「떨어져 나감」 with the
+target that is gone.
 
 **Conversation.** For a screen or call the right pane holds only the conversation: every mark, comment and reply left
-on it apart from the case kinds picked or taken out there, oldest first, with the form to
-write in at the bottom. Each mark and comment carries the tags of where it was left; a reply sits under its comment,
-set apart by its author and a light background. A tag from another screen, call or story is shown after the name of
-that place. What is chosen in the middle is the default tag. A bubble replaces it while it is the only tag and adds
-to the tags otherwise. Typing `@` in the text lists the depths of the place and the rows with a bubble in the middle. Each tag's × takes it off:
-taking off the last tag that is not the default brings the default back, and taking off the default as well leaves
-「없음」, so the comment is saved with no target, until 「… 다시 붙이기」 puts the default back. A status can be picked
-only while the default tag is the one tag on. A story and a candidate show their conversation the same way.
+on it apart from the case kinds picked or taken out there, with the form to write in at the bottom. Each mark and
+comment carries the tags of where it was left, and a reply sits under its comment. What is chosen in the middle is
+the default tag. A bubble replaces it while it is the only tag and adds to the tags otherwise. Typing `@` in the text
+lists the depths of the place and the rows with a bubble in the middle. Each tag's × takes it off: taking off the last
+tag that is not the default brings the default back, and taking off the default as well leaves 「없음」, so the
+comment is saved with no target, until 「… 다시 붙이기」 puts the default back. A status can be picked only while the
+default tag is the one tag on. A story and a candidate show their conversation the same way.
 
 **All comments.** Two buttons at the top of the right pane switch between 「이 화면 N」 (「이 호출」 for a call, 「이 스토리」 for a
 story, 「이 후보」 for a candidate), the conversation described above, and 「전체 N」, every mark and comment with text still
-attached anywhere; N counts those, leaving out replies and marks that carry only a status; of those,
-only the case kinds picked or taken out are listed, under 「변경 기록」. 「전체」 groups them by the
-screen, call, story or candidate they were left on, the group with the latest entry first and the latest entry first
-in each group; a line shows the status, the tag, who wrote it and when, the number of replies and the first line of
-the text. A comment without a status carries one chip, here and in its conversation: 「대기」 when no session has
-taken it, 「응답 중」 once `duru wait` or a message to a Claude Code session has carried it to an agent and it has no
-reply yet, and 「답변 완료」 once it has one. The review remembers what was taken only while it runs, so after a restart a
-comment without a reply shows 「대기」 until `duru wait` brings it again, and a session that stopped without replying
-leaves 「응답 중」 until then. 「남은 것」 keeps the comments without a status that have no reply yet, and 「테스트 필요」 and 「충분」 keep, for a
-place whose current status is that one, the latest mark with that status and text. With `caseKinds` set, the last
-filter, 「변경 기록」, lists instead every case kind picked or taken out, as one list by time, the latest first, not
-grouped: a line shows 켬 or 끔, the kind, the screen or call, who pressed it and when. Pressing one opens that screen or
-call with 「관점별 테스트」 opened and scrolled into view. The form is hidden while 「전체」 is
-shown. Pressing a line opens its screen, call, story or candidate in 「이 화면」 and scrolls the conversation to that
-entry, outlined. While 「전체」 is shown the address carries `&talk=all`, and `&filter=<filter>` for a filter other than
-「모두」, so going back after pressing a line shows 「전체」 with the same filter and the pressed line outlined in view,
-and going forward opens the line's place again. A comment with several tags is a line in each group it is on and is
-counted once in N. A comment with no tag is listed under 「대상 없음」 with its whole text and its replies, and pressing it
-opens nothing. 「전체」 and the numbers and dots it describes leave out what has come off its target; it stays under
-「떨어져 나감」 and, unless it is a case kind picked or taken out, in the conversation of its screen or call.
+attached anywhere, grouped by the screen, call, story or candidate it was left on; N counts those, leaving out replies
+and marks that carry only a status. A comment without a status carries one chip, here and in its conversation:
+「대기」 when no session has taken it, 「응답 중」 once `duru wait` or a message to a Claude Code session has carried it to
+an agent and it has no reply yet, and 「답변 완료」 once it has one. 「남은 것」 keeps the comments without a status that
+have no reply yet, and 「테스트 필요」 and 「충분」 keep, for a place whose current status is that one, the latest mark
+with that status and text. With `caseKinds` set, the last filter, 「변경 기록」, lists instead every case kind picked or
+taken out, by time. Pressing a line opens its place in 「이 화면」 with that entry in view. A comment with no tag is
+listed under 「대상 없음」 with its whole text and its replies, and pressing it opens nothing. 「전체」 leaves out what
+has come off its target; it stays under 「떨어져 나감」 and, unless it is a case kind picked or taken out, in the
+conversation of its screen or call.
 
 A screen in the list and in the flow, a story in the story tab, a depth row and a call cell show 「코멘트 N」 when marks or
 comments with text were left there, with a red dot while one of the comments has no reply; a test, condition or link
@@ -1451,14 +1394,12 @@ before stories. A comment or reply on a screen order carries `"where": {"screens
 in the order in the shape of a step's screen, and `links` has, for each two neighbouring screens, `from`, `to`, the
 verdict of the link between them and `ways`, as for a link between two steps of a story; the gaps and fields picked
 come in its `target`. It is `null` while the map cannot be read or was built before stories. A coding agent that
-launched the page can act on it without waiting for the end. Every open page
-receives the same save at once and shows it without a reload, so a mark left in one window appears in another.
+launched the page can act on it without waiting for the end.
 
-**Replies.** `reply <config> <comment ID> "<text>"` answers a comment. The reply is a mark with no status, saved as
-its own new file next to the comment, with the comment's target, `replyTo` set to the comment's ID and the author
-`agent`; the page shows it under the comment in the conversation, and the task list puts it under the comment
-it answers. With `--server` and the address the review printed, the reply goes through the running review: it is
-saved, printed on standard error as a `"reply"` line and shown on every open page at once. Without `--server` the
+**Replies.** `reply <config> <comment ID> "<text>"` answers a comment. The reply is saved as a mark with no status
+and the author `agent`; the page shows it under the comment in the conversation, and the task list puts it under the
+comment it answers. With `--server` and the address the review printed, the reply goes through the running review: it
+is saved, printed on standard error as a `"reply"` line and shown on every open page at once. Without `--server` the
 file is written directly and shows the next time the page is loaded. An ID that is not a comment in the marks stops
 with `no comment with ID "<id>"` and exit code 1, and nothing is written. A reply prints nothing when it is saved.
 
@@ -1469,9 +1410,9 @@ out. With none, it says `waiting for a comment at <address>` on standard error a
 saved. When the review ends first, it exits with code 0, nothing on standard output and `review ended` on standard
 error. It keeps trying to connect for about 10 seconds, so it can be started while the review is starting; after
 that it stops with `could not reach the review page at <address>: …` and exit code 1. When the connection drops
-without the review ending, as when the review is stopped and started again, it connects again the same way, for
-about 10 seconds. A coding agent runs it in the background, answers what it prints and runs it again, so a comment
-saved while it was not running still reaches the agent on the next run.
+without the review ending, as when the review is stopped and started again, it connects again the same way. A coding
+agent runs it in the background, answers what it prints and runs it again, so a comment saved while it was not
+running still reaches the agent on the next run.
 
 **Claude Code sessions.** When the review runs with `CLAUDE_CODE_MESSAGING_SOCKET` in its environment, as when a
 Claude Code session started it, each saved comment is also sent into that session as a message: a first line
@@ -1480,8 +1421,7 @@ then the comment's JSON line. Marks and replies are not sent. When the socket ca
 `could not send the comment to the Claude Code session: …` on standard error and goes on.
 
 **Ending.** Pressing 「리뷰 끝」, or Ctrl+C in the terminal, closes the server and prints the task list on standard
-output, so a coding agent that launched the page receives it as soon as the reviewer is done. Open pages stop
-listening for new saves when the review ends.
+output, so a coding agent that launched the page receives it as soon as the reviewer is done.
 
 ## One story
 
