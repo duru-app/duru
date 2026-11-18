@@ -80,7 +80,11 @@ function allTalk() {
       return h('div', { class: 'talk-line general', 'data-record': r.id }, meta, h('div', {}, r.note),
         replies.length ? h('ul', { class: 'plain replies' }, replies.map((x) => h('li', { class: 'reply' }, h('span', { class: 'muted' }, signedAt(x)), h('div', {}, x.note)))) : null);
     }
-    return h('button', { type: 'button', class: 'talk-line', 'data-record': r.id, onclick: () => reachTalk(m.target, r.id, { record: r.id, group: groupOf(m.target) }) }, meta, h('span', { class: 'first' }, firstLine(r.note)));
+    const reach = () => {
+      if (m.became?.story !== undefined) state.earlierTalkOpen = m.became.story;
+      reachTalk(m.became ?? m.target, r.id, { record: r.id, group: groupOf(m.target) });
+    };
+    return h('button', { type: 'button', class: 'talk-line', 'data-record': r.id, onclick: reach }, meta, h('span', { class: 'first' }, firstLine(r.note)));
   };
   return h('div', { class: 'talk all-talk' },
     filters,
@@ -165,9 +169,10 @@ function renderScreenRight(info, dock) {
   fill(dock, markForm(state.target, 'draft', targetLabelOf(state.target, call)));
 }
 
-const talkIn = (marks, target) => marks.filter((m) => !isPick(m) && (target.candidate !== undefined ? m.target.candidate === target.candidate
+const becameHere = (m, target) => (target.story !== undefined ? m.became?.story === target.story : target.candidate !== undefined && m.became?.candidate === target.candidate);
+const talkIn = (marks, target) => marks.filter((m) => !isPick(m) && (becameHere(m, target) || (target.candidate !== undefined ? m.target.candidate === target.candidate
   : target.screens !== undefined ? m.key === keyOf(target)
-  : target.story !== undefined ? m.target.story === target.story : m.target.story === undefined && m.target.node === target.node));
+  : target.story !== undefined ? m.target.story === target.story : m.target.story === undefined && m.target.node === target.node)));
 const talkOf = (target) => talkIn([...state.data.marks.attached, ...state.data.marks.detached], target);
 const attachedTalk = (target) => talkIn(state.data.marks.attached, target);
 
@@ -192,13 +197,41 @@ function tagChip(label, remove) {
   return h('span', { class: 'tag' }, h('span', { class: 'tag-label' }, label), remove ? h('button', { type: 'button', title: '꼬리표 빼기', 'aria-label': `${label} 꼬리표 빼기`, onclick: remove }, '×') : null);
 }
 
+function earlierTalk(target, entries, said, item) {
+  const groups = [...new Set(entries.map((m) => m.target.candidate))]
+    .map((key) => ({ key, lines: said(entries.filter((m) => m.target.candidate === key)) }))
+    .filter((g) => g.lines.length)
+    .sort((a, b) => byDate(a.lines[0].r, b.lines[0].r));
+  if (!groups.length) return null;
+  const list = groups.map(({ key, lines }) => h('div', { class: 'earlier-group', 'data-candidate': key },
+    h('h3', { title: `후보 「${candidateName(key)}」에 남긴 대화` }, candidateName(key)),
+    h('ul', { class: 'plain history' }, lines.map(({ m, r }) => item(m, r, m.target)))));
+  if (target.story === undefined) return h('div', { class: 'earlier-talk' }, list);
+  const open = state.earlierTalkOpen === target.story;
+  const last = groups.flatMap((g) => g.lines.map(({ r }) => r.date)).sort().pop();
+  const folded = `이전 대화 ${saidCount(entries)}`;
+  const lastDay = new Date(last).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
+  const toggle = h('button', {
+    type: 'button',
+    class: 'earlier-toggle',
+    'aria-expanded': String(open),
+    title: open ? '스토리로 받기 전에 후보에 남긴 대화입니다. 누르면 접습니다' : `스토리로 받기 전에 후보에 남긴 대화를 펼칩니다. 마지막 글 ${lastDay}`,
+    'aria-label': open ? '스토리로 받기 전에 후보에 남긴 대화' : `${folded}, ${lastDay}`,
+    onclick: () => {
+      state.earlierTalkOpen = open ? null : target.story;
+      render();
+    },
+  }, open ? '이전 대화' : folded);
+  return h('div', { class: 'earlier-talk' }, toggle, open ? list : null);
+}
+
 function talkThread(target) {
   const talk = talkOf(target);
   const shown = state.historyFilter ? talk.filter((m) => m.key === state.historyFilter) : talk;
-  const recordItem = (m, r) => h('li', { class: r.replyTo !== undefined ? 'reply' : null, 'data-record': r.id },
+  const recordItem = (m, r, here = target) => h('li', { class: r.replyTo !== undefined ? 'reply' : null, 'data-record': r.id },
     talkState(m, r),
     r.status ? [h('span', { class: `chip ${r.status}` }, MARK_STATUS[r.status]), ' '] : null,
-    r.replyTo === undefined ? [...recordTags(r, target), ' '] : null,
+    r.replyTo === undefined ? [...recordTags(r, here), ' '] : null,
     h('span', { class: 'muted' }, signedAt(r)),
     r.note ? h('div', {}, r.note) : null,
     ...repliesOf(m, r));
@@ -207,9 +240,10 @@ function talkThread(target) {
     return replies.length ? [h('ul', { class: 'plain replies' }, replies.map((x) => recordItem(m, x)))] : [];
   };
   const answered = (m, r) => r.replyTo !== undefined && m.history.some((x) => x.id === r.replyTo);
-  const topLevel = onceEach(shown.flatMap((m) => m.history.filter((r) => !answered(m, r)).map((r) => ({ m, r })))).sort((a, b) => byDate(a.r, b.r));
-  const all = onceEach(talk.flatMap((m) => m.history.filter((r) => !answered(m, r)).map((r) => ({ m, r }))));
-  const history = all.length ? h('ul', { class: 'plain history' }, topLevel.map(({ m, r }) => recordItem(m, r))) : null;
+  const said = (entries) => onceEach(entries.flatMap((m) => m.history.filter((r) => !answered(m, r)).map((r) => ({ m, r })))).sort((a, b) => byDate(a.r, b.r));
+  const topLevel = said(shown.filter((m) => m.became === undefined));
+  const earlier = earlierTalk(target, shown.filter((m) => m.became !== undefined), said, recordItem);
+  const history = said(talk).length ? [earlier, h('ul', { class: 'plain history' }, topLevel.map(({ m, r }) => recordItem(m, r)))] : null;
   const filter = state.historyFilter && history && h('div', { class: 'history-filter' },
     '걸러 보는 중 ', tagChip(tagLabel(talk.find((m) => m.key === state.historyFilter)?.target ?? target)),
     h('button', { type: 'button', onclick: () => { state.historyFilter = null; render(); } }, '모두 보기'));

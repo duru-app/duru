@@ -333,6 +333,10 @@
   :is(.common-calls, .common-links, .common-incoming) > summary + * { margin-top: 8px; }
   .call-info .target-id .mono { margin-right: 4px; }
   .talk .history li { font-size: 13px; }
+  .earlier-talk { margin-bottom: 12px; padding-bottom: 4px; border-bottom: 1px dashed var(--line); }
+  .earlier-toggle { margin-bottom: 8px; padding: 2px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+  .earlier-toggle[aria-expanded="true"] { border-color: var(--accent); color: var(--accent-text); }
+  .earlier-group h3 { margin: 0 0 6px; font-size: 12px; color: var(--muted); }
   .talk .history > li { margin-bottom: 12px; padding: 12px 14px; border-radius: 16px; background: var(--panel); box-shadow: var(--shadow); }
   .talk .history .replies { margin: 8px -14px -12px; }
   .talk .history .replies li:last-child { margin-bottom: 0; }

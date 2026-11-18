@@ -898,27 +898,59 @@ test('in a browser, a comment on a story candidate shows in 「전체」 under t
   });
 });
 
-test('in a browser, once a candidate with comments is discarded, its comments show in the detached list of the stories with the candidate name, and not under the screens, while those of an accepted candidate do not', { skip: browserMissing }, async () => {
+test('in a browser, a story accepted from a candidate with comments shows them first in its conversation, marked as from the candidate and named by it, open right after accepting and folded to one line with their count and the day of the last thing said after going to another story and back or reloading, which opens when pressed; undoing the acceptance shows them on the candidate again, and the comments of a discarded candidate show in the detached list with the candidate name, and not under the screens', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ ...CANDIDATES, ...TRACED }, (config) => {
-    addMark(config.marksDir, { target: { candidate: HELP_KEY }, note: 'why the beta inbox?', author: 'reviewer' });
+    const asked = addMark(config.marksDir, { target: { candidate: HELP_KEY }, note: 'why the beta inbox?', author: 'reviewer' }, new Date('2026-10-13T01:00:00Z'));
+    addReply(config.marksDir, { replyTo: asked.id, note: 'the record went there' }, new Date('2026-10-13T02:00:00Z'));
     addMark(config.marksDir, { target: { candidate: TRACE_CANDIDATE }, note: 'which test gives this?', author: 'reviewer' });
     return withServer(config, 'reviewer', (base) =>
-      withPage(base, async (p) => {
+      withPage(base, async (p, errors) => {
         await p.waitForSelector('#screen-list li');
         await p.click(storiesTab);
         assert.equal(await p.locator('#left .detached li').count(), 0);
         await p.click('#candidate-list li:has-text("open-help")');
         await p.click('#center button.accept');
         await p.waitForSelector('#story-list li.selected:has-text("open-help")');
+        const earlier = p.locator('#right-info .earlier-talk');
+        const toggle = earlier.locator('button.earlier-toggle');
+        assert.equal(await toggle.textContent(), '이전 대화');
+        assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+        assert.equal(await earlier.locator('.earlier-group h3').textContent(), 'open-help');
+        const said = earlier.locator('.earlier-group .history > li');
+        assert.equal(await said.count(), 1);
+        assert.match((await said.textContent())!, /why the beta inbox\?.*the record went there/s);
+        assert.deepEqual(await p.locator('#right-info .talk-scope button').allTextContents(), ['이 스토리 1', '전체 2']);
+        const lastSaid = new Date('2026-10-13T02:00:00Z').toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
+
         await p.click('#candidate-list li:has-text("opens home and then help")');
         await discardCandidate(p, '도움말만 연다');
         await p.waitForSelector('#candidate-list li:has-text("opens home and then help")', { state: 'detached' });
         assert.deepEqual(await p.locator('#left .detached li').evaluateAll((items) => items.map((li) => [li.querySelector('code')!.textContent, li.querySelector('div')!.textContent])), [
           ['후보 opens home and then help', 'which test gives this?'],
         ]);
+        await p.click('#story-list li:has-text("open-help")');
+        assert.equal(await toggle.textContent(), '이전 대화 1');
+        assert.equal(await toggle.getAttribute('title'), `스토리로 받기 전에 후보에 남긴 대화를 펼칩니다. 마지막 글 ${lastSaid}`);
+        assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+        assert.equal(await earlier.locator('.earlier-group').count(), 0);
+        await toggle.click();
+        assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+        assert.equal(await said.count(), 1);
+
+        await p.reload();
+        await p.waitForSelector('#view-story:not(:disabled)');
+        await p.click(storiesTab);
+        await p.click('#story-list li:has-text("open-help")');
+        assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+
+        await p.click('#center button.unaccept');
+        await p.waitForSelector('#candidate-list li.selected:has-text("open-help")');
+        assert.equal(await earlier.count(), 0);
+        assert.match((await p.textContent('#right-info .history > li'))!, /why the beta inbox\?/);
         await p.click('#view-list');
         await p.waitForSelector('#screen-list li');
         assert.doesNotMatch((await p.textContent('#left'))!, /후보 open/);
+        assert.deepEqual(errors, []);
       }));
   });
 });
