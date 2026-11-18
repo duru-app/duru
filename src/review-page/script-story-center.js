@@ -386,7 +386,7 @@ function storyIdTag(id) {
 const candidateActions = (c) => h('fieldset', { class: 'story-form candidate-acts' },
   lineCount(c),
   h('div', { class: 'candidate-buttons' },
-    h('button', { class: 'accept', title: c.acceptProblem ?? '이 화면 순서로 스토리 파일을 씁니다.', disabled: Boolean(c.acceptProblem) || (state.storyWriting && !picksSaving), onclick: acceptAfterPicks }, '스토리로 받기'),
+    h('button', { class: 'accept', title: c.acceptProblem ?? '이 화면 순서로 스토리 파일을 씁니다.', disabled: Boolean(c.acceptProblem) || accepting || (state.storyWriting && !picksSaving), onclick: acceptAfterPicks }, '스토리로 받기'),
     c.originals?.length
       ? h('button', { class: 'back-to-original', title: BACK_TO_ORIGINAL, 'aria-label': BACK_TO_ORIGINAL, disabled: state.storyWriting, onclick: () => goBackToOriginal(c) }, '되돌리기')
       : null,
@@ -442,14 +442,26 @@ async function writeStories(url, body) {
 
 const storyIdProblem = (id) => (state.data.stories.list.some((st) => st.id === id) ? '같은 ID 의 스토리가 이미 있습니다.' : STORY_ID.test(id) ? null : '영문 소문자, 숫자, -, _ 만 쓸 수 있습니다.');
 
+let accepting = false;
+
 async function acceptAs(c, id, name) {
   await lineWrites;
   await stepWrites;
-  if (!(await writeStories('/api/candidates/accept', { key: c.key, id, name }))) return false;
-  state.candidate = null;
-  state.candidateTalk = null;
-  state.story = id;
-  state.storyDraft = null;
+  const stayed = state.candidate === c.key;
+  accepting = true;
+  let written;
+  try {
+    written = await writeStories('/api/candidates/accept', { key: c.key, id, name });
+  } finally {
+    accepting = false;
+  }
+  if (!written) return false;
+  if (stayed) {
+    state.candidate = null;
+    state.candidateTalk = null;
+    state.story = id;
+    state.storyDraft = null;
+  }
   state.error = null;
   render();
   return true;
@@ -472,8 +484,8 @@ async function nameAs(c, id, name) {
 
 const idOf = (c) => c.storyId ?? slugOf(c.name);
 
-async function acceptChosen() {
-  const c = candidateOf();
+async function acceptChosen(key = state.candidate) {
+  const c = state.data.candidates.list.find((x) => x.key === key);
   if (!c) return;
   if (storyIdProblem(idOf(c))) return askAccept(c, 'button.accept', null);
   if (await acceptAs(c, idOf(c), c.name)) return;
@@ -484,12 +496,13 @@ let acceptPresses = 0;
 
 async function acceptAfterPicks() {
   const press = ++acceptPresses;
+  const key = state.candidate;
   let pending;
   do {
     pending = [lineWrites, stepWrites];
     await Promise.all(pending);
   } while (lineWrites !== pending[0] || stepWrites !== pending[1]);
-  if (press === acceptPresses) await acceptChosen();
+  if (press === acceptPresses) await acceptChosen(key);
 }
 
 const acceptDialog = /** @type {HTMLDialogElement} */ (document.getElementById('accept-ask'));
