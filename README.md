@@ -1176,28 +1176,16 @@ again by the next part of the address): the box shows the shared start, the numb
 of the status buttons, how many pass, are within a limit, are pending, fail or have no tagged test. Pressing the box opens the group in
 its place across a whole row; pressing the group's name above the row folds it again. On such a map, every entry
 screen with screens under it is drawn folded among the gathered screens, with 「+N」 at its right end for the N
-screens under it and, with the same squares, how many of them pass, are within a limit, are pending, fail or have no tagged test; the
-line gives way to the heading 「진입 화면 N」 whenever a screen is folded under 「+N」, counting the screens in folded groups and the opened ones too. 「+N」 draws that entry screen above the gathered
+screens under it and, with the same squares, how many of them pass, are within a limit, are pending, fail or have no tagged test. 「+N」 draws that entry screen above the gathered
 screens with its tree, where a screen with more than six screens under it is folded the same way; 「−」 folds it
 again, and pressing the box still picks the screen. A tree that no entry screen reaches is folded at its first
 screen in the same way, in its place.
-Groups and branches stay open or folded across redraws until the page is reloaded. The bar above counts the drawn screens by status on buttons
+The bar above counts the drawn screens by status on buttons
 (「테스트 없음 4」, 「실패 5」 …); pressing one fades the other screens, and the search box does the same by route or
-component. Enter in the search box picks the next screen it found, in drawing order and back to the first after the
-last, Shift+Enter the one before, and the count beside it reads 「찾은 화면 40」 or, with one of them picked, 「3 / 40」. With nothing picked, the right column lists the failing screens and then the ones without a tagged
+component. With nothing picked, the right column lists the failing screens and then the ones without a tagged
 test. Pressing a screen keeps strong only the paths through it, marks the screens its links and moves reach in other
 branches, and shows the list view's middle and right panes for it beside the drawing; 「선택 해제」, Escape or a click
-on an empty spot of the drawing lets it go. A folded group, or a folded screen, is not faded by the buttons and the
-search while one of the screens folded in it (or the folded screen itself) is kept, and not dimmed while one of them
-lies on the picked screen's paths or links; when a link reaches a screen folded in it, it is marked as the screens the
-links reach are. The search counts the screens folded in groups and branches too, and Enter reaches them in the place
-of their folded box; an entry screen opened from the gathered screens keeps its place among them for Enter, so the
-order does not change as Enter opens boxes. However a screen is picked in the drawing (the right column's list, Enter in
-the search, its id in the address as `#flow?screen=<id>`, a link in the middle pane), the group and every branch it is
-folded in open first, then it is picked and scrolled to. The zoom control at
-the bottom-left corner of the drawing fits, shrinks or grows it; a percent typed into it takes effect on Enter or on
-clicking elsewhere, a level below 30% or above 150% becomes the nearer end, and Escape or anything not a number puts
-the level back.
+on an empty spot of the drawing lets it go.
 
 **Story tab.** The third tab at the top, 「스토리」, shows one story at a time. The left column lists the stories, the
 candidates and the need files. In the middle, the chosen story's steps are drawn left to right on one line that stays
@@ -1205,16 +1193,12 @@ at the top while the rest scrolls: each step is a box with its step number, its 
 status, and a step not on the map is drawn dashed. The line between two steps shows how they are joined: solid for a
 link with no condition, blue dashed for a link under a condition, green dotted for a move written in `moves`, red
 dashed with 「링크 없음」 where the map has no link, and orange dotted where a step is not on the map or a link's address
-could not be read; the 「i」 above the line shows these. Pressing a box outlines it and that step's card, scrolling the
-cards only when that card is out of view; pressing the line between two steps brings that link's row into view. The
-outline stays on the pressed step while the cards scroll, and a line wider than the pane slides sideways to keep it in
-view. Below the line are the story's cards: its name with its link verdict beside it, a folded 「사전 조건 N」, a folded
+could not be read; the 「i」 above the line shows these. Pressing a box outlines it and that step's card; pressing the line between two steps brings that link's row into view. Below the line are the story's cards: its name with its link verdict beside it, a folded 「사전 조건 N」, a folded
 「손볼 화면 N」 listing the failing and untested screens on its path, each bringing up its step card, the name and memo
 with 「저장」, the 「스토리 전체」 box, its tests, then each step and the link into it. The right column holds the
 story's conversation, as for a screen. The address of a story is `#story?story=<ID>`,
 with `&step=<N>` added while step N is outlined, so opening that address, going back to it or reloading it outlines
-the same step and brings its card into view. Pressing another step changes the address without adding to the browser
-history.
+the same step and brings its card into view.
 
 **A new story.** 「새 스토리」 is made in the story tab only. The flow tab's bar has a 「새 스토리」 button (「새 스토리 이어
 쓰기」 once it has steps) that moves to the story tab's new-story screen, and `#flow?new=1` and `#stories?new=1` open
@@ -1224,17 +1208,13 @@ shows 「에이전트와 대화」 on the screen order chosen so far, and its fo
 /home」, which follows each step added or taken out (see **Comments on a screen order**); before the first step the form
 is greyed out, with a line saying the order chosen becomes its tag.
 Pressing a screen in the list or a box in the drawing adds that screen as the next step, and the drawing scrolls to
-keep the box pressed in place where it can. A screen added from the list opens the group and the branches it is folded
-in, and each time the new-story screen shows the whole flow again (opening it, or 「전체 그림에서 보기」) the groups and
-branches holding any step open, so the path runs through every step box. A branch or group closed by hand while
-writing stays closed until then, unless a step comes to sit in it anew, as when the map read again has moved a step.
+keep the box pressed in place where it can.
 Each chosen box carries its step number. Two neighbouring steps are joined in the style of their verdict: on the link
 itself when the second box hangs under the first, otherwise by a mark in each of the two boxes with the other step's
 number. Pressing a step shows 「이전 단계 추가」 above it, 「다음 단계 추가」 below it and 「제외」 on it, as in 「순서
 고치기」; a step is moved by taking it out and adding it again. The same screen twice in a row is refused as in the
 list; a box already chosen is added again, since a story can pass a screen twice. 「스토리 목록」 closes the screen and
-keeps the steps for 「새 스토리 이어 쓰기」. In the flow tab a box opens its screen. The filters, the search and the
-picked screen of the flow tab are left as they were and do not change the drawing in the new-story screen.
+keeps the steps for 「새 스토리 이어 쓰기」. In the flow tab a box opens its screen.
 
 **Recording a walk through the app.** When `app` is set, the title row of 「새 스토리」 has 「● 기록」. It opens the app in
 the middle column in place of the drawing, and the screens the app passes through stack up as steps in the left column
@@ -1275,21 +1255,7 @@ conditions name, which can be turned on and off. When the app in the middle fram
 `signedOutPaths`, the review server logs that account in again and reopens the address the app was at. When that
 happens twice within a minute it stops and says so above the frame, naming another login of the same account as
 a possible cause, and a login that fails shows its error there too. A walk being recorded, the cut of 「앱 화면」 and
-「가운데에 앱 화면 전체 열기」 stay on the sign-in screen instead. 「앱 너비」 above the frame sets the width the app
-is drawn at:
-1280 at first, 375, 768, 1024 or 1440, 「직접 입력」 for a width from 200 to 3840 typed into the box beside it, or
-「칸에 맞춤」 for the pane's own width. 「배율」 beside it sets how large that width is shown. At 「칸에 맞춤」, the
-first choice, a pane narrower than the width shows the app smaller to fit, and a wider pane shows it at its real
-size. 25%, 50%, 75%, 100%, 150%, or a percent from 10 to 200 typed after 「직접 입력」, shows it at that size
-whatever the pane's width; when that is wider than the pane, the frame scrolls sideways while the page itself stays
-put. A typed value takes effect on Enter or on clicking elsewhere, and one outside its range goes back to the value
-before. With the width at 「칸에 맞춤」 the app is always at its real size and 「배율」 cannot be picked. The words
-beside the pickers say what is shown: 「1280px 화면을 58%로 줄여서 보여 줍니다」,
-「1280px 화면을 실제 크기로 보여 줍니다」, 「1280px 화면을 150%로 키워서 보여 줍니다」 or 「칸 너비 그대로 745px」,
-followed by 「칸을 넘는 부분은 옆으로 넘겨 봅니다」 when the frame scrolls sideways. Dragging the frame's bottom
-corner makes it taller or shorter, and the app
-gets the height shown divided by the percent. The width and percent picked stay, in both views, until the page is
-reloaded. Below come the
+「가운데에 앱 화면 전체 열기」 stay on the sign-in screen instead. Below come the
 screen's tests by depth and its API calls, with
 a row per option value. The table holds the calls the screen's own code sends; the calls it gets only from a component
 around or beside its route (`layout`) and those of `appWide` are folded below it under 「공통 N」, with the same
@@ -1311,8 +1277,7 @@ settings it reads. The links into it and out of it also list the moves written i
 reason. The links out of it that have `layout`, such as those of a menu drawn around the route, are folded below the
 others under 「공통 N」, and so are the links into it that a menu named in `routeTables` gives for its table item; each
 stays open or folded on other screens until toggled. An entry screen that only such menu links lead to shows
-「메뉴로만」 beside 「들어오는 링크」. Once opened 「화면 정보」 stays open on
-other screens until it is closed. Choosing a call, by its name or a count in
+「메뉴로만」 beside 「들어오는 링크」. Choosing a call, by its name or a count in
 the table or from a link elsewhere, opens its details under the call table and scrolls the middle pane to them: where
 its option was found, the server match, its tests, untagged tests linked to it, where this screen calls it and the
 screens that use it.
@@ -1330,16 +1295,14 @@ it, shows the same row, with the date on hover; one pressed off with no reason s
 still undecided on that screen or call (see **Task list**) has its own lines under the others: the kind, and below it
 「「미판정」 아직 아무도 정하지 않았습니다」, with 「신규」 after 「미판정」 for a screen or call the baseline map does not have (see
 **Case kinds tab**), and two icon buttons: ✓ saves 「대상」 at once, and ✕ asks for a reason, as 「대상 아님…」 does, and
-saves nothing without one. Hovering over them, or a screen reader, gives 「대상 — 이 요청에서 이 경우를 시험합니다」 and
-「대상 아님… — 이유를 적고 이 요청에서는 시험하지 않습니다」 (「화면」 for a screen). Where a mark, a person's or an agent's,
+saves nothing without one. Where a mark, a person's or an agent's,
 keeps the kind undecided, the line says who left it instead of 「아직 아무도 정하지 않았습니다」, in the words of the
 「테스트 관점」 tab: 「<author> 가 <date> 에 이유 없이 뺐습니다」 for a kind pressed off, or 「… 에 규칙에서 뺐지만 규칙이 더는
 고르지 않습니다」 with the old reason for a kind taken out of a rule that no longer picks that screen or call. Only where
 the kind no longer takes that screen or call as a candidate at all does a kind taken out of a rule keep its 「대상
 아님」 row, which then says 「규칙이 이 요청을 더는 고르지 않아, 이 표시는 쓰이지 않습니다」. A kind an agent marked 「대상 아님」
 with `case` waits for a reviewer and has its own lines too: the kind, and below it 「검토 중」 with ✓ and ✕, the agent with
-the date, and the agent's reason. Hovering over them, or a screen reader, gives 「받아들이기 — 에이전트의 이유로 이 요청을 「대상
-아님」으로 둡니다」 and 「되돌리기 — 에이전트의 「대상 아님」을 지우고 그 전의 판정으로 돌아갑니다」 (「화면」 for a screen). Until then the kind
+the date, and the agent's reason. Until then the kind
 stays as it was before the agent's mark, so one a rule picks stays picked with its tests. ✓ makes it 「대상 아님 ·
 <reviewer>」 with the agent's reason; ✕ puts back the mark a person left before the agent's, or, with none, leaves it
 to the rule or undecided, its 「미판정」 line then saying 「<reviewer> 가 <date> 에 에이전트 판정을 되돌렸습니다」. Pressing the kind
@@ -1348,8 +1311,7 @@ The kind buttons below stay as they are. The flow shows the same middle and righ
 
 **Case kinds tab.** With `caseKinds` set, the list has a third tab, 「테스트 관점 N」, after 「화면」 and 「태그 없음」; N adds
 up the undecided candidates of every kind and those waiting for a reviewer, and is 0 when none is left. Hovering
-over it gives the two apart, 「미판정 U · 검토 중 R」. When the three do not fit on one line, as in a
-narrow list with three-digit counts, 「테스트 관점 N」 moves to a second line. The tab lists the kinds in config order, each
+over it gives the two apart, 「미판정 U · 검토 중 R」. The tab lists the kinds in config order, each
 with its text, `case:<kind>` and 「대상 N · 미판정 N · 빈칸 N」, where 빈칸 is the number of cases with no tests that
 `rebuild` prints, and 「검토 중 N」 before 「미판정」 while any wait for a reviewer. With `baselineMap`, 「(신규 M)」 follows
 「미판정 N」 while M of the undecided candidates are screens or calls the baseline map does not have; the tab's own number
@@ -1368,8 +1330,7 @@ the group titles and its own 「모두 고르기」 choose them; once one is cho
 with 「받아들이기」 and 「되돌리기」 on hover, as ✓ and ✕ of 「관점별 테스트」 do. One the agent wrote again after the page read
 it is not saved, and the line under the buttons says which were saved and which were not. 「미판정 N」 lists the
 undecided candidates in three groups, 「쓰기 요청」 (a request whose method was not read among them), 「조회 요청」 and
-「화면」, leaving out an empty group; each request carries its method in colour (GET blue, POST green, PUT orange, PATCH
-teal, DELETE red). A candidate kept undecided by a person's mark has a line under it: 「<author> 가 <date> 에 이유 없이
+「화면」, leaving out an empty group. A candidate kept undecided by a person's mark has a line under it: 「<author> 가 <date> 에 이유 없이
 뺐습니다」, or 「… 에 규칙에서 뺐지만 규칙이 더는 고르지 않습니다」 with the old reason. These are the ones `duru case`
 leaves to a person; a button above the list with a person icon and their number, 「직접 판정」 on hover, shows only
 them. With `baselineMap`, each candidate the baseline map does not have carries 「신규」 in the colour of the screen
@@ -1378,20 +1339,14 @@ the person button shows only those. Pressing either button again, or choosing an
 A check box on each line, on each group title and 「모두 고르기」 choose candidates; once one of the lines shown is
 chosen, 「대상 (N)」 or 「대상 아님… (N)」 shows and decides the chosen ones among the lines shown, each with its own
 mark, while one chosen and then hidden by a button stays chosen and is not saved; 「대상 아님…」 asks for one reason and saves nothing without one. The marks are saved one by one; if
-one fails, saving stops, a line says which were saved and which were not, and those not saved stay checked. While saving, the other tabs and
-views are locked. Pressing a line shows that screen or call's conversation and comment form on the right, kept apart
+one fails, saving stops, a line says which were saved and which were not, and those not saved stay checked. Pressing a line shows that screen or call's conversation and comment form on the right, kept apart
 from the one chosen in 「화면」; a comment left unsaved there is asked about at 「리뷰 끝」. Pressing the name opens the
 screen, or the call on the screen that sends it. The address is `#cases?kind=<kind>&node=<ID>`; an unknown kind
 goes to 「화면」. A kind decided here is listed under 「전체」's 「변경 기록」, where 「대상」 reads 켬 and 「대상 아님」 reads 끔, and
 a reviewer's answer to an agent's 「대상 아님」 reads 받아들임 or 되돌림.
 
 **Pane widths.** The edge on either side of the middle pane, in the list, in the story tab and beside a picked screen
-in the flow, can be dragged to widen or narrow the panes; the line lights up when the
-mouse rests on it. The drawing is laid out again for its new width, and the app in the middle pane is shown at the
-percent that fits the pane's new width
-when 「배율」 is 「칸에 맞춤」 (with the width at 「칸에 맞춤」, the app itself gets the new width). No pane can be dragged narrower than its contents need, and when the window gets too narrow
-for the middle pane, the side panes give back the width they were dragged to. The widths last until the page is
-loaded again.
+in the flow, can be dragged to widen or narrow the panes.
 
 **Changes since a baseline.** With `baselineMap` set, the header names the baseline by its folder, with the map's path on
 hover (「비교 기준」). A screen in the list carries 「신규」 (one the baseline does not have), 「조건 바뀜」 (the conditions before and after on hover) or
@@ -1440,11 +1395,7 @@ action that ended in an error. Between the steps come the requests the test sent
 request that matches a call opens that call. A test that ran in several projects has a chip for each. A test without
 a trace, with a trace that could not be read, or that was skipped says so instead. When Playwright recorded the trace
 with screenshots (`screenshots` in its `trace` option), a step and an opened page show a small
-picture of the screen after it, and pressing it shows it large; a line whose picture would be the same as the one
-before it shows none. 「재생」 under 「단계」 shows those steps one at a time in a large window, each for about two
-seconds with the picture of the screen after it, and has 「멈춤」, 「이전」 and 「다음」; the arrow keys move a step. A
-line whose picture is the one before, or a request, keeps that picture, and a step on a page that had no picture yet,
-as the first in a popup, says 「화면 그림 없음」. It shows only when at least one step has a picture.
+picture of the screen after it, and pressing it shows it large. 「재생」 under 「단계」 shows those steps one at a time in a large window. It shows only when at least one step has a picture.
 「trace」 opens the test's trace in Playwright's trace viewer in a new tab, served by the review page itself; it is
 greyed out when the trace file is no longer where `rebuild` read it.
 A story candidate that came from browser tests has the same 「재생」 and 「trace」 beside each test title on its card, so
@@ -1479,12 +1430,7 @@ screens the step before leads to, here and while a new story is written. Each in
 「안내 글 「이메일」 또는 테스트 ID 「login-email」」, with 「· 2 번째」 when it has `nth`, then the value and 「확인 안 됨」.
 With `app` set, pressing an input line on a story's or a candidate's card puts 「앱 화면」 at the top of the right pane,
 above the story's own pane: the app at that step's screen, the account it is opened with, and the app cut down to the
-boxes those words find, zoomed in. When the words find several boxes they are numbered 1, 2, 3 and only the one the
-line counts to has the strong outline. When they lie too far apart to be cut together with the app's text still
-readable, the cut stays around the box the line counts to and the boxes near it, and the note under the cut says where
-the others are, such as 「3번은 이 그림 아래쪽에 있습니다」. When no box is found, 「앱 화면」 shows the top left of the
-app screen at that same readable size. The box is shown empty, as the app has it; the value stays on the line above the
-cut. A small picture beside the address shows where the cut sits in the whole app screen, 「가운데에 앱 화면 전체 열기」
+boxes those words find, zoomed in. 「가운데에 앱 화면 전체 열기」
 opens the whole app in the middle pane until 「단계 카드로 돌아가기」, and 「닫기」 closes 「앱 화면」. The line then says
 「화면에서 찾음」, or 「못 찾음」 with why under it: no box has those words, or fewer boxes have them than the number
 written. A box that shows only with certain data, such as a second signer's memo, is found only when the running app
@@ -1492,8 +1438,7 @@ has that data, so the result lasts only until the page is reloaded and is writte
 The line keeps 「확인 안 됨」, and 「앱 화면」 says why, when the step's screen needs path values that are missing, when the
 app moves to another screen, when the app never answers, as an app whose security policy blocks inline scripts
 does not, or when the box is not found while the account the app is opened with could not sign in or no account meets
-the screen's role condition; 「앱 화면」 shows that sign-in error or account note in red, as the middle pane does. Lines on a screen not on the map, on the cards of a new story and in 「순서 고치기」 cannot be pressed, and
-hovering says why; without `app`, hovering 「확인 안 됨」 says that finding the box needs `app`.
+the screen's role condition; 「앱 화면」 shows that sign-in error or account note in red, as the middle pane does.
 A picked need file shows as 「공통 조건」 and its name, hovering shows its file and text, and pressing it opens it.
 At the bottom of the story tab, 「공통 조건 N」 lists the need files with their name, file and how many stories pick them, followed
 by the need files that could not be read and why. Pressing one shows its name, its text, the stories that pick it and
@@ -1513,8 +1458,7 @@ asks first, naming what goes with it, with 「제외」 and 「취소」. The ve
 「사전 조건 N」 follow the order being changed, and 「순서 저장」 and 「취소」 take the place of 「순서 고치기」 in the
 「화면 순서」 heading; an order with the same screen twice in a row or with no step is not saved and says why, and a
 file changed elsewhere is refused with
-「새로 읽기」 and 「덮어쓰기」 as in the table. While the order is open the pencils wait, and while a table is open
-「순서 고치기」 waits. A comment on a step whose number no longer holds its screen then shows under 「떨어져 나감」. Candidates are
+「새로 읽기」 and 「덮어쓰기」 as in the table. A comment on a step whose number no longer holds its screen then shows under 「떨어져 나감」. Candidates are
 listed below; a chosen one has ✎ right after its name and 「스토리로 받기」 and 「버리기」 at the right end of its title row; the
 address of a chosen candidate holds its screen order, as `#story?candidate=/home#Home+>+/help#Help`. A candidate
 posted with `candidate` has a purple 「에이전트」 chip beside its name in the list and in the title, and under the title,
@@ -1533,8 +1477,7 @@ story ID rule or a story already has it, it asks for another in the same window,
 takes later shows red beside the name. A screen the agent put in is
 taken out after accepting, with 「순서 고치기」. A story accepted from it shows the same comment line under its name. 「버리기」 opens
 the window that 「제외」 opens, naming the candidate and its screen order, and the candidate is discarded only once a
-reason is written there. 「버리기」 in the window or Ctrl+Enter saves it and moves on to the next candidate; 「취소」 or
-Escape closes the window, and a click outside it does not. If
+reason is written there. 「버리기」 in the window or Ctrl+Enter saves it and moves on to the next candidate. If
 the discard is not saved, the window stays open with the reason and the error. A story accepted from a candidate has
 「받기 되돌리기」 below its name and memo: it deletes the story file and the candidate is listed again and chosen. It
 asks first only when conditions, inputs or expected results are written in the story, and its title then says they go
@@ -1545,15 +1488,13 @@ than once shows its latest discard. Each has 「복원」: it writes the undo fi
 candidate is listed again and chosen; if the undo is refused, why shows under the list. A candidate of an order an agent
 posted in place of others has 「되돌리기」, also when a test or a record gives its card: without asking, it puts the
 candidate under 「버린 후보」 with the reason `원래대로 되돌림` and lists the originals again, also after the next `rebuild`.
-「복원」 on that entry brings the candidate back and takes the originals off the list. 「새 스토리」 puts a story together from screens of the map, picked from the list
-that takes the place of the stories or from boxes in the flow drawn in the middle.
+「복원」 on that entry brings the candidate back and takes the originals off the list.
 
 **Changes to the stories folder.** While the review runs it watches `storiesDir` and every folder in it, such as
 `candidates/` and `discarded/`, and every open page reads the stories again a moment after files there change from
 outside the page: edited in an editor, brought in by `git pull`, or written by another duru command. A story file
 added or deleted comes and goes in the lists, and the chosen story and the flow follow its new content, with no
-reload. A name or memo being typed keeps what was typed, while one not touched shows the file's new value, and while
-a Korean syllable is being composed the page waits until it is done. A `storiesDir` that does not exist yet is
+reload. A name or memo being typed keeps what was typed, while one not touched shows the file's new value. A `storiesDir` that does not exist yet is
 watched once it is made. These changes are not printed on standard error, and `wait` does not exit for them.
 
 **Marks.** A mark targets a screen, a call, one depth of either, one value of a call's option, or a story, and
@@ -1562,9 +1503,7 @@ records a status, a note, the author and the date. The status buttons are 「테
 `missing` by an older duru shows and counts as 「테스트 필요」. A mark left with text and no
 status is a comment: it shows in the conversation with no status, keeps the current status as it was, and in the task list
 follows the open mark it was written after. Pressing a picked status again lets it go, so a comment can be left on
-a target that already has one. 「취소」 clears what was typed and chosen in the comment box. In the comment box Enter saves the mark as 「남기기」 does and Shift+Enter starts a new
-line. An Enter pressed while the list of tags typed after `@` is shown, or one that ends a Korean syllable, does not
-save. Each mark and each judgment
+a target that already has one. Each mark and each judgment
 is its own new file, `<marksDir>/<node>/<date>-<author>-<short ID>.json`, so marks made on two machines merge in
 git without a conflict and the newest is the current state. A mark on a screen or call, or on a depth, option,
 case or part of one, also keeps `codeHash`, the screen's or call's hash on the map when it was saved; a judgment keeps
@@ -1663,12 +1602,11 @@ screen, call and story it is on and shows in each of their conversations; when a
 targets, it stays on the others and shows under 「떨어져 나감」 with the target that is gone.
 
 **Conversation.** For a screen or call the right pane holds only the conversation: every mark, comment and reply left
-on it apart from the case kinds picked or taken out there, oldest first, open from the start and filling the pane, scrolling inside it when it is longer, with the form to
+on it apart from the case kinds picked or taken out there, oldest first, with the form to
 write in at the bottom. Each mark and comment carries the tags of where it was left; a reply sits under its comment,
 set apart by its author and a light background. A tag from another screen, call or story is shown after the name of
 that place. What is chosen in the middle is the default tag. A bubble replaces it while it is the only tag and adds
-to the tags otherwise. Typing `@` in the text lists the depths of the place and the rows with a bubble in the middle;
-one is added with the arrow keys and Enter or with a click, and Escape closes the list. Each tag's × takes it off:
+to the tags otherwise. Typing `@` in the text lists the depths of the place and the rows with a bubble in the middle. Each tag's × takes it off:
 taking off the last tag that is not the default brings the default back, and taking off the default as well leaves
 「없음」, so the comment is saved with no target, until 「… 다시 붙이기」 puts the default back. A status can be picked
 only while the default tag is the one tag on. A story and a candidate show their conversation the same way.
@@ -1691,8 +1629,7 @@ call with 「관점별 테스트」 opened and scrolled into view. The form is h
 shown. Pressing a line opens its screen, call, story or candidate in 「이 화면」 and scrolls the conversation to that
 entry, outlined. While 「전체」 is shown the address carries `&talk=all`, and `&filter=<filter>` for a filter other than
 「모두」, so going back after pressing a line shows 「전체」 with the same filter and the pressed line outlined in view,
-and going forward opens the line's place again. Changing the filter or switching between the two buttons rewrites the
-address without adding to the browser history. A comment with several tags is a line in each group it is on and is
+and going forward opens the line's place again. A comment with several tags is a line in each group it is on and is
 counted once in N. A comment with no tag is listed under 「대상 없음」 with its whole text and its replies, and pressing it
 opens nothing. 「전체」 and the numbers and dots it describes leave out what has come off its target; it stays under
 「떨어져 나감」 and, unless it is a case kind picked or taken out, in the conversation of its screen or call.
@@ -1700,8 +1637,7 @@ opens nothing. 「전체」 and the numbers and dots it describes leave out what
 A screen in the list and in the flow, a story in the story tab, a depth row and a call cell show 「코멘트 N」 when marks or
 comments with text were left there, with a red dot while one of the comments has no reply; a test, condition or link
 row shows the dot on its count too. The screen's number covers its whole conversation, as 「이 화면 N」 does, a row's
-number only what carries that row as its tag, and pressing a row's number narrows the conversation to it. A comment or
-reply saved in another window updates the numbers and dots without a reload.
+number only what carries that row as its tag, and pressing a row's number narrows the conversation to it.
 
 **While the review runs.** Each mark, comment or reply is printed on standard error the moment it is saved, as one
 JSON line:
