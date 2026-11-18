@@ -646,26 +646,71 @@ test('in a browser, the story list has a group of candidates, a chosen candidate
   );
 });
 
-test('in a browser, a long candidate name wraps on a narrow page and ✎ stays on the line where the name ends', { skip: browserMissing }, async () => {
+const LONG_SENTENCE = '발행하려는 문서를 올린 사람이 승인 대기열에서 마지막으로 확인한 뒤에 공개한다 발행하려는 문서를 올린 사람이 승인 대기열에서 마지막으로 확인한 뒤에 공개한다';
+
+test('in a browser, ✎ and the ID tag stay on the line of the last character of a candidate\'s name at every page width and name length', { skip: browserMissing }, async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
+        const lineOf = () => p.evaluate(() => {
+          const h3 = document.querySelector('#center .title-row h3')!;
+          const texts = document.createTreeWalker(h3, NodeFilter.SHOW_TEXT);
+          let node = texts.nextNode() as Text;
+          for (let next = texts.nextNode(); next; next = texts.nextNode()) node = next as Text;
+          const range = document.createRange();
+          range.setStart(node, node.length - 1);
+          range.setEnd(node, node.length);
+          const last = range.getBoundingClientRect();
+          const against = (r: DOMRect) => ({ dy: Math.round(r.top + r.height / 2 - (last.top + last.height / 2)), dx: Math.round(r.left - last.right) });
+          const idRects = [...(document.querySelector('#center .title-row .story-id')?.getClientRects() ?? [])];
+          const edit = document.querySelector('#center .title-row button.edit-name')!.getBoundingClientRect();
+          const idEnd = idRects.length ? idRects[idRects.length - 1]! : null;
+          return {
+            edit: idEnd ? { dy: Math.round(edit.top + edit.height / 2 - (idEnd.top + idEnd.height / 2)), dx: Math.round(edit.left - idEnd.right) } : against(edit),
+            idStart: idRects.length ? against(idRects[0]!) : null,
+          };
+        });
+        const apart: string[] = [];
+        const check = async (label: string, withId: boolean) => {
+          for (const width of [768, 800, 850, 900, 1024, 1280]) {
+            await p.setViewportSize({ width, height: 800 });
+            await p.evaluate(() => new Promise((done) => { requestAnimationFrame(() => requestAnimationFrame(done)); }));
+            const { edit, idStart } = await lineOf();
+            if (!(Math.abs(edit.dy) <= 8 && edit.dx >= -1)) apart.push(`${label} ✎ at ${width}px: ${JSON.stringify(edit)}`);
+            if (withId && !(idStart && Math.abs(idStart.dy) <= 8 && idStart.dx >= -1)) apart.push(`${label} ID at ${width}px: ${JSON.stringify(idStart)}`);
+          }
+        };
+        const show = async (name: string, id: string) => {
+          assert.equal((await postJson(base, '/api/candidates/name', { key: PUBLISH_KEY, id, name })).status, 200);
+          await p.reload();
+          await p.waitForSelector(storiesTab);
+          if (!(await p.isVisible('#candidate-list li'))) await p.click(storiesTab);
+          await p.click('#candidate-list li:has-text("발행하려는")');
+          await p.waitForFunction((n) => document.querySelector('#center h3')?.textContent === n, name);
+        };
         await p.waitForSelector('#screen-list li');
         await p.click(storiesTab);
         await p.click('#candidate-list li:has-text("publish-document")');
-        await p.setViewportSize({ width: 900, height: 800 });
-        const place = await p.evaluate(() => {
-          const h3 = document.querySelector('#center .title-row h3')!;
-          h3.textContent = '발행하려는 문서를 올린 사람이 승인 대기열에서 마지막으로 확인한 뒤에 공개한다 '.repeat(2).trim();
-          const range = document.createRange();
-          range.selectNodeContents(h3);
-          const lines = [...range.getClientRects()];
-          const last = lines[lines.length - 1]!;
-          const b = document.querySelector('#center .title-row button.edit-name')!.getBoundingClientRect();
-          return { lines: new Set(lines.map((l) => Math.round(l.top))).size, nameEnd: Math.round(last.right), gap: Math.round(b.left - last.right), above: Math.round(last.top - b.top), below: Math.round(b.bottom - last.bottom) };
-        });
-        assert.ok(place.lines >= 2, `the name wraps: ${JSON.stringify(place)}`);
-        assert.ok(place.gap >= 0 && place.gap < 40 && place.above <= 4 && place.below <= 8, `✎ sits beside the last line of the name: ${JSON.stringify(place)}`);
+        assert.equal(await p.locator('#center .story-id').count(), 0);
+        for (const length of [35, 38, 43, 49, 53, 60, 63, 75, 79, 87]) {
+          const name = LONG_SENTENCE.slice(0, length).trim();
+          await p.evaluate((n) => {
+            const h3 = document.querySelector('#center .title-row h3')!;
+            const tail = h3.querySelector('.name-tail');
+            if (!tail) { h3.textContent = n; return; }
+            const letters = [...n];
+            tail.textContent = letters.pop()!;
+            h3.firstChild!.textContent = letters.join('');
+          }, name);
+          await check(`${length} characters`, false);
+        }
+        for (const length of [35, 38, 43, 49, 53, 60, 63, 75, 79, 87]) {
+          await show(LONG_SENTENCE.slice(0, length).trim(), 'publish-document');
+          await check(`${length} characters with an ID`, true);
+        }
+        await show(LONG_SENTENCE.slice(0, 60).trim(), 'publish-the-document-that-the-uploader-confirmed-last-in-the-approval-queue-before-it-goes-public');
+        await check('a very long ID', true);
+        assert.deepEqual(apart, []);
       }),
     ),
   );
@@ -681,12 +726,12 @@ test('in a browser, ✎ right after a candidate\'s name opens a window for the I
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
-        const edit = '#center .title-row .name-line > button.edit-name';
+        const edit = '#center .title-row .name-end > button.edit-name';
         const ask = '#accept-ask';
         await p.waitForSelector('#screen-list li');
         await p.click(storiesTab);
         await p.click('#candidate-list li:has-text("publish-document")');
-        assert.deepEqual(await p.locator(edit).evaluate((b: HTMLButtonElement) => [b.textContent, b.title, b.getAttribute('aria-label'), b.previousElementSibling!.tagName, b.disabled]),
+        assert.deepEqual(await p.locator(edit).evaluate((b: HTMLButtonElement) => [b.textContent, b.title, b.getAttribute('aria-label'), b.closest('.name-line')!.firstElementChild!.tagName, b.disabled]),
           ['✎', 'ID와 이름 고치기', 'ID와 이름 고치기', 'H3', false]);
         assert.equal(await p.locator('#center .candidate-acts button.edit-name').count(), 0);
         assert.deepEqual(await p.locator('#center .candidate-acts button').allTextContents(), ['스토리로 받기', '버리기']);
