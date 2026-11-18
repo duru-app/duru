@@ -396,11 +396,10 @@ takes, and the exit code is 1.
 tests show in `test-shots/` next to them, in place of the ones there before.
 
 **Code state.** `meta` names the commit of the git repository `srcRoot` is in (`commit`, `unknown` when `srcRoot` is
-not in one), whether a file under `srcRoot` had changes not committed then (`uncommitted`, only with a commit; the folders duru
-writes, `outDir`, `marksDir`, `judgmentsDir` and `storiesDir`, do not count), and the
-duru that built the map (`duruVersion`, and `duruCommit` when duru runs from a git checkout of its own). duru reads the
-files as they are, changes not committed included. Each screen and call has `codeHash`, a hash of the code it was read
-from: the screen's `sourceFiles`, and for a call the files its requests are written in. `tests.json` has
+not in one), whether a file under `srcRoot` had changes not committed then (`uncommitted`, only with a commit), and
+the duru that built the map (`duruVersion`, and `duruCommit` when duru runs from a git checkout of its own). duru reads
+the files as they are, changes not committed included. Each screen and call has `codeHash`, a hash of the code it was
+read from: the screen's `sourceFiles`, and for a call the files its requests are written in. `tests.json` has
 `testFileHashes`, a hash of each test file found under `srcRoot`, by its path there.
 
 **Screens.** Each screen has an ID made of its route path and component name (`/document/:id#DocumentDetail`),
@@ -410,43 +409,35 @@ file, its `sourceFiles`, the API calls it reaches, the settings it reads, and it
 conditions guarding them. A screen made from an item of a table in `routeTables` also has `tableItem`: the item's
 keys joined with `.`, a list item's key being its place in the list, and the file and line where the item is written. The settings come from every file in `sourceFiles`. The
 API calls and links are only those the screen's code reaches, so a file in `sourceFiles` can hold calls and links
-the screen does not list, and a call sent by a method of a store the screen gets from a React context hook can be
-written in a file outside them; each call and link names the file and line where it is written, and each API call
+the screen does not list; each call and link names the file and line where it is written, and each API call
 also lists the conditions it is sent under: the `if`, `? :` and `&&` around it and the `enabled` given to the
 react-query query that sends it. A call or link a saga makes for the screen names the line in the saga and lists
 under `actions` each action type that leads to it, with the places the screen dispatches that type
 (`dispatchedAt`).
 A component drawn around a group of routes, or beside it outside its `Switch` or `Routes`, gives its calls,
-settings reads and links to every screen of that group, and to the screens of each route file drawn inside the group
-too, though not the component that draws that route file. The same holds when the route file hands a component
-around the routes a function that draws what it is given inside the layout
-(`<AppPageProviders layout={(children) => <AppLayout>{children}</AppLayout>}>`, or the name of such a function
-declared in the route file). A condition written between a component beside the
-routes and the element it shares with them guards what it gives: it is listed under `inheritedGuards` with the
-component as `via`, and the line and `file` of the place it is drawn. A condition around the routes, or around a
-component drawn around them, is the condition of those routes (`routeGuards`) on the screens of that file and is not
-carried to the screens of a route file drawn inside them.
-A call or link a screen gets only through such a component, and not through the screen's own component, has
-`"layout": true`; it stays among the screen's calls or links.
+settings reads and links to every screen of that group, and so does a layout the route file hands a component around
+the routes as a function (`<AppPageProviders layout={(children) => <AppLayout>{children}</AppLayout>}>`). A call or
+link a screen gets only through such a component, and not through the screen's own component, has `"layout": true`;
+it stays among the screen's calls or links. A condition written between a component beside the routes and the element
+it shares with them guards what it gives, and is listed under `inheritedGuards` with the component as `via` and the
+line and `file` of the place it is drawn. A condition around the routes, or around a component drawn around them, is
+listed under `routeGuards` on the screens of that route file.
 
 **Whole app.** With `appWideComponents` set, the map has `appWide`: the `components`, each with the `file` its `import`
 names, their `sourceFiles`, and the `apiCalls` their code reaches, written as a screen's are. Those calls are under `calls`
 with the screens that send them too, often none.
 
-**Links.** A screen's links come from the route constants its code uses as an address, the `to` of react-router's `Link`,
-`NavLink`, `Redirect` and `Navigate` outside the route files, the addresses given to `push` and `replace` of a
-history react-router hands to the screen or of the one named in `history`, and the addresses given to the function
-`useNavigate()` returns. A link can also sit on the line of a call of a function in the source that moves the
+**Links.** A screen's links are the places its code goes to an address: a route constant used as an address, a
+react-router link or redirect outside the route files, a move of the history or of `useNavigate()`.
+A link can also sit on the line of a call of a function in the source that moves the
 history, or on the line where a component in the source that wraps a react-router link or a history move is used
 (`<SidebarLink to="/home">`), with the address that call or use leads to, or where a component or function named
-in `linkComponents` or `linkFunctions` is used. Each link has its address `to`, with `{*}` for a piece that comes from a value, the file
-and line, the conditions guarding it, and `targets`, the IDs of the screens it goes to. A link whose address duru
-cannot read has `to` `{?}` and empty `targets`. A link a menu named in `routeTables` draws for a table item also has
-that item's `tableItem`. In an app that uses redux-saga, a route constant or a move of the
-history named in `history` written in a saga is a link of each screen that dispatches an action the saga waits for,
-with the action types under `actions`; a move in a saga whose address duru cannot read is not on the map, not even
-as `{?}`. A link whose file is the screen's route file is made by code in that file while the screen is shown, such as
-going to an error screen when loading fails.
+in `linkComponents` or `linkFunctions` is used. Each link has its address `to`, with `{*}` for a piece that comes
+from a value, the file and line, the conditions guarding it, and `targets`, the IDs of the screens it goes to. A
+link whose address duru cannot read has `to` `{?}` and empty `targets`. A link a menu named in `routeTables` draws
+for a table item also has that item's `tableItem`.
+A link whose file is the screen's route file is made by code in that file while the screen is shown, such as going
+to an error screen when loading fails.
 
 **Calls.** Each API call is a node under `calls` with an ID `<METHOD>:<path>`
 (`GET:/api/v1/document/{documentId}`), its server match, the API functions that make it, the screens that reach
@@ -456,12 +447,10 @@ from, `source`, `type`, `config` or `request`, and an option a request body sent
 test and project that sent it, with the test's title, file, line, project and the values it sent. A call a trace shows a page sending from a
 screen its source does not tie it to carries `tracedScreens`, one entry per such screen with the `tests` (title,
 file, line, project) whose run sent it there; `screens` stays what the source reads, and a call sent at app start
-gets none. The review page lists such a call under that screen with a `기록 연결` chip. A request a visit record kept
-counts the same way, with the record file, from the config's folder, as its title and `null` file, line and project
-(see **Story candidates**). A POST, PUT, PATCH or DELETE call that a
+gets none. A request a visit record kept counts the same way, with the record file, from the config's folder, as its
+title and `null` file, line and project (see **Story candidates**). A POST, PUT, PATCH or DELETE call that a
 screen reaches and that no trace or visit record sent carries `unrecorded: true`, so an empty `options` can be told
-apart from a request no test has sent yet; the review page marks it `기록 없음` and the screen's `API 호출` heading counts
-the screen's own such calls while the 「공통」 line counts the shared ones. The server match is one of:
+apart from a request no test has sent yet. The server match is one of:
 
 - `match` — on the server, with the endpoint list labels
 - `method-mismatch` — the server has the path with another method
@@ -486,7 +475,7 @@ can open it, or `null` when they cannot be read) and the setting values it needs
 `redirect`, the target of a redirect among the routes; `no-incoming-link`, a screen no link leads to;
 `menu-links-only`, a screen only the links a menu named in `routeTables` gives for its table item lead to; and
 `config`, a path in `entryPaths`. A screen is open when an entry screen reaches it without a setting or role guard on
-the way; the links a menu gives for table items are not counted for that.
+the way.
 
 **Settings defaults.** The evaluated `settingsDefaults` are on the map, with `settingsDefaultsIncomplete`
 listing the places whose value the source does not show in full.
@@ -502,7 +491,7 @@ listing the places whose value the source does not show in full.
   and is in no call. A function called from several places has a line for each.
 - `api method <name> ← <file>:<line>: <error>` — a called function or method that gave no address, where it is
   declared and the first line of what stopped it (`did not finish within 1000 ms` for one stopped after a
-  second). Its calls are missing from the map. A method that sends no request is not printed.
+  second). Its calls are missing from the map.
 - `calledApiModules <file> did not run: <file>:<line>: <error>` — a listed file that failed to run, so none of
   its functions or methods are on the map.
 - `requestFunction <import> did not run: <file>:<line>: <error>; everything else that file exports does nothing, so an address built by it shows as {?}`
@@ -524,17 +513,15 @@ listing the places whose value the source does not show in full.
   the address comes from the callers: name that function in `requestFunction`. An `other-host` line has the
   address in full after `only`: when that host is the app's server, give it in `app.server`.
 - `no request address was read from the screen sources; name the function or object the app sends its requests through in requestFunction and the API files that call it in calledApiModules, or files of functions that build the addresses in apiModules`
-  — printed when there are screens, none of their requests has an address duru read (one on another host counts as
-  read), and the config has none of `apiModules`, `calledApiModules` and `requestFunction`. The app may send its
-  requests through its own function or object, such as a client class, which duru does not know; name it as
-  described under those keys.
+  — printed when there are screens, none of their requests has an address duru read, and the config has none of
+  `apiModules`, `calledApiModules` and `requestFunction`. The app may send its requests through its own function or
+  object, such as a client class; name it as described under those keys.
 - `redux-saga runs from <file>:<line> | watchers N | requests of sagas on screens N | links of sagas on screens N` —
   where the app runs its sagas, how many pairs of an action type and the saga code waiting for it those runs
   reach, and how many requests and links written in sagas come to a screen through an action it dispatches
   (`sagas` on the map). Printed when a source file names redux-saga.
 - `redux-saga is imported, but no run of a createSagaMiddleware() result was found, so no request or link of a saga is put on a screen`
-  — the sources name redux-saga, but duru found no `run` of a saga middleware, so no saga request or link is on
-  the map.
+  — no request or link written in a saga is on the map.
 - `calledApiModules ran <import> as a stand-in, though it is <path> outside srcRoot, imported by <files>` — an
   import the listed files reach that duru ran as a value doing nothing, although it is a file or folder of the
   repository outside `srcRoot`, reached through a tsconfig alias or a workspace link under `node_modules`. What it
@@ -553,10 +540,8 @@ listing the places whose value the source does not show in full.
   entry can come out of the config (`keptBodyTypeExclusions`).
 - `input keys to check N` — printed with `body` in `requestFunction`: the screen state keys that a screen writes
   and passes to an API function, which the function's request does not carry. Each one follows on its own
-  indented line, `<screen> <API function> <key> <file>:<line>`, with the place the key is written as text: the
-  literal in the child component that writes it, or the literal a function is called with, rather than the merge
-  in the screen that holds the state. The map lists them under `inputsToCheck`; they are worth a test of what the
-  screen sends and what reaches the server. An entry whose `input` part mark (below) is `fine` and whose screen
+  indented line, `<screen> <API function> <key> <file>:<line>`, with the place the key is written. The map lists
+  them under `inputsToCheck`; they are worth a test of what the screen sends and what reaches the server. An entry whose `input` part mark (below) is `fine` and whose screen
   code has not changed since the mark was saved is left out of the count and of the lines, and the count says
   how many were left out, as `input keys to check N (M marked fine)`.
 - `input keys unknown N: N <reason>; …` — printed with the line above: the calls of an API function whose screen
@@ -636,10 +621,9 @@ listing the places whose value the source does not show in full.
   that duru does not read as settings; a default the function is given that differs from the `settingsDefaults`
   value (the map keeps that value), or that differs from another call's or cannot be compared with it (the map
   leaves the default unknown); and a function called in none of those files (`settingsCallNotices`).
-- `routeTabs <import> <name> is drawn by no screen` — an entry of `routeTabs` naming a component that no screen's own
-  component draws with the prop the entry names, nor a component the screen's `<Route>` sits inside in the function
-  that draws it, so duru found no list of tabs to read and made no tab screen.
-  The file and the name are the ones the entry gives (`routeTabNotices`).
+- `routeTabs <import> <name> is drawn by no screen` — an entry of `routeTabs` naming a component no screen draws with
+  the prop the entry names, so it made no tab screen. The file and the name are the ones the entry gives
+  (`routeTabNotices`).
 - `routeTabs <file>:<line> its <prop> stopped at <piece>` — the value handed to that prop was not read as a list of
   tabs: `<piece>` is the part duru could not follow, written as for `route path not read`. The screen that draws the
   component is on the map as before, and the tab screens are the ones whose items were read.
@@ -666,15 +650,13 @@ listing the places whose value the source does not show in full.
   printed by `rebuild` when the config names `baselineTests`, after the `changes since` line when there is one.
   `<folder>` is the nearest folder holding every `baselineTests` path, from the config's folder. Each count takes a
   test once, however many screens and calls it is on. `compared`: the tests under a screen or call now that a
-  baseline test matches, whether a tag, an import, a trace or a reviewer's hand-over puts them there; a pair a
-  reviewer discarded does not. `pass→fail` and `pass→pending`: those that passed in the baseline and now fail, or now
+  baseline test matches. `pass→fail` and `pass→pending`: those that passed in the baseline and now fail, or now
   did not run or gave no verdict; a `pass→pending` test may have been skipped because a test before it in a `serial`
   group, or a `setup` project it depends on, failed. `not on a screen or call now`: baseline tests that match a
   current test which is on no screen or call now, such as an untagged test, one only under a story, one whose tags
   name only screens or calls the map does not have, or one whose pairs a reviewer all discarded. When
   `not on a screen or call now` is large, those tests could not be compared because nothing links them to a screen
-  or call now; a browser test linked only by its trace, for one, is not linked when it was skipped and left no
-  trace. `only in baseline`: baseline tests no current test matches.
+  or call now. `only in baseline`: baseline tests no current test matches.
   `only now`: tests under a screen or call now that no baseline test matches; they are not regressions.
   `compared`, `not on a screen or call now` and `only in baseline` add up to the tests of the baseline.
 - `  no test was compared: no baseline test matches a test under a screen or call now` — follows when `compared` is 0,
@@ -685,11 +667,10 @@ listing the places whose value the source does not show in full.
   test has no Playwright project.
 - `  only in baseline ← <file>: N tests, none of this file's tests are in the current results` — a test file of the
   baseline with no test in the current results: it no longer loads, or the current run left it out. `<file>` is its
-  path in the baseline results, from the folder holding all of their test files when the paths are absolute.
+  path in the baseline results.
 - A `baselineTests` path that is missing, a result file that cannot be read, or an entry that gives no test stops
   `rebuild` with `baselineTests <path> could not be read: <why>`, before anything is written, and `review` with the
-  same line and exit code 1, before the page is served. Files of another format
-  in a folder, and verdict logs with no verdict line, are skipped as in `tests`.
+  same line and exit code 1, before the page is served.
 - `case kind <kind>: rules pick N screens, N calls` — printed by `rebuild` for each kind in `caseKinds` with
   `picks`: how many screens and calls its rules pick on this map. With `baselineMap`, `| new since <file> N` follows:
   how many of them the same rules did not pick on the baseline map.
@@ -714,8 +695,7 @@ listing the places whose value the source does not show in full.
 - `map not yet fit for story candidates or test matching: <what>` — printed by `rebuild` before the line of the
   screens with tests, only when one of two counts reaches half. `N of M addresses opened by browser tests and visit
   records reached only a catch-all screen or no screen` counts the addresses the traces opened and the addresses of the
-  visit records, an address once while a record stays on it, that landed on a screen whose path is `*` or `/*` or on
-  no screen; `/docs/*` is not a catch-all. `N of M screen paths are relative or start with {?}` counts the screens
+  visit records that landed on a screen whose path is `*` or `/*` or on no screen; `/docs/*` is not a catch-all. `N of M screen paths are relative or start with {?}` counts the screens
   whose path was not read whole. When both reach half, both are named, joined by `;`. On such a map the tests matched
   to screens and the story candidates from traces and records stand for addresses that were not matched, so fix the
   routes or the config the other lines name before writing stories or tests from them.
