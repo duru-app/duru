@@ -584,18 +584,21 @@ test('in a browser, a ✕ hides once the pointer leaves its step even though a c
         await openHelpCandidate(p);
         await p.click('#candidate-list li:has-text("lab-path")');
         await p.waitForSelector('#center .line-count');
-        const off = (n: number) => p.locator(`#center button[name="step-off-${n}"]`).evaluate((b) => getComputedStyle(b).opacity);
+        const hidden = (n: number) => p.waitForFunction((name) => {
+          const b = document.querySelector(`#center button[name="${name}"]`);
+          return b !== null && getComputedStyle(b).opacity === '0';
+        }, `step-off-${n}`);
         const focused = (sel: string) => p.evaluate((s) => [document.activeElement?.matches(s), document.activeElement?.matches(`${s}:focus-visible`)], sel);
 
         await p.click('#center input[name="line-2-inputs-1"]');
         await p.mouse.move(0, 0);
         assert.deepEqual(await focused('input[name="line-2-inputs-1"]'), [true, false]);
-        assert.equal(await off(2), '0');
+        await hidden(2);
 
         await p.click('#center button[name="step-off-3"]');
         await p.mouse.move(0, 0);
         assert.deepEqual(await focused('button[name="step-off-3"]'), [true, false]);
-        assert.equal(await off(2), '0');
+        await hidden(2);
       }),
     ),
   );
