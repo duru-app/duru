@@ -1615,7 +1615,7 @@ test('a candidate taken back to its originals lists them again, also after the n
     const keptFile = stored(posted);
     const kept = files();
 
-    backToOriginal(cfg.storiesDir, listed().list[1], { author: 'hit' }, new Date('2026-10-21T03:00:00Z'));
+    backToOriginal(cfg.storiesDir, listed().list[1], listed().list, { author: 'hit' }, new Date('2026-10-21T03:00:00Z'));
     assert.deepEqual(orders(), [a, [SIGNIN, LAB]]);
     assert.deepEqual(listed().discarded.map((d: any) => [d.screens, d.reason]), [[[HOME, HELP], '원래대로 되돌림']]);
     assert.deepEqual(stored(posted), keptFile);
@@ -1645,7 +1645,7 @@ test('a test walking the order of a candidate replacing others is shown under it
     assert.deepEqual([at([HOME, HELP])!.name, at([HOME, HELP])!.originals!.map((r: { screens: string[] }) => r.screens)], ['opens help from home', [a]]);
     assert.equal(at(a), undefined);
 
-    backToOriginal(cfg.storiesDir, at([HOME, HELP])!, { author: 'hit' }, new Date('2026-10-21T03:00:00Z'));
+    backToOriginal(cfg.storiesDir, at([HOME, HELP])!, listed(traced).list, { author: 'hit' }, new Date('2026-10-21T03:00:00Z'));
     assert.equal(at([HOME, HELP]), undefined);
     assert.equal(at(a)!.name, 'a');
 
@@ -1661,7 +1661,7 @@ test('a candidate whose comment already gave a story cannot go back to the origi
     storeCandidates(cfg.storiesDir, listed().list);
     const id = comment({ candidate: a.join(' > ') });
     post(id, { name: '첫 시도', screens: [HOME, HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }] }] });
-    backToOriginal(cfg.storiesDir, listed().list.find((c) => c.name === '첫 시도')!, { author: 'hit' }, new Date('2026-10-21T03:00:00Z'));
+    backToOriginal(cfg.storiesDir, listed().list.find((c) => c.name === '첫 시도')!, listed().list, { author: 'hit' }, new Date('2026-10-21T03:00:00Z'));
     post(id, { name: '둘째 시도', screens: [HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }, { step: 2, reason: NO_SIGNIN }] }] });
     acceptCandidate(cfg.storiesDir, listed().list.find((c) => c.name === '둘째 시도')!, { id: 'help', name: '둘째 시도', author: 'hit' });
     undiscardCandidate(cfg.storiesDir, [HOME, HELP], { author: 'hit' }, new Date('2026-10-21T04:00:00Z'));
@@ -1672,7 +1672,7 @@ test('a candidate whose comment already gave a story cannot go back to the origi
 
 test('only a candidate that replaces others can be taken back to its originals, and a discarded file with a wrong mark is reported', () => {
   withReplaceable(HELP_VISITS, ({ cfg, listed }) => {
-    assert.throws(() => backToOriginal(cfg.storiesDir, listed().list[0], { author: 'hit' }), { message: '이 후보는 대신하는 원래 후보가 없습니다' });
+    assert.throws(() => backToOriginal(cfg.storiesDir, listed().list[0], listed().list, { author: 'hit' }), { message: '이 후보는 대신하는 원래 후보가 없습니다' });
     const folder = path.join(cfg.storiesDir, 'discarded');
     fs.mkdirSync(folder, { recursive: true });
     fs.writeFileSync(path.join(folder, 'bad.json'), JSON.stringify({ screens: [HOME], reason: 'r', author: 'hit', date: '2026-10-21', backToOriginal: 'yes' }));
@@ -1723,6 +1723,44 @@ test('several candidates may answer one comment with no target, and once one of 
     assert.equal(files().length, 3);
   });
 });
+
+const postSplit = (comment: (target?: object) => string, post: (comment: string, input: Record<string, unknown>) => Posted) => {
+  const a = [SIGNIN, HOME, HELP];
+  const id = comment({ candidate: a.join(' > ') });
+  post(id, { name: '홈', screens: [HOME], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }, { step: 3, reason: '도움말은 다른 후보로 나눕니다' }] }] });
+  post(id, { name: '도움말', screens: [HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }, { step: 2, reason: '홈은 다른 후보로 나눕니다' }] }] });
+  return a;
+};
+
+test('one comment on a candidate may split it into several candidates that each name it in replaces, each showing the original with the steps the others took, while a candidate for another comment still cannot name it', () => {
+  withReplaceable(HELP_VISITS, ({ cfg, comment, post, listed, files }) => {
+    const a = postSplit(comment, post);
+    const at = (name: string) => listed().list.find((c) => c.name === name)!;
+    assert.deepEqual(listed().list.map((c) => c.name).sort(), ['b', '도움말', '홈']);
+    assert.deepEqual(at('홈').originals!.map((r) => [r.screens, r.elsewhere]), [[a, [[], [], ['도움말']]]]);
+    assert.deepEqual(at('도움말').originals!.map((r) => [r.screens, r.elsewhere]), [[a, [[], ['홈'], []]]]);
+    assert.deepEqual([at('홈').split, at('도움말').split], [[at('도움말').key], [at('홈').key]]);
+
+    assert.throws(() => post(comment({ candidate: a.join(' > ') }), { name: '로그인과 홈', screens: [SIGNIN, HOME], replaces: [{ screens: a, dropped: [{ step: 3, reason: 'x' }] }] }),
+      { message: `replaces 의 1 번째 원래 후보 ${a.join(' > ')} 는 지금 후보 목록에 없습니다` });
+    assert.equal(files().length, 2);
+
+    acceptCandidate(cfg.storiesDir, at('홈'), { id: 'home', name: '홈', author: 'hit' });
+    assert.deepEqual(listed().list.map((c) => [c.name, c.originals]), [['b', undefined], ['도움말', undefined]]);
+  });
+});
+
+for (const [which, pressed] of [['first', '홈'], ['second', '도움말']]) {
+  test(`going back to the original from the ${which} split candidate takes down every candidate the comment split the original into and lists the original again`, () => {
+    withReplaceable(HELP_VISITS, ({ cfg, comment, post, listed }) => {
+      const a = postSplit(comment, post);
+      const list = listed().list;
+      backToOriginal(cfg.storiesDir, list.find((c) => c.name === pressed)!, list, { author: 'hit' }, new Date('2026-10-21T03:00:00Z'));
+      assert.deepEqual(listed().list.map((c) => c.screens), [a, [SIGNIN, LAB]]);
+      assert.deepEqual(listed().discarded.map((d: any) => [d.screens, d.reason]).sort(), [[[HELP], '원래대로 되돌림'], [[HOME], '원래대로 되돌림']]);
+    });
+  });
+}
 
 test('a candidate for a comment on a candidate or on nothing is refused with why, writing nothing, without the originals it replaces, with an original not listed, a step left out without a reason, the steps in another order, dropped steps that do not fit or an order already listed, while a candidate for a comment on a screen order takes no originals', () => {
   withReplaceable(HELP_VISITS, ({ cfg, comment, post, files }) => {

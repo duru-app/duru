@@ -516,7 +516,8 @@ export async function startReviewServer(config: any, { port = 0, author = review
       inputsToCheck: map?.inputsToCheck,
     });
   };
-  const findCandidate = (key: unknown) => storyCandidates(config, readMap(mapFile), mapFile, readTests(config).traced).list.find((c) => c.key === key);
+  const listedCandidates = () => storyCandidates(config, readMap(mapFile), mapFile, readTests(config).traced).list;
+  const findCandidate = (key: unknown) => listedCandidates().find((c) => c.key === key);
   const candidateWhere = (key: string) => {
     try {
       const found = findCandidate(key);
@@ -725,7 +726,8 @@ export async function startReviewServer(config: any, { port = 0, author = review
             return send(res, 400, 'text/plain', err.message);
           }
         }
-        const candidate = findCandidate(input.key);
+        const listed = listedCandidates();
+        const candidate = listed.find((c) => c.key === input.key);
         if (!candidate) return send(res, 404, 'text/plain', `후보 ${input.key} 가 없습니다`);
         if (req.url === '/api/candidates/lines') {
           try {
@@ -746,7 +748,7 @@ export async function startReviewServer(config: any, { port = 0, author = review
           const written = req.url === '/api/candidates/accept'
             ? acceptCandidate(config.storiesDir, candidate, { id: input.id, name: input.name, author: author.name, steps: input.steps })
             : req.url === '/api/candidates/original'
-              ? backToOriginal(config.storiesDir, candidate, { author: author.name })
+              ? backToOriginal(config.storiesDir, candidate, listed, { author: author.name })
               : discardCandidate(config.storiesDir, candidate, { reason: input.reason, author: author.name });
           return send(res, 201, 'application/json', JSON.stringify(written));
         } catch (err: any) {

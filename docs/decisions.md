@@ -2369,6 +2369,23 @@ Alternatives compared:
   to another source needed its own exception. The fresh one stays on the card, and the list says on any candidate of that
   order which originals it replaces.
 
+**One comment splits a candidate into several by naming the same original in each, and the parts are found from the
+candidate files, with no field that groups them.** From #606. While the original is listed for no other reason than
+a candidate for the same comment replacing it, `duru candidate` for that comment may name it again; for another
+comment it stays refused, so two answers to different requests do not share an original. The parts of a split are the
+listed candidate files for the same comment that name a common original. 「되돌리기」 on one writes a
+`"backToOriginal": true` record for each part, since one part left listed would keep the original hidden, and
+「복원」 brings back one part at a time, which hides the original again. Two answers to one comment are now told apart
+by the steps each dropped as well, so accepting one part leaves the others listed instead of counting them as the
+same answer. A part whose original a story still replaces, such as the part left after another was accepted, shows no
+originals and no 「되돌리기」, as a candidate whose comment already gave a story does, because the undo could not
+bring the original back (model's decisions in #606, not yet confirmed).
+Alternatives compared:
+- A split id written into the candidate's source: groups the parts without comparing originals, but adds a stored
+  field that older files lack, and the comment and the original already say the same.
+- Letting the first part keep the original in the list until every part is posted: needs to know how many parts
+  are coming, which nothing in the comment says.
+
 **✎ on a candidate stores the ID and name it will be accepted under in the candidate file, as `storyId` and `name`, and
 writes no story.** Driver's decision in #552 (2026-11-06): ✎ sits beside the title and only edits, and 「스토리로 받기」
 accepts under what it stored. The edit lives in the candidate file the way taking a step out does, and a candidate from

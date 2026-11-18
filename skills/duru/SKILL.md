@@ -412,7 +412,10 @@ A pair the reviewer hands over for tagging appears in the task list under `# Tag
    a screen you put in carries `reason` as above. When two listed candidates become the same order, post one
    candidate naming both in `replaces`; if they typed different values into one box, give the value to keep in that
    step's `inputs`. You may post several candidates for one such comment. The candidates it replaces leave the list.
-   When the reviewer reverts a candidate of yours, the candidates it replaced are listed again and its order stays
+   To split one candidate into several, post each part naming that same original in `replaces`: an original that a
+   candidate for the same comment replaced may be named again, one replaced for another comment may not.
+   When the reviewer reverts a candidate of yours, it and every other part split from the same original for that
+   comment are taken down, the candidates it replaced are listed again and its order stays
    refused, so a new attempt posts another order. A comment on a screen order takes no `replaces`.
    When a comment asks for steps to be taken out of a candidate, take out only the steps nobody needs. Keep a step
    that means something in the story, such as signing in again under another role. Give every dropped step its
