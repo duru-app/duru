@@ -550,14 +550,14 @@ function preconditionLines(r: any, { screensById, restricted }: MapInfo, c?: Con
   ];
 }
 
-export function storyLines(story: any, marks: any[] | null, parts: any[], tests: any, needs: any, mapInfo: MapInfo, formats: string[], brief?: StoryBrief) {
+export function storyLines(story: any, marks: any[] | null, parts: any[], tests: any, needs: any, mapInfo: MapInfo, formats: string[], brief?: StoryBrief, earlier: string[] = []) {
   const problems = reachProblems(story);
   return [
     '',
     `## ${story.id}`,
     '',
     `- name: ${within(story.name, '  ')}`,
-    ...(marks ? ['- marks:', ...marks.flatMap((m) => entryLines(m)), ...partLines(parts, 'story', STORY_PART_SECTIONS)] : []),
+    ...(marks ? ['- marks:', ...earlier, ...marks.flatMap((m) => entryLines(m)), ...partLines(parts, 'story', STORY_PART_SECTIONS)] : []),
     `- story file: ${story.file} (${within(story.author, '  ')}, ${story.date.slice(0, 10)})`,
     ...(story.memo ? [`- memo: ${within(story.memo, '  ')}`] : []),
     `- status: ${STORY_STATUS[story.status]}`,
@@ -842,6 +842,12 @@ export function taskList(config: any, lists: TaskLists = {}) {
   const hasPicks = Object.values<CaseKind>(config.caseKinds).some((k) => k.picks.length > 0);
   const partsOf = (id: string) => marks.attached.filter((m) => m.target.part && m.target.node === id);
   const storyPartsOf = (id: string) => marks.attached.filter((m) => m.target.part && m.target.story === id && m.where);
+  const candidateName = (key: string) => candidates.list.find((c) => c.key === key)?.name ?? candidates.gone?.[key] ?? key;
+  const earlierLines = (id: string) => {
+    const said = marks.attached.filter((m) => m.became?.story === id).flatMap((m) => m.history.filter((r) => r.replyTo === undefined).map((r) => ({ m, r })));
+    const once = said.filter(({ r }, i) => said.findIndex((x) => x.r.id === r.id) === i).sort((a, b) => a.r.date.localeCompare(b.r.date) || a.r.id.localeCompare(b.r.id));
+    return once.flatMap(({ m, r }) => [markLine(r, `as candidate ${within(candidateName(m.target.candidate!), '    ')}`), ...repliesTo(m, r).map((reply: any) => markLine(reply, undefined, '    '))]);
+  };
   const caseKinds = hasKinds ? caseKindLines(map, config.caseKinds, caseTargets, marks.attached, tests.nodes, new Set([...screens, ...calls].filter(marked).map((n: any) => n.id)), formats, config.baselineMap !== null) : null;
   const caseWork = caseKinds && caseKinds.undecided + caseKinds.untested + caseKinds.review > 0 ? caseKinds : null;
 
@@ -876,6 +882,9 @@ export function taskList(config: any, lists: TaskLists = {}) {
   }
   if (partKinds.has('condition') || partKinds.has('link')) {
     out[2] += ' Under `comments on opening conditions` and `comments on incoming links`, each role or setting condition and each link into the screen a reviewer left a comment on is named with the source file and line it is written at; if the app does not do what duru read there, tell the user it is a duru defect, and otherwise answer with that line.';
+  }
+  if (storyMarks.some((m) => earlierLines(m.target.story!).length)) {
+    out[2] += ' A `comment, as candidate <name>` line under a story is a comment a reviewer left on the story candidate it was accepted from, or on a candidate that one replaced, before it became the story.';
   }
   if (marks.attached.some((m) => [...m.history].some((r: any) => r.targets?.length > 1))) {
     out[2] += ' A comment left on several targets shows under each of them, with the list of all of them; answer it once.';
@@ -937,14 +946,14 @@ export function taskList(config: any, lists: TaskLists = {}) {
   if (storyMarks.length) out.push('', '# Stories', '', `Story files are in \`${relative(config.storiesDir)}\`.`);
   if (storyMarks.length && stories.stale) {
     out.push('', 'The map was built by a duru older than stories, so these stories are not checked against it. Run `duru rebuild` and read this list again.');
-    for (const m of storyMarks) out.push('', `## ${m.target.story}`, '', '- marks:', ...entryLines(m));
+    for (const m of storyMarks) out.push('', `## ${m.target.story}`, '', '- marks:', ...earlierLines(m.target.story!), ...entryLines(m));
   }
   const mapInfo = { screensById: new Map<string, any>(map.screens.map((s: any) => [s.id, s])), restricted };
   for (const id of [...new Set(storyMarks.map((m) => m.target.story))]) {
     const own = storyMarks.filter((m) => m.target.story === id);
     const story = stories.list.find((s) => s.id === id);
-    if (story) out.push(...storyLines(story, own, storyPartsOf(id!), tests, needs, mapInfo, formats));
-    else if (!stories.stale) out.push('', `## ${id}`, '', '- marks:', ...own.flatMap((m) => entryLines(m)), '- story file: could not be read; `duru rebuild` prints why');
+    if (story) out.push(...storyLines(story, own, storyPartsOf(id!), tests, needs, mapInfo, formats, undefined, earlierLines(id!)));
+    else if (!stories.stale) out.push('', `## ${id}`, '', '- marks:', ...earlierLines(id!), ...own.flatMap((m) => entryLines(m)), '- story file: could not be read; `duru rebuild` prints why');
   }
   out.push(...codeChangedLines(marks.attached, tests));
   if (caseKinds) out.push(...caseKinds.lines);

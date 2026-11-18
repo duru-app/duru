@@ -154,11 +154,11 @@ test('the agent skill says what a comment on a screen order carries and that it 
   assert.match(SKILL, /Never write a story file or a candidate file yourself/);
 });
 
-test('the agent skill says what a comment on a story candidate carries and that it is answered from the record or the test, outside the task list', () => {
+test('the agent skill says what a comment on a story candidate carries, that it is answered from the record or the test outside the task list, and how the task list shows it once the candidate is accepted', () => {
   assert.match(SKILL, /`\{ "candidate": "<key>" \}`/);
   assert.match(SKILL, /`\{ "record", "steps" \}` with `stepRanges`[\s\S]*`\{ "report", "tests" \}`/);
   assert.match(SKILL, /answer why that order came out,\s+citing the record and the steps behind each screen, or the test by its title/);
-  assert.match(SKILL, /never appears in the task list/);
+  assert.match(SKILL, /is not in the task list while it is a candidate[\s\S]*Once the candidate is accepted, the task list shows it, with its replies, under\s+that story's marks as a `comment, as candidate <name>` line/);
 });
 
 test('the agent skill says what a comment on several targets or none carries, that it is answered once, and where the task list puts it', () => {

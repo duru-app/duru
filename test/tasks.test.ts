@@ -4,6 +4,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { acceptCandidate, addCommentCandidate, storyCandidates } from '../src/candidates.ts';
 import { loadConfig } from '../src/config.ts';
 import { discardCandidate } from '../src/candidates.ts';
 import { addJudgment } from '../src/judgments.ts';
@@ -1249,6 +1250,37 @@ test('comments on a step and on the link between two steps of an open story are 
     assert.doesNotMatch(out, /Gone\./);
     assert.match(out.split('\n')[2], / Under `comments on steps` and `comments on links between steps`, /);
   }, { storiesDir: 'example-stories' });
+});
+
+test('an open story accepted from a candidate lists first under its marks the comments left on that candidate and on the candidate it replaced, oldest first with their replies, each as a comment as candidate with that candidate\'s name, and the intro says what they are', () => {
+  withFixtureCopy(({ configFile, cli }) => {
+    cli('rebuild');
+    const config = loadConfig(configFile);
+    const mapFile = path.join(config.outDir, 'map.json');
+    const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+    const listed = () => storyCandidates(config, map, mapFile).list;
+    const help = listed().find((c) => c.name === 'open-help')!;
+    const asked = addMark(config.marksDir, { target: { candidate: help.key }, note: 'Drop the sign-in and the beta inbox.', author: 'b' }, new Date('2026-10-12T01:00:00Z'));
+    addReply(config.marksDir, { replyTo: asked.id, note: 'Posted one without them.' }, new Date('2026-10-12T02:00:00Z'));
+    addCommentCandidate(config, map, mapFile, [], { comment: asked.id, name: 'help-alone', screens: ['/home#Home', '/help#Help'], replaces: [{ screens: help.screens, dropped: [{ step: 1, reason: 'no sign-in' }, { step: 3, reason: 'beta screen' }] }] });
+    const fixed = listed().find((c) => c.name === 'help-alone')!;
+    addMark(config.marksDir, { target: { candidate: fixed.key }, note: 'Looks right.', author: 'b' }, new Date('2026-10-12T03:00:00Z'));
+    acceptCandidate(config.storiesDir, fixed, { id: 'help-alone', name: 'help-alone', author: 'b' });
+    addMark(config.marksDir, { target: { story: 'help-alone' }, status: 'needs-more', note: 'Write it.', author: 'b' }, new Date('2026-10-12T04:00:00Z'));
+
+    const out = cli('tasks');
+    const story = out.split('## help-alone\n')[1].split('\n## ')[0];
+    assert.match(story, new RegExp([
+      '^- name: help-alone',
+      '- marks:',
+      '  - comment, as candidate open-help — "Drop the sign-in and the beta inbox\\." \\(b, 2026-10-12\\)',
+      '    - reply — "Posted one without them\\." \\(agent, 2026-10-12\\)',
+      '  - comment, as candidate help-alone — "Looks right\\." \\(b, 2026-10-12\\)',
+      '  - needs-more — "Write it\\." \\(b, 2026-10-12\\)',
+      '- story file: help-alone\\.json',
+    ].join('\n'), 'm'));
+    assert.match(out.split('\n')[2], / A `comment, as candidate <name>` line under a story is a comment a reviewer left on the story candidate it was accepted from, or on a candidate that one replaced, before it became the story\./);
+  }, { storiesDir: 'example-stories', visitRecords: ['example-visits'] });
 });
 
 test('a comment left on two open screens shows under each with both named, and a comment with no target comes first under a section of its own with its reply', () => {
