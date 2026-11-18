@@ -378,7 +378,7 @@ A pair the reviewer hands over for tagging appears in the task list under `# Tag
    target project. A comment on a candidate takes no status and is not in the task list while it is a candidate, so
    act on it when its line arrives. Once the candidate is accepted, the task list shows it, with its replies, under
    that story's marks as a `comment, as candidate <name>` line, written about the candidate before it became that
-   story.
+   story; a story with no open mark prints none of them.
    A comment can also be on a screen order the reviewer picked while writing a new story, with `target` set to
    `{ "screens": [ … ] }`, the screen IDs in the order picked; the reviewer often picks only the ends and writes in
    the note what should happen between them. `target` may also carry `gaps`, pairs of neighbouring step numbers such
