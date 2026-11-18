@@ -233,10 +233,10 @@ export const toList = async (p: Page) => {
   await p.click('#view-list');
 };
 
-export async function withPage(base: string, fn: (p: Page, errors: string[]) => Promise<void>, { view = 'list', setup }: { view?: string; setup?: (page: Page) => Promise<unknown> } = {}) {
+export async function withPage(base: string, fn: (p: Page, errors: string[]) => Promise<void>, { view = 'list', setup, touch = false }: { view?: string; setup?: (page: Page) => Promise<unknown>; touch?: boolean } = {}) {
   const browser = await chromium.launch();
   try {
-    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, ...(touch ? { hasTouch: true, isMobile: true } : {}) });
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));

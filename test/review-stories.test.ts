@@ -562,6 +562,45 @@ test('in a browser, the ✕ of a candidate step shows only while the pointer is 
   );
 });
 
+test('in a browser on a touch screen, every ✕ of a candidate step is in sight without a pointer over it', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await postAgentCandidate(base, 'lab-path');
+        await openHelpCandidate(p);
+        assert.equal(await p.evaluate(() => matchMedia('(hover: none)').matches && matchMedia('(any-pointer: coarse)').matches), true);
+        const shown = await p.locator('#center .story-path .step button.step-off').evaluateAll((buttons) => buttons.map((b) => getComputedStyle(b).opacity));
+        assert.deepEqual(shown, ['1', '1', '1', '1']);
+      }, { touch: true }),
+    ),
+  );
+});
+
+test('in a browser, a ✕ hides once the pointer leaves its step even though a checkbox or a ✕ in the card still has the focus from a mouse click', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await postAgentCandidate(base, 'lab-path');
+        await openHelpCandidate(p);
+        await p.click('#candidate-list li:has-text("lab-path")');
+        await p.waitForSelector('#center .line-count');
+        const off = (n: number) => p.locator(`#center button[name="step-off-${n}"]`).evaluate((b) => getComputedStyle(b).opacity);
+        const focused = (sel: string) => p.evaluate((s) => [document.activeElement?.matches(s), document.activeElement?.matches(`${s}:focus-visible`)], sel);
+
+        await p.click('#center input[name="line-2-inputs-1"]');
+        await p.mouse.move(0, 0);
+        assert.deepEqual(await focused('input[name="line-2-inputs-1"]'), [true, false]);
+        assert.equal(await off(2), '0');
+
+        await p.click('#center button[name="step-off-3"]');
+        await p.mouse.move(0, 0);
+        assert.deepEqual(await focused('button[name="step-off-3"]'), [true, false]);
+        assert.equal(await off(2), '0');
+      }),
+    ),
+  );
+});
+
 const chipsIn = (p: Page, list: string) => p.locator(`${list} li`).evaluateAll((items) => items.map((li) => [...li.querySelectorAll('.chip')].map((c) => c.textContent)));
 
 test('in a browser, the story list has a group of candidates, a chosen candidate shows its path like a story with the record steps behind each screen, and accepting it writes a story file under the name of the record and moves it to the story list', { skip: browserMissing }, async () => {
