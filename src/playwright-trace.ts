@@ -177,24 +177,27 @@ export function fillCode({ box, value }: StepInput) {
   return `await ${first}${rest.map((r) => `.and(${r})`).join('')}${box.nth ? `.nth(${box.nth - 1})` : ''}.fill(${JSON.stringify(value)});`;
 }
 
-function zipEntries(buffer: Buffer): Map<string, () => Buffer> {
+type ZipEntry = (() => Buffer) & { size: number };
+
+function zipEntries(buffer: Buffer): Map<string, ZipEntry> {
   let end = buffer.length - 22;
   while (end >= 0 && buffer.readUInt32LE(end) !== END_OF_DIRECTORY) end -= 1;
   if (end < 0) throw new Error('not a zip file');
-  const entries = new Map<string, () => Buffer>();
+  const entries = new Map<string, ZipEntry>();
   let at = buffer.readUInt32LE(end + 16);
   for (let i = buffer.readUInt16LE(end + 10); i > 0; i -= 1) {
     if (buffer.readUInt32LE(at) !== DIRECTORY_ENTRY) throw new Error('broken zip directory');
     const method = buffer.readUInt16LE(at + 10);
     const size = buffer.readUInt32LE(at + 20);
+    const unpacked = buffer.readUInt32LE(at + 24);
     const nameLength = buffer.readUInt16LE(at + 28);
     const local = buffer.readUInt32LE(at + 42);
     const name = buffer.toString('utf8', at + 46, at + 46 + nameLength);
-    entries.set(name, () => {
+    entries.set(name, Object.assign(() => {
       const start = local + 30 + buffer.readUInt16LE(local + 26) + buffer.readUInt16LE(local + 28);
       const data = buffer.subarray(start, start + size);
       return method === 0 ? data : zlib.inflateRawSync(data);
-    });
+    }, { size: unpacked }));
     at += 46 + nameLength + buffer.readUInt16LE(at + 30) + buffer.readUInt16LE(at + 32);
   }
   return entries;
@@ -225,7 +228,7 @@ export function readTrace(file: string): TraceResult {
   if (!fs.existsSync(file)) return { reason: 'trace 파일이 없습니다' };
   let events: any[];
   let network: any[];
-  let entries: Map<string, () => Buffer>;
+  let entries: Map<string, ZipEntry>;
   try {
     entries = zipEntries(fs.readFileSync(file));
     const named = (ending: string) => [...entries].filter(([name]) => name.endsWith(ending) && name !== 'test.trace').flatMap(([, read]) => jsonLines(read));
@@ -284,7 +287,7 @@ export function readTrace(file: string): TraceResult {
   const movedBetween = (page: string, from: number, to: number, url: string | undefined) =>
     url !== undefined && Boolean(seenOn.get(page)?.some((e) => e.at > from && e.at <= to && e.url !== url));
   const framesBetween = (page: string, from: number, to: number) => framesOn.get(page)?.filter((f) => f.timestamp >= from && f.timestamp < to) ?? [];
-  const drawn = (shot: string | undefined) => (shot !== undefined && entries.get(`resources/${shot}`)!().length >= DRAWN_PICTURE_BYTES ? shot : undefined);
+  const drawn = (shot: string | undefined) => (shot !== undefined && entries.get(`resources/${shot}`)!.size >= DRAWN_PICTURE_BYTES ? shot : undefined);
   const shotLoaded = (action: any, end: number, url: string) => {
     const page = action.pageId;
     const touch = touchAfter(action, end);
@@ -309,7 +312,7 @@ export function readTrace(file: string): TraceResult {
       const snapshot = snapshots.get(`${name}@${action.callId}`);
       if (!snapshot) continue;
       timeline.push({ at, page: action.pageId, url: snapshot.frameUrl });
-      const shot = name !== 'after' ? shotUntil(action.pageId, at) : shotLoaded(action, endTime, snapshot.frameUrl);
+      const shot = name !== 'after' ? drawn(shotUntil(action.pageId, at)) : shotLoaded(action, endTime, snapshot.frameUrl);
       sightings.push({ at, page: action.pageId, from: action.startTime, shot, url: snapshot.frameUrl, navigated: name === 'after' && NAVIGATIONS.has(action.method) });
     }
     const kind = kindOf(action.method);

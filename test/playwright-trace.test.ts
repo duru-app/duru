@@ -872,6 +872,21 @@ test('a page opened or a check whose picture before the next step acts is under 
   ]);
 });
 
+test('a page first seen as the next step starts, after a click whose last snapshot still shows the old address, is marked as having no picture when the last one until then is under 4 KB', () => {
+  const lines = pictureWalk([
+    ...pageAct('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/home', 20),
+    ...pageAct('2', 'click', 30, 40), frameSnapshot('before@2', 'http://x/home', 30), frameSnapshot('after@2', 'http://x/home', 40),
+    ...pageAct('3', 'fill', 50, 60, { selector: 'internal:label="메모"', value: 'a' }),
+    frameSnapshot('before@3', 'http://x/new', 50), frameSnapshot('input@3', 'http://x/new', 55), frameSnapshot('after@3', 'http://x/new', 60),
+  ], [['home', 22], ['pressed', 42], ['white', 47, 2500], ['filled', 62]]);
+  assert.deepEqual(lines.map((line) => (line.kind === 'request' ? line.url : `${line.kind} ${line.url} ${'shot' in line ? line.shot : 'same'}`)), [
+    'open /home home.jpeg',
+    'press /home pressed.jpeg',
+    'open /new null',
+    'write /new filled.jpeg',
+  ]);
+});
+
 test('a check that passed before the screen was drawn shows the last picture before the next step acts, and the page opened before it the last picture before the check ends', () => {
   assert.deepEqual(pictureLines([
     ...pageAct('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/list', 20),

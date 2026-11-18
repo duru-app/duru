@@ -3095,18 +3095,20 @@ the next step did
 when that was painted before the next step ended, as an `expect` followed by a click; a test with several pages
 shows the pictures of the step's own page only; a page first seen as an action started shows the last picture taken
 until then, which is still the old page when the new one was painted later, and none when its page had no picture yet,
-as on the first action in a popup; 「trace」 is greyed out only when the trace file is gone, not when it was
-replaced by another run's trace at the same place; `rebuild` reads each trace a second time to copy its pictures, and
-the review server checks that each trace file is there every time it sends the page's data.
+as on the first action in a popup, or when that picture is not drawn, as the next entry says; 「trace」 is greyed out
+only when the trace file is gone, not when it was replaced by another run's trace at the same place; `rebuild` reads
+each trace a second time to copy its pictures, and the review server checks that each trace file is there every time
+it sends the page's data.
 
 **A page opened or a check whose picture is under 4 KB, a screen not drawn yet, shows no picture.**
 Asked for in #615 (2026-11-19), left from #576: when the next step acts 1–40 ms before the drawn screen is pictured,
 as a second `goto` or a `fill` right after the page answered, the time up to that step holds only a white screen or a
 spinner, and the line showed it. The picture an opened page or a check takes by the rules above, whichever of them
-found it, is left off when it is under 4 KB: `rebuild` writes `shot: null` on the line, as for a page with no picture
-yet, so the line shows no small picture and 「재생」 says 「화면 그림 없음」. A press or a write keeps the first picture
-after it, blank or not. Measured on the 5 traces of two private apps that could be read on 2026-11-19 (`playwright-core`
-1.60.0): 14 of 35 「열기」 and 3 of 67 「확인」 showed a picture under 4 KB, and now show none; the other lines are the same.
+found it, a page first seen as the next step starts included, is left off when it is under 4 KB: `rebuild` writes
+`shot: null` on the line, as for a page with no picture yet, so the line shows no small picture and 「재생」 says
+「화면 그림 없음」. A press or a write keeps the first picture after it, blank or not. Measured on the 5 traces of two
+private apps that could be read on 2026-11-19 (`playwright-core` 1.60.0): 14 of 35 「열기」 and 3 of 67 「확인」 showed a
+picture under 4 KB, and now show none; the other lines are the same.
 What tells such a picture: of the 1,260 pictures in those traces, the 449 under 4 KB are a white screen, a grey one
 with a spinner or a white one with a notice in a corner; 30 more white screens with a notice are 4.0–4.4 KB; of the 781
 above 4.5 KB, all but one above 7 KB, every one opened was a drawn screen. The plainest drawn page in duru's own trace
