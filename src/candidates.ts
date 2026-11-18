@@ -8,6 +8,7 @@ import { compare, isPlainObject } from './config.ts';
 import { jsonFiles } from './json-files.ts';
 import { catchAllScreens } from './map-fitness.ts';
 import { loadMarks, orderKey, recordKind, recordName, targetsOf, writeNewRecord } from './marks.ts';
+import { pathParts } from './path-values.ts';
 import type { SentRequests } from './request-options.ts';
 import { addStory, CANDIDATES, checkFreeStoryId, DISCARDED, inputsProblem, joinedFields, keptSteps, RECORDS, isDate, isScreenList, isSource, isText, loadStories, sameBox, sourceAfterSteps, SOURCE_SHAPES, STEP_FIELDS, stepProblem, STORY_ID, writableStoriesFolder } from './stories.ts';
 import type { CommentSource, ReplacedCandidate, StepFields, StepInput, StorySource } from './stories.ts';
@@ -291,6 +292,8 @@ const TAKEN_STEPS = 'takenSteps 는 구간으로 받은 스토리를 { "steps": 
 const isTakenSteps = (list: unknown, length: number) => Array.isArray(list) && list.length > 0 && list.every((t: any, i) => isPlainObject(t)
   && Object.keys(t).length === 2 && isText(t.story) && Array.isArray(t.steps) && t.steps.length === 2 && t.steps.every(Number.isInteger)
   && t.steps[0] >= 1 && t.steps[0] <= t.steps[1] && t.steps[1] <= length && (i === 0 || (list[i - 1] as TakenSteps).steps[1] < t.steps[0]));
+const STORED_STORY_ID = 'storyId 는 받을 때 쓸 스토리 ID 로, 영문 소문자 · 숫자 · - · _ 로만 씁니다';
+const storyIdFits = (id: unknown) => id === undefined || (typeof id === 'string' && STORY_ID.test(id));
 
 function storedProblemOf(c: any) {
   if (!isPlainObject(c)) return '스토리 후보는 JSON 객체여야 합니다';
@@ -314,7 +317,7 @@ function storedProblemOf(c: any) {
       && off.every((s: unknown, i: number) => Number.isInteger(s) && (s as number) >= 1 && (s as number) <= c.screens.length && (i === 0 || (off[i - 1] as number) < (s as number)));
     if (!fits) return 'offSteps 는 받을 때 뺄 단계의 번호를 1 부터 세어 작은 것부터 하나씩 적은 목록이어야 하고, 단계를 하나 이상 남겨야 합니다';
   }
-  if (c.storyId !== undefined && !(typeof c.storyId === 'string' && STORY_ID.test(c.storyId))) return 'storyId 는 받을 때 쓸 스토리 ID 로, 영문 소문자 · 숫자 · - · _ 로만 씁니다';
+  if (!storyIdFits(c.storyId)) return STORED_STORY_ID;
   if (c.acceptedAs !== undefined && !isText(c.acceptedAs)) return 'acceptedAs 는 받은 스토리의 ID 여야 합니다';
   if (c.takenSteps !== undefined && !isTakenSteps(c.takenSteps, c.screens.length)) return TAKEN_STEPS;
   return c.offLines === undefined ? null : offLinesProblem(c.offLines, c.source);
@@ -856,6 +859,35 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   return { list: checkStories(map, checked), discarded: shown, gone, notices: all, missedRules, cutByRules: cut.size, onlyCatchAll };
 }
 
+type StoryTagged = Record<string, { title: string; source: string }[]>;
+
+const slugOf = (text: string) => text.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+
+function taggedId(source: Candidate['source'], storyTests: StoryTagged) {
+  if (!('tests' in source)) return undefined;
+  const ids = Object.keys(storyTests).filter((id) => storyTests[id].some((t) => source.tests.includes(t.title) && t.source.split(path.sep).join('/') === source.report));
+  return ids.length === 1 ? ids[0] : undefined;
+}
+
+function screenName(screen: string, onMap: { screens: { id: string; path: string }[] }) {
+  const routePath = onMap.screens.find((s) => s.id === screen)?.path ?? screen.split('#')[0];
+  return pathParts(routePath).filter((p) => typeof p === 'string').join('/').split('/').map(slugOf).filter(Boolean).at(-1);
+}
+
+export function proposeStoryIds<C extends Candidate>(list: C[], storyIds: string[], storyTests: StoryTagged, onMap: { screens: { id: string; path: string }[] }): (C & { proposedId?: string })[] {
+  const taken = new Set(storyIds);
+  return list.map((c) => {
+    const given = c.storyId ?? taggedId(c.source, storyTests);
+    if (given) return { ...c, proposedId: given };
+    const lastLeft = c.screens.filter((_, i) => !c.offSteps?.includes(i + 1)).at(-1)!;
+    const made = /[a-z]/i.test(c.name) ? slugOf(c.name) : screenName(lastLeft, onMap);
+    if (!made) return c;
+    let id = made;
+    for (let n = 2; taken.has(id); n++) id = `${made}-${n}`;
+    return { ...c, proposedId: id };
+  });
+}
+
 const AGENT_STEPS = 'screens 는 화면 ID 나 { "screen", "reason", "needs", "linkNeeds", "inputs", "expects" } 객체를 하나 이상 차례대로 담은 목록이어야 합니다';
 
 function agentSteps(screens: unknown) {
@@ -975,8 +1007,8 @@ function orderChecks(order: ReturnType<typeof targetsOf>[number], steps: ReturnT
 }
 
 export function addCommentCandidate(config: any, map: any, mapFile: string, traced: TracedTest[], input: Record<string, unknown>, now = new Date()) {
-  const { comment, name, screens, replaces } = input;
-  const others = Object.keys(input).filter((k) => !['comment', 'name', 'screens', 'replaces'].includes(k));
+  const { comment, name, screens, replaces, storyId } = input;
+  const others = Object.keys(input).filter((k) => !['comment', 'name', 'screens', 'replaces', 'storyId'].includes(k));
   if (others.length) throw new Error(`모르는 항목이 있습니다: ${others.join(', ')}`);
   const asked = loadMarks(config.marksDir).find((m) => m.id === comment && recordKind(m) === 'comment');
   if (!asked) throw new Error(`코멘트 ${comment} 가 없습니다`);
@@ -986,6 +1018,7 @@ export function addCommentCandidate(config: any, map: any, mapFile: string, trac
   if (order && replaces !== undefined) throw new Error(`코멘트 ${comment} 는 화면 순서에 단 코멘트라 replaces 를 적지 않습니다`);
   if (!order && replaces === undefined) throw new Error(`코멘트 ${comment} 는 ${targets.length ? '후보에 단' : '대상 없는'} 코멘트라 replaces 에 이 후보가 대신하는 원래 후보를 적어야 합니다`);
   if (!isText(name)) throw new Error('name 에 후보 이름을 적어야 합니다');
+  if (!storyIdFits(storyId)) throw new Error(STORED_STORY_ID);
   const steps = agentSteps(screens);
   const askedReplace = order ? null : replacesInput(replaces);
   if (linksFromOldDuru(map)) throw new Error(staleMapMessage(mapFile, '후보'));
@@ -1036,6 +1069,6 @@ export function addCommentCandidate(config: any, map: any, mapFile: string, trac
   const file = path.join(folder, `${date.slice(0, 10)}-${crypto.randomUUID().slice(0, 8)}.json`);
   const stepFields = lines.some((l) => Object.keys(l.fields).length) ? lines.map((l) => l.fields) : undefined;
   const skipped = originals?.reduce((sum, { candidate }) => sum + (candidate.skipped ?? 0), 0);
-  writeNewRecord(file, { name: name.trim(), screens: ids, source, date, ...carried({ stepFields, skipped }) });
+  writeNewRecord(file, { name: name.trim(), screens: ids, source, date, ...carried({ stepFields, skipped }), ...(storyId !== undefined && { storyId }) });
   return { file: relative(config.configDir, file), key: ids.join(' > '), links: checkStories(map, [{ screens: ids }])[0].links };
 }

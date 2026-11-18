@@ -800,72 +800,64 @@ test('story writes that are not JSON requests are refused', async () => {
   );
 });
 
-test('in a browser, accepting a candidate asks for an ID in a window only when the name of the record is already the ID of a story or the server refuses it', { skip: browserMissing }, async () => {
+test('in a browser, a candidate whose ID made from its name a story already has shows and is accepted under the next free number without a window, and when the server refuses the ID it says why under the card, or in a window while the candidate is still open', { skip: browserMissing }, async () => {
   await withRebuiltFixture(CANDIDATES, (config) => {
     fs.writeFileSync(path.join(config.storiesDir, 'open-help.json'), JSON.stringify({ name: '도움말', screens: ['/help#Help'], memo: '', author: 'Kim Min', date: '2026-10-01' }));
-    fs.writeFileSync(path.join(config.storiesDir, 'publish-document.json'), '{');
     return withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
         const ask = '#accept-ask';
         await p.waitForSelector('#screen-list li');
         await p.click(storiesTab);
         await p.click('#candidate-list li:has-text("open-help")');
-        assert.equal(await p.isVisible(ask), false);
+        assert.equal(await p.textContent('#center .title-row .story-id'), 'open-help-2');
         await p.click('#center button.accept');
-        await p.waitForSelector(`${ask}[open]`);
-        assert.equal(await p.textContent(`${ask} .candidate`), '후보 open-help');
-        assert.equal(await p.inputValue('#accept-id'), 'open-help');
-        assert.equal(await p.textContent(`${ask} .invalid`), '같은 ID 의 스토리가 이미 있습니다.');
-        assert.equal(await p.isDisabled(`${ask} button.accept`), true);
-        await p.fill('#accept-id', 'Open Help');
-        assert.equal(await p.textContent(`${ask} .invalid`), '영문 소문자, 숫자, -, _ 만 쓸 수 있습니다.');
-        assert.equal(await p.isDisabled(`${ask} button.accept`), true);
-        await p.keyboard.press('Escape');
-        assert.equal(await p.isVisible(ask), false);
-        assert.equal(await p.evaluate(() => document.activeElement!.className), 'accept');
-        assert.deepEqual(fs.readdirSync(config.storiesDir).filter((f) => f.startsWith('open-help')), ['open-help.json']);
-
-        await p.click('#center button.accept');
-        await p.fill('#accept-id', 'open-help-again');
-        assert.equal(await p.isVisible(`${ask} .invalid`), false);
-        await p.focus(`${ask} button.cancel`);
-        await p.keyboard.press('Enter');
-        assert.equal(await p.isVisible(ask), false);
-        assert.ok(!fs.existsSync(path.join(config.storiesDir, 'open-help-again.json')));
-
-        await p.click('#center button.accept');
-        await p.fill('#accept-id', 'open-help-again');
-        await p.keyboard.press('Enter');
         await p.waitForSelector('#story-list li.selected:has-text("open-help")');
         assert.equal(await p.isVisible(ask), false);
-        assert.equal(JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'open-help-again.json'), 'utf8')).name, 'open-help');
+        assert.equal(JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'open-help-2.json'), 'utf8')).name, 'open-help');
 
         await p.click('#candidate-list li:has-text("publish-document")');
+        assert.equal(await p.textContent('#center .title-row .story-id'), 'publish-document');
         const writes = holdRequests(p, '**/api/candidates/accept');
         await p.click('#center button.accept');
         await p.waitForFunction(() => document.querySelector<HTMLButtonElement>('#center button.accept')!.disabled);
+        fs.writeFileSync(path.join(config.storiesDir, 'publish-document.json'), '{');
         await p.click('#story-list li:has-text("실험실을 열어")');
         writes.release!();
         await p.waitForSelector('#center .story-error');
         assert.match((await p.textContent('#center .story-error'))!, /저장하지 못했습니다: 스토리 ID publish-document 는 .+ 이미 씁니다/);
         assert.equal(await p.isVisible(ask), false);
         assert.deepEqual(errors.splice(0), [BAD_REQUEST]);
-        await p.unroute('**/api/candidates/accept');
 
         await p.click('#candidate-list li:has-text("publish-document")');
+        await p.waitForFunction(() => document.querySelector('#center .story-id')?.textContent === 'publish-document-2');
         await p.click('#center button.accept');
+        await untilSet(() => writes.sent.length === 2, 'the second accept held');
+        fs.writeFileSync(path.join(config.storiesDir, 'publish-document-2.json'), '{');
+        writes.release!();
         await p.waitForSelector(`${ask}[open]`);
-        assert.match((await p.textContent(`${ask} .error`))!, /저장하지 못했습니다: 스토리 ID publish-document 는 .+ 이미 씁니다/);
+        assert.equal(await p.textContent(`${ask} .candidate`), '후보 publish-document');
+        assert.match((await p.textContent(`${ask} .error`))!, /저장하지 못했습니다: 스토리 ID publish-document-2 는 .+ 이미 씁니다/);
         assert.equal(await p.locator('#center .story-error').count(), 0);
-        assert.equal(await p.inputValue('#accept-id'), 'publish-document');
-        await p.click(`${ask} button.accept`);
-        await p.waitForFunction(() => /저장하지 못했습니다/.test(document.querySelector('#accept-ask .error')!.textContent) && !document.querySelector<HTMLButtonElement>('#accept-ask button.cancel')!.disabled);
-        assert.deepEqual(errors.splice(0), [BAD_REQUEST, BAD_REQUEST]);
-        await p.fill('#accept-id', 'publish-document-again');
-        await p.click(`${ask} button.accept`);
+        assert.equal(await p.inputValue('#accept-id'), 'publish-document-2');
+        assert.deepEqual(errors.splice(0), [BAD_REQUEST]);
+        await p.unroute('**/api/candidates/accept');
+        await p.fill('#accept-id', 'Open Help');
+        assert.equal(await p.textContent(`${ask} .invalid`), '영문 소문자, 숫자, -, _ 만 쓸 수 있습니다.');
+        assert.equal(await p.isDisabled(`${ask} button.accept`), true);
+        await p.fill('#accept-id', 'publish-again');
+        assert.equal(await p.isVisible(`${ask} .invalid`), false);
+        await p.focus(`${ask} button.cancel`);
+        await p.keyboard.press('Enter');
+        assert.equal(await p.isVisible(ask), false);
+        assert.equal(await p.evaluate(() => document.activeElement!.className), 'accept');
+        assert.ok(!fs.existsSync(path.join(config.storiesDir, 'publish-again.json')));
+
+        await p.waitForFunction(() => document.querySelector('#center .story-id')?.textContent === 'publish-document-3');
+        await p.click('#center button.accept');
         await p.waitForSelector('#story-list li.selected:has-text("publish-document")');
         assert.equal(await p.isVisible(ask), false);
-        assert.ok(fs.existsSync(path.join(config.storiesDir, 'publish-document-again.json')));
+        assert.ok(fs.existsSync(path.join(config.storiesDir, 'publish-document-3.json')));
+        assert.deepEqual(errors, []);
       }),
     );
   });

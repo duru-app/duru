@@ -2381,6 +2381,21 @@ Alternatives compared:
 - Keeping the edit on the page only: nothing written, but a reload loses it.
 - Accepting on save, as 「고쳐서 받기」 did: one step fewer, but the driver wanted editing and accepting apart.
 
+**A candidate's story ID is the one written for it, or else one duru makes from its name or its last screen, and the
+card shows it before accepting.** Driver's decision in #605 (2026-11-17). The ID is the first of: the ID saved with ✎;
+the `@story:<ID>` tag of the tests the candidate came from, when those tests name one ID only; the `storyId` an agent
+gave `duru candidate`; the name, when it has Latin letters; the path name of the last step left, past path variables
+(`/admin/order-log` → `order-log`). An ID a story already has gets the first free number after it (`-2`, `-3`, …)
+when duru made it, since nobody chose that ID, and opens the window as before when someone wrote it, since a number
+would quietly change what they chose. The agent's ID is kept in the candidate file as `storyId`, the field ✎ writes,
+as the agent's `name` is kept in `name`: ✎ overwrites both, and a candidate an agent posts never comes from tests, so
+no tag stands between the two. The server works the ID out, since the story tags and the story files are there.
+Alternatives compared:
+- Always asking for the ID: nothing guessed, but a reviewer accepting many candidates types an ID each time, which is
+  what #605 asked to end.
+- Making the ID from the name alone, as before: no new rule, but a name with no Latin letters gives nothing, and in a
+  project that names stories in Korean almost every candidate asked for an ID.
+
 **A story picked in the flow is drawn as its steps alone, left to right on one line, with the link verdict on the
 line between each two; the stories are picked from a list left of the drawing.**
 Driver's decision in #250. The story view of #131 kept the main flow and cut away every screen that was neither a
