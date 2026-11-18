@@ -69,7 +69,7 @@
   .screens li { padding: 6px 8px; border-radius: 6px; cursor: pointer; display: flex; gap: 8px; align-items: baseline; }
   .screens li:hover { background: var(--bg); }
   .screens li.selected { background: var(--selected); }
-  .screens .name { flex: 1; min-width: 0; overflow-wrap: break-word; }
+  .screens .name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   :is(#screen-list, .gap-list) li { flex-direction: column; align-items: stretch; gap: 2px; }
   :is(#screen-list, .gap-list) .name { overflow: clip; }
   :is(#screen-list, .gap-list) :is(.component, .seg) { white-space: nowrap; }
@@ -131,7 +131,7 @@
   table.calls td.cell:hover { background: var(--selected); }
   table.calls td.cell.selected { background: var(--selected); box-shadow: inset 0 0 0 1.5px var(--accent); }
   table.calls td.cell .chip { margin-top: 2px; }
-  table.calls td.call { overflow-wrap: break-word; }
+  table.calls td.call { overflow-wrap: anywhere; }
   table.calls td.call.pick { cursor: pointer; }
   table.calls td.call > .chip + .chip { margin-left: 6px; }
   table.calls td.call.pick:hover { background: var(--selected); }
@@ -144,7 +144,7 @@
   table.calls tr.option.gap td.call > div:first-child, table.calls td.cell .none, table.calls td.count .none { color: var(--fail); font-weight: 600; }
   table.calls .result-title { color: var(--muted); font-weight: 600; }
   table.inputs tbody tr { cursor: default; }
-  table.inputs td { font-size: 12px; vertical-align: middle; overflow-wrap: break-word; }
+  table.inputs td { font-size: 12px; vertical-align: middle; overflow-wrap: anywhere; }
   table.inputs td:last-child { width: 40px; white-space: nowrap; }
   table.inputs button { padding: 2px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
   table.inputs button:disabled { cursor: default; opacity: .6; }
@@ -157,7 +157,7 @@
   .test { margin-bottom: 6px; }
   .test .detail { color: var(--muted); font-size: 12px; margin-left: 4px; }
   .test .detail a { white-space: nowrap; }
-  .test .test-tag { display: inline-block; margin-left: 4px; padding: 0 4px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); font-size: 11px; overflow-wrap: break-word; }
+  .test .test-tag { display: inline-block; margin-left: 4px; padding: 0 4px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
   .importers p, .detached p, .passed p { font-size: 12px; margin: 0 0 8px; }
   .chip.level-assert { color: var(--pass); } .chip.level-interact, .chip.level-call { color: var(--accent-text); } .chip.level-visit { color: var(--muted); }
   table.calls td.call .sent-count { font-size: 12px; color: var(--muted); white-space: nowrap; margin-left: 6px; }
@@ -267,7 +267,7 @@
   .method.m-get { background: #2563eb; } .method.m-post { background: #16a34a; } .method.m-put { background: #ea580c; } .method.m-patch { background: #0d9488; } .method.m-delete { background: #dc2626; }
   :is(.case-held, .case-row .case-reason) { margin: 0; font-size: 12px; color: var(--muted); }
   .case-held { color: var(--more); }
-  #right { display: flex; flex-direction: column; padding: 0; overflow-x: hidden; overflow-y: auto; overflow-wrap: break-word; }
+  #right { display: flex; flex-direction: column; padding: 0; overflow-x: hidden; overflow-y: auto; overflow-wrap: anywhere; }
   #right-info { flex: 1 1 auto; min-height: 120px; overflow: auto; padding: 12px 16px; }
   #right-dock { flex: none; padding: 10px 16px 12px; }
   #right-info:empty, #right-dock:empty { display: none; }
@@ -317,7 +317,7 @@
   .history li.reached { outline: 2px solid var(--accent); outline-offset: 2px; }
   .unanswered-dot { display: inline-block; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--fail); }
   #right .chip { white-space: normal; }
-  :is(.screen-info, .call-info) { margin-top: 16px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; overflow-wrap: break-word; }
+  :is(.screen-info, .call-info) { margin-top: 16px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; overflow-wrap: anywhere; }
   :is(.screen-info, .call-info) > summary { cursor: pointer; }
   :is(.screen-info, .call-info) > summary .title { font-weight: 600; }
   :is(.screen-info, .call-info) > summary .counts { font-size: 12px; }
@@ -397,7 +397,7 @@
   .story-form button.unaccept, .story-form button.back-to-original { background: var(--panel); color: var(--text); border-color: var(--line); }
   .discarded-candidates > summary { margin: 16px 0 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
   #discarded-list > li { padding: 6px 0; border-top: 1px solid var(--line); }
-  #discarded-list .steps { margin: 2px 0; font-size: 12px; overflow-wrap: break-word; }
+  #discarded-list .steps { margin: 2px 0; font-size: 12px; overflow-wrap: anywhere; }
   #discarded-list .detail { font-size: 12px; color: var(--muted); }
   #discarded-list button.undiscard { margin-top: 4px; padding: 2px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
   .story-form button:disabled { opacity: .5; cursor: default; }
@@ -471,7 +471,7 @@
   #replay-view { width: min(1100px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); font-size: 13px; }
   #replay-view::backdrop { background: rgba(0, 0, 0, .55); }
   #replay-view .replay-head { display: flex; align-items: baseline; gap: 8px; min-height: 24px; }
-  #replay-view .replay-line { flex: 1; min-width: 0; margin: 0; padding: 0; list-style: none; overflow-wrap: break-word; }
+  #replay-view .replay-line { flex: 1; min-width: 0; margin: 0; padding: 0; list-style: none; overflow-wrap: anywhere; }
   #replay-view .step-value { margin-left: 2px; }
   #replay-view .replay-shot { display: flex; align-items: center; justify-content: center; height: calc(100vh - 150px); margin: 6px 0; border: 1px solid var(--line); border-radius: 4px; }
   #replay-view .replay-shot img { width: 100%; height: 100%; object-fit: contain; }
@@ -487,7 +487,7 @@
   .test-steps button.step-project { cursor: pointer; background: var(--panel); color: var(--muted); font: inherit; font-size: 12px; }
   .test-steps button.step-project.on { color: var(--accent-text); }
   .test-steps .step-lines { margin: 4px 0; padding-left: 22px; }
-  .test-steps .step-lines li { margin: 2px 0; overflow-wrap: break-word; }
+  .test-steps .step-lines li { margin: 2px 0; overflow-wrap: anywhere; }
   .test-steps .step-lines li.request-line { display: block; margin-left: 18px; }
   .test-steps .request-line button.open-call { padding: 0; border: none; background: none; color: var(--accent-text); font: inherit; text-align: left; cursor: pointer; }
   .test-steps .request-line button.open-call:hover { text-decoration: underline; }
@@ -510,7 +510,7 @@
   .talk-head { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; }
   .tags, .history-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 12px; }
   .history-filter { margin-top: 6px; }
-  .tag { display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--selected); font-size: 12px; overflow-wrap: break-word; }
+  .tag { display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--selected); font-size: 12px; overflow-wrap: anywhere; }
   .tag button, .tags button.retag, .history-filter button { padding: 0; border: 0; background: none; color: var(--muted); font: inherit; cursor: pointer; }
   .error { color: var(--fail); }
   a { color: var(--accent-text); }
@@ -680,7 +680,7 @@
   .story-path .step.on-map:hover { border-color: var(--accent); }
   .story-path .step.off-map { border-style: dashed; border-color: var(--more); }
   .story-path .step .no { flex: none; width: 1.6em; font-weight: 600; color: var(--muted); }
-  .story-path .step .name { flex: 1; min-width: 0; overflow-wrap: break-word; }
+  .story-path .step .name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   #story-list .chips { display: flex; flex-wrap: wrap; gap: 4px; }
   #story-list .chips:not(:empty) { margin-top: 2px; }
   .step-tests { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 12px; }
@@ -692,7 +692,7 @@
   .test-pairs .pair .chip { flex: none; }
   .test-pairs .no-screens { margin: 0; }
   .unmatched p { font-size: 12px; margin: 0 0 8px; }
-  .unmatched li { overflow-wrap: break-word; }
+  .unmatched li { overflow-wrap: anywhere; }
   .pair-row { display: flex; gap: 8px; align-items: flex-start; }
   .pair-row .pick, .pair-row .pick-space { flex: none; width: 16px; margin: 12px 0 0; }
   .pair-row .pair { flex: 1; min-width: 0; }
@@ -702,7 +702,7 @@
   :is(#reason-ask, #accept-ask) { width: min(520px, calc(100vw - 32px)); padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); box-shadow: 0 8px 30px rgba(0, 0, 0, .25); }
   :is(#reason-ask, #accept-ask)::backdrop { background: rgba(0, 0, 0, .35); }
   :is(#reason-ask, #accept-ask) h2 { margin: 0 0 10px; font-size: 15px; color: var(--text); }
-  #reason-ask .subject { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 10px; margin-bottom: 12px; font-size: 13px; overflow-wrap: break-word; }
+  #reason-ask .subject { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 10px; margin-bottom: 12px; font-size: 13px; overflow-wrap: anywhere; }
   #reason-ask .subject .label { font-size: 12px; font-weight: 600; color: var(--muted); }
   #reason-ask .subject :is(ul, ol) { max-height: 30vh; overflow: auto; }
   #reason-ask .subject ol { margin: 0; padding-left: 20px; }
@@ -713,7 +713,7 @@
   :is(#reason-ask, #accept-ask) button { padding: 4px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; cursor: pointer; white-space: nowrap; }
   #reason-ask button.discard { border-color: var(--fail); color: var(--fail); font-weight: 600; }
   :is(#reason-ask, #accept-ask) button:disabled { cursor: default; opacity: .5; }
-  #accept-ask .candidate { margin: 0 0 12px; font-size: 13px; overflow-wrap: break-word; }
+  #accept-ask .candidate { margin: 0 0 12px; font-size: 13px; overflow-wrap: anywhere; }
   #accept-ask .field + .field { margin-top: 8px; }
   #accept-ask .actions { justify-content: flex-end; }
   #accept-ask button.accept { border-color: var(--accent); background: var(--accent); color: #fff; font-weight: 600; }
@@ -738,10 +738,10 @@
   .written { display: grid; gap: 4px; }
   .written-row { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 8px; align-items: baseline; }
   .written-label { font-size: 12px; font-weight: 600; color: var(--written); }
-  .written-row ul { margin: 0; padding-left: 16px; font-size: 13px; white-space: pre-wrap; overflow-wrap: break-word; }
+  .written-row ul { margin: 0; padding-left: 16px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
   .link-written { margin-top: 4px; }
   .written-inputs { margin: 0; border-collapse: collapse; font-size: 13px; }
-  .written-inputs td { padding: 1px 10px 1px 0; border: 0; vertical-align: baseline; white-space: pre-wrap; overflow-wrap: break-word; }
+  .written-inputs td { padding: 1px 10px 1px 0; border: 0; vertical-align: baseline; white-space: pre-wrap; overflow-wrap: anywhere; }
   .chip.input-unchecked { color: var(--muted); border-style: dashed; font-size: 11px; }
   .chip.input-found { color: var(--pass); font-size: 11px; }
   .chip.input-missing { color: var(--fail); font-size: 11px; }
@@ -857,7 +857,7 @@
   .walk-steps { list-style: none; display: grid; gap: 6px; margin: 0; padding: 0; }
   .walk-steps > li { display: flex; gap: 8px; align-items: baseline; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
   .walk-steps .no { flex: none; width: 1.6em; font-weight: 600; color: var(--muted); }
-  .walk-steps .name { flex: 1; min-width: 0; overflow-wrap: break-word; }
+  .walk-steps .name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .walk-inputs { margin: 2px 0 0; font-size: 12px; }
-  .walked, .skipped-inputs { font-size: 12px; overflow-wrap: break-word; }
+  .walked, .skipped-inputs { font-size: 12px; overflow-wrap: anywhere; }
   .story-path .step.compose-step > :is(.walked, .skipped-inputs) { flex-basis: 100%; margin-left: calc(1.6em + 10px); }
