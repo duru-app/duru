@@ -724,9 +724,8 @@ story declares it with `@story:<story ID>`; it may carry node tags too and then 
 A Playwright, JUnit or Vitest test that holds only inside a limit the app decided to accept carries
 `@limit:<source>`, the source naming where the limit was decided as on a `WITHIN_LIMIT` verdict line: a `http(s)`
 link, `#<number>` or a `.md` decision document (`@limit:#546`). The test reads as `limit` when it passes, with the
-source as its detail, and as `fail` when it fails. A passing test with a `@limit` tag that names no such source
-reads as pending, with the detail `출처 없음 — ` and what its `@limit` tags wrote that names no source, joined with a
-space (`출처 없음` when they wrote nothing, as a bare `@limit`); a source another of its tags names is left out. A tag holds no space, so it carries the source alone. For JUnit the display name must reach the
+source as its detail, and as `fail` when it fails; a passing test whose `@limit` names no such source reads as
+pending. A tag holds no space, so it carries the source alone. For JUnit the display name must reach the
 report: Gradle writes it as it is, and Maven Surefire writes it with `usePhrasedTestCaseMethodName=true`.
 
 A test of a screen that opens only under a role or a setting declares the case it checks next to its `@screen:`
@@ -743,9 +742,7 @@ not a case of a screen the test is tagged with is listed with the tags that poin
 A test of a kind from `caseKinds` declares it with `@case:<kind>` (`@screen:/home#Home @case:boundary`), and a test
 of a kind with values declares the value it checks with `@case:<kind>=<value>`
 (`@call:POST:/api/v1/sign @case:ended=cancelled`). It counts for that kind or value on every screen and call the
-test is tagged with, and shows under that case wherever a reviewer has picked the kind. A tag without a value on a
-kind with values, with a value the kind does not list, or with a value on a kind without values counts for no case
-and is listed with the tags that point at nothing on the map.
+test is tagged with, and shows under that case wherever a reviewer has picked the kind.
 
 `tests.json` lists the tests per node and per story with depth, status (pass, limit, pending, fail; skipped and
 todo count as pending) and `tags`, every tag read for the test, without the `@`. It also lists the tags that point at
@@ -754,28 +751,23 @@ in as `projects`, each with the worst status of the test's runs in it. `traced`
 lists each Playwright test that passed, with the trace of its passing run, as its report, its title, its file and
 line, and the screens it passed in order; an address no screen matches stays in that list as its path. A story test whose passing run left a trace
 carries the same order as `screens`. `walks` keeps what each traced test did, per project: its steps and the requests it sent, in order,
-and each entry of such a test names its walk as `steps`. A value written into a box whose selector holds `password`,
-`passwd`, `pwd`, `secret`, `token`, `비밀번호` or `암호`, in any case, is not kept: its step has `"secret": true` in place
-of `value`. A step or opened page carries `shot`, the name of its screen
-picture in `test-shots/`, when the trace was recorded with screenshots. A line without `shot` keeps the last `shot`
-written before it, skipping requests, which never carry one, and has no picture when none was written before it;
-`null` means that its page has no picture yet after a line that had one, as on the first step in a popup. `traceFiles` names the trace file each walk was
-read from, under the same key and project, from the config's folder when it is inside it. The JSON bodies of the
+and each entry of such a test names its walk as `steps`. A value written into a box whose selector names a password,
+a secret or a token is not kept: its step has `"secret": true` in place of `value`. A step or opened page carries
+`shot`, the name of its screen picture in `test-shots/`, when the trace was recorded with screenshots. `traceFiles`
+names the trace file each walk was read from, under the same key and project, from the config's folder when it is
+inside it. The JSON bodies of the
 POST, PUT, PATCH and DELETE requests in the traces of the result folders `tests` names are read, of failing tests as
 well as passing ones, and give the calls they reached the `options` they sent (see **Calls**); a body that is not
 JSON, and a request with no body, is skipped. Each request a page sent is also tied to the screen whose address the
 page showed when it went out, and gives that call its `tracedScreens` when the source ties it to that screen
 neither directly nor at app start; a request the test sent itself, without a page, ties to none, and so does one
-sent while a step moved the address without loading a page, since the trace cannot tell which side of the move
-sent it. Any request in those traces, with a body or without, from a page or sent by the test itself, and whether
-or not it ties to a screen, counts as sent for `unrecorded`. The requests a visit record kept count the same way
+sent while a step moved the address without loading a page. The requests a visit record kept count the same way
 (see **Story candidates**).
 
 Two kinds of untagged tests are shown next to a screen without counting as its tests. A unit test (Vitest or
-Jest JSON) is listed under `importers` when its test file imports one of the screen's source files; a file that
-more than three screens share does not link. A Playwright test whose report holds traces (Playwright's `trace`
-option) is listed under `passed` for each screen it opened and each call it sent, as `visit`, `interact`,
-`assert` or `call`.
+Jest JSON) is listed under `importers` when its test file imports one of the screen's source files. A Playwright
+test whose report holds traces (Playwright's `trace` option) is listed under `passed` for each screen it opened and
+each call it sent, as `visit`, `interact`, `assert` or `call`.
 
 A check script that is not a test framework reports through verdict lines in its output, one test per line;
 other lines are ignored:
@@ -791,9 +783,7 @@ and never counted as a failure;
 (an em dash) is kept as the detail. Tags go at the end of the line.
 
 The text after `— ` on a `WITHIN_LIMIT` line must name where the limit was decided — a `http(s)` link, `#<number>`
-or a `.md` decision document. A `WITHIN_LIMIT` line that names none reads as pending, and its detail starts with
-`출처 없음 — ` (`출처 없음` when the line has no detail). On the review page, a `http(s)` link in the detail of a
-test within a limit shows as 「출처 ↗」, which opens it; hovering shows the whole address.
+or a `.md` decision document; a line that names none reads as pending.
 
 ## Stories
 
@@ -835,8 +825,7 @@ stays a screen ID.
 `inputs` lists the boxes to fill at that step, each as `{ "box": { ... }, "value": "<what to type>" }`. `box` finds
 the box by what the screen shows: `placeholder` (the hint text inside the box), `label` (its label) or `testId` (its
 test ID). Write the words as they read on the screen, not a translation key; give one or more of the three, all
-on the same box. The review page finds the box by any one of them, so it still finds a box when one word changes, but
-the code `duru story` writes for an input needs a box that has every word written. When more than one element has
+on the same box. When more than one element has
 all those words, such as one memo box per signer, `nth` says which one, counting from 1 in the order of the page.
 `value` is the text to put in. duru does not look for the box in the code, so the page and the task list mark each
 input as not checked.
@@ -874,12 +863,10 @@ the `needs` folder inside `storiesDir`, one JSON file per need, with a `name` an
 Its file name follows the story ID rule, and a condition, at the top of the story or in a step, picks it by its path
 under `needs/`, as `{ "use": "member-account.json" }` for `needs/member-account.json`, so its `name` can change
 without breaking the stories that pick it. The files in `needs/` are not read as stories. A condition
-that picks a file that is not there, or one that could not be read, does not stop the story from being read: the
-condition alone shows as 「needs/… 없음」 or 「needs/… 읽지 못함」. A need file that breaks these rules is skipped and
-noted with its path and why.
+that picks a file that is not there, or one that could not be read, does not stop the story from being read.
 
-No other keys are allowed, at the top or in a step object. A file that breaks these rules is skipped and noted with its
-path and why.
+No other keys are allowed, at the top or in a step object. A story or need file that breaks these rules is skipped
+and noted with its path and why.
 
 Each story is checked against the map. Between two neighbouring steps the link is `open` when a map link without
 a condition joins them, `conditioned` when every such link has a condition, `configured` when only a move in
@@ -889,12 +876,10 @@ the end: what the first screen needs and the conditions on the way.
 
 A story also gets a status from its tests: fail when a test tagged `@story:<its ID>` fails, pending when none
 fails and one is pending, `limit` when none fails or is pending and one is within a limit (`WITHIN_LIMIT`),
-pass when all pass. When all pass but the traces of its Playwright story tests show that
-none of them opened its screens one after another, it is `part-pass`, and each link says how many story tests went
-across it. Whether they went through is not known, and the story stays `pass`, when a story test has no trace (a
-test that is not a Playwright test never has one), its trace holds no screen on the map (also when the test opened
-no page at all), or a screen of the story is not on the map. Without story tests
-it is `partial` when a screen on its path has a test, and `untested` when none has.
+pass when all pass. When all pass but the traces of its Playwright story tests show that none of them opened its
+screens one after another, it is `part-pass`, and each link says how many story tests went across it. When no trace
+can show it, as for a story test that is not a Playwright test, the story stays `pass`. Without story tests it is
+`partial` when a screen on its path has a test, and `untested` when none has.
 
 Where the map has no link between two steps but passing tests went straight across, the link says how
 many: the config's `moves` may be missing that move.
@@ -918,12 +903,11 @@ An object may also carry `requests`, the write requests sent while the record wa
 its `url` inside the app (starting with `/`), its `body` as text and `shown`, the address the app showed when it was
 sent; `body` and `shown` may be left out. They count as sent the way a trace's requests do: a body gives the call its
 options, `shown` ties the call to that screen, and the call is not `unrecorded` (see **Calls**). A record without
-`requests` sends nothing, and a `requests` that is not such a list leaves the whole record out with a notice.
+`requests` sends nothing.
 
 duru turns each record named in `visitRecords`, and each file in `records/` in `storiesDir`, into a story candidate:
-each address goes to the screen whose route path matches it, steps in a row on the same screen become one step, and
-an address no screen matches stays as it is. The inputs of the steps of one screen step are joined, a later value for
-the same box taking the place of the earlier one, and the counts in `skipped` are added up. A candidate with the screen order of a story or of a discarded candidate is not offered. A record that
+each address goes to the screen whose route path matches it, and steps in a row on the same screen become one step.
+A candidate with the screen order of a story or of a discarded candidate is not offered. A record that
 cannot be read is skipped and noted with its path and why.
 
 A Cypress suite writes these records with the recorder duru ships, added by one line in its support file
@@ -936,24 +920,15 @@ import 'duru/recorders/cypress.js';
 `duru` resolves once duru is installed in the Cypress project with `npm install <path to the clone>`; without that,
 import the file by its path in the clone. Each test that passes writes `cypress/visits/<spec>/<titles>.json`, where
 `<spec>` is the spec's path in the project and `<titles>` the titles of its `describe` blocks and its own joined by
-` -- `, without the words starting with `@` and cut at 200 bytes. Its steps are the addresses the app was at without
-their query or what follows `#`, one for each change, also when the app changed the address with
-`history.pushState` without loading a page; addresses the spec's own `afterEach` opens are steps too. A test that
-passes again replaces its file, and a test passed on a retry writes the attempt that passed. A test that fails or
-opens no page writes nothing and leaves the file an earlier run wrote, so delete the folder before a run whose
-records should be the only ones. Name another folder, relative to the Cypress project, with `duruVisitRecords` under
-`expose` in the Cypress config, or under `env` before Cypress 16. List the folder in `visitRecords`, as
-`["../e2e/cypress/visits"]`.
+` -- `. A test that passes again replaces its file, and a test that fails writes nothing and leaves the file an
+earlier run wrote, so delete the folder before a run whose records should be the only ones. Name another folder,
+relative to the Cypress project, with `duruVisitRecords` under `expose` in the Cypress config, or under `env` before
+Cypress 16. List the folder in `visitRecords`, as `["../e2e/cypress/visits"]`.
 
 A Playwright test needs no visit record when its report is listed in `tests` and the test ran with Playwright's
 `trace` option on: the screens it passed through, read from its trace by `rebuild`, become a candidate whose source
-names the report and the test titles. The candidate is named after the first of those titles without its tags. Only a passing run counts: a test that failed gives no candidate, and a test
-that passed on a retry gives the screens of the retry that passed. A test whose screens are all catch-alls (a
-route whose path is `*` or `/*`) gives no candidate either: every address it opened fell through to the catch-all,
-so the order says the addresses were not matched, not where the test went. The steps of such a candidate may come with the values the test typed in, shown before the candidate is accepted and
-written into the story file with it; a line on the page says how many inputs were not carried over, a value typed into
-a box whose selector names a password, a secret or a token among them. These candidates
-follow the limits of reading traces:
+names the report and the test titles. Only a passing run counts. A test whose screens are all catch-alls (a
+route whose path is `*` or `/*`) gives no candidate. These candidates follow the limits of reading traces:
 
 - Only trace format version 8 is read. A trace of another version is skipped and listed with the traces
   `rebuild` could not read.
@@ -961,38 +936,20 @@ follow the limits of reading traces:
   by the part after `#`, or a modal or tab that opens without changing the address, does not show as a step.
 
 On the review page a candidate is accepted, which writes a story file into `storiesDir`, or discarded with a
-reason, which writes a file into `discarded/` in `storiesDir` so the same order does not come back. Accepting a
-candidate with no file also writes its found order into `candidates/`, under the candidate's name. Undoing an
-acceptance deletes that story file, and the candidate is listed again; if `candidates/` has no file for its screen
-order yet, one is written first, under the story's ID, so it comes back even once its record is gone. Undoing a
-discard writes another file into `discarded/`, `{ "screens", "kind": "undo", "author", "date" }`, with no reason, and
-leaves the discard as it is: the latest file of a screen order in `discarded/` is its state, so the order is offered
-again until it is discarded again. If `candidates/` has no file for that order, one is written first under the name
-the discard kept. A discard made with 「되돌리기」 on a candidate also has `"backToOriginal": true`, and the candidates its order replaced
-are offered again while it is the latest file of its order.
+reason, which writes a file into `discarded/` in `storiesDir` so the same order does not come back.
 
 `rebuild` keeps each candidate as a file in `candidates/` in `storiesDir`, one for each screen order that has no
 file there yet, holding the name, the screens, the source and the date it was first seen. Files are only added,
-never deleted, and changed only where the review page keeps the lines switched off on a candidate from a comment,
-the steps taken out of a candidate or the story it became; keep the folder in git with the stories. If a file cannot be written,
-`rebuild` stops storing and prints why under the candidate line. The candidates listed are these files together
-with what the records and traces give now, and for a screen order in both, what they give now is shown. So a candidate stays
-after a `rebuild` whose results have no traces, or once its record is gone. An accepted or discarded candidate keeps
-its file, and the story or the discarded file keeps it out of the list. When a screen of a stored candidate has left the map, the candidate stays
-listed with that step shown as a screen the map does not have. A candidate file that cannot be read is skipped and
-noted with its path and why.
+never deleted; keep the folder in git with the stories. If a file cannot be written, `rebuild` stops storing and
+prints why under the candidate line. A stored candidate stays listed after a `rebuild` whose results have no traces,
+or once its record is gone. A candidate file that cannot be read is skipped and noted with its path and why.
 
 The `candidateSkipScreens` rules apply each time the list is made, and the candidate file keeps the order it was
 found in, so changing or removing a rule shows the candidate again as found. A rule added later lists a discarded
-candidate again, and can list an accepted one from a trace, since its order after the rule is one no file holds. Candidates
-whose orders become the same are one candidate, and a candidate left with no screen is not listed. Such a candidate
-with a test in the current results names only the tests there, so a test known only from a stored file is not named.
-Only the first of them keeps its found order in a file, so the found order of another comes back only while its
-record or trace is there, and its test titles stay on the first one's file. The page shows the found order folded
-under 「원래 순서 N」 with each step taken out marked 「설정 규칙」. A candidate is told apart by its order after the
-rules, so changing a rule moves a comment on a candidate it changes under 「떨어져 나감」. `rebuild` counts every found
-order the rules took a screen out of, on the list or not, so accepting or discarding a candidate does not lower the
-count. It also names a rule screen that is neither on the map nor an address a candidate went through.
+candidate again, and can list an accepted one from a trace, since its order after the rule is one no file holds. A
+candidate is told apart by its order after the rules, so changing a rule moves a comment on a candidate it changes
+under 「떨어져 나감」. `rebuild` counts every found order the rules took a screen out of, on the list or not, and names
+a rule screen that is neither on the map nor an address a candidate went through.
 
 **Candidates from a comment.** A coding agent that answers a comment on a screen order (see **Comments on a screen
 order**) posts the story it found with `candidate <config> <comment ID> <candidate.json>`, or `-` in place of the
@@ -1011,28 +968,15 @@ agent put in carries `reason`, one line saying why it is there:
 }
 ```
 
-It is written into `candidates/` in `storiesDir` with its source, `{ "comment": <comment ID>, "added": [{ "step",
-"reason" }, …], "written": [{ "step", <field>: [ … ] }, …] }`: the steps the agent put in with their reasons and the
-lines the agent wrote, numbered by the steps of the candidate. The lines of each step, the reviewer's and the
-agent's, are in `stepFields`. The lines of `written` switched off on the review page are kept in the same file as
-`offLines`, `[{ "step", "field", "line" }, …]`, each naming its step, its field and its place in that field from 1. A
-story accepted from it gets the reviewer's lines and the agent's lines still on, and keeps that source with only
-those lines in `written`. With
-`--server` and the address the review printed, the running review writes the file and every open page lists the
-candidate at once; without it, the file is written directly. The command prints `wrote <file>`, then one line for
+It is written into `candidates/` in `storiesDir` with the comment as its source. With `--server` and the address the
+review printed, the running review writes the file and every open page lists the candidate at once; without it, the
+file is written directly. The command prints `wrote <file>`, then one line for
 each link between two steps, `step 1 → 2: from <screen> to <screen> — <verdict>`, worded as in the task list. A
-candidate it does not take is not written: the command prints why on standard error and exits with code 1. A map
-built before links carried their conditions must be rebuilt first. A wrong call exits with 2.
+candidate it does not take is not written: the command prints why on standard error and exits with code 1. A wrong
+call exits with 2.
 
-On the review page each step of a candidate has a ✕. Pressing it strikes the step through, and pressing it again puts
-the step back; the last step left cannot be taken out. The steps taken out are kept in the candidate file as
-`offSteps`, `[<step>, …]` numbered from 1 in the order the file holds, which `candidateSkipScreens` can make longer
-than the card, so they stay after a reload, and accepting writes only the steps left into the story file, with steps
-of one screen left side by side as one step. While the steps left are the order of a story already there, why shows
-below the steps and 「스토리로 받기」 and ✎ are off. Accepting any candidate writes the story's ID into its candidate file as
-`acceptedAs`, making the file if there is none. While that story exists, the order the candidate was found in is not
-offered from any source, but any other order of the same test is, until it is discarded. Undoing the acceptance removes
-`acceptedAs`, and the candidate comes back with its steps taken out.
+On the review page each step of a candidate has a ✕ that takes the step out. The steps taken out are kept in the
+candidate file as `offSteps`, and accepting writes only the steps left into the story file.
 
 **Candidates that replace others.** A comment on a candidate, or one with no target, usually asks for steps nobody
 needs to be taken out, such as the login at the front of every test. The agent answers it with the same command and a
@@ -1060,21 +1004,13 @@ judged it so:
 A step the reviewer took out of a listed candidate with ✕ counts as dropped without being named, with
 `검토자 제외` as its reason, so `dropped` may be empty.
 The steps without `reason` must be each order in `replaces` with its dropped steps taken out, neighbouring steps of
-one screen joined into one; a screen the agent put in carries `reason` as above. Two candidates that become the same
-order are replaced by one candidate naming both. The command refuses a candidate in `replaces` that is not listed, a
-step left out without being in `dropped`, a step the reviewer took out with ✕ kept without a `reason`, kept
-steps in another order, an order that is already a story, a listed
-candidate, a discarded one or one another candidate replaces, and a kept step whose originals typed different values
-into one box unless the step's `inputs` give the value to keep. A comment on a screen order takes no `replaces`. One comment may get several such
-candidates, and accepting one of them does not stop the next; for a comment on a screen order, a story accepted from
-it still stops the next candidate. The source written adds `"replaces": [{ "screens", "dropped", "source" }, …]`,
-the source of each candidate replaced kept beside it, and each kept step keeps the lines that step had on the
-candidates it replaces, without the lines the reviewer turned off; the lines an agent wrote can still be turned off. The
-new candidate also adds up the inputs its originals could not move. While the new candidate is listed, accepted or discarded, the candidates it replaces are not
-listed, even after a `rebuild` gives them again from the records or the traces, and a page open on one moves to the
-new candidate with the comment being typed, and a comment on one of them goes
-under 「떨어져 나감」. A discard made with 「되돌리기」 is the exception: it lists them again. The page shows each order replaced folded under 「원래 순서 N」 with where it came from, each
-dropped step struck through with its reason under it and 「판단」 on a step the agent judged.
+one screen joined into one; a screen the agent put in carries `reason` as above. A step the reviewer took out with ✕
+is kept only with a `reason`, and a kept step whose originals typed different values into one box gives the value to
+keep in its `inputs`. A comment on a screen order takes no `replaces`.
+While the new candidate is listed, accepted or discarded, the candidates it replaces are not
+listed, even after a `rebuild` gives them again from the records or the traces. A discard made with 「되돌리기」 is the
+exception: it lists them again. The page shows each order replaced folded under 「원래 순서 N」 with where it came
+from, each dropped step struck through with its reason under it and 「판단」 on a step the agent judged.
 
 ## Review page
 
@@ -1626,13 +1562,11 @@ listening for new saves when the review ends.
 
 `story <config> <story ID>` prints one story as text for a coding agent, marked or not. It has the lines of a story
 under `# Stories` in the task list, without `marks`, and under each step: `open`, on the first step, the route path
-(after `appUrl` when the config has it) with a route variable left as it is, or, on a `*` route or a route whose path
-on the map does not start with `/`, that duru does not know which address to open; `arrives`, a `toHaveURL` line
-matching the whole address for the step's screen, or the reason when its route path was not read, it is `*` and fits
-any address, its path goes on from the address of the route that draws it, or it is not on the map; `what to press`, under a
-link, saying duru does not know which element to press (only under a link that exists in the source, not under `no link`, a screen not on the map, or a move written in `moves`); and `fill`, under each `input` line,
-Playwright code that finds the box with every word written for it, each matched exactly, takes the Nth of them for
-`number N`, and puts the value in, such as
+(after `appUrl` when the config has it) with a route variable left as it is, or that duru does not know which
+address to open; `arrives`, a `toHaveURL` line matching the whole address for the step's screen, or the reason there
+is none; `what to press`, under a link found in the source, saying duru does not know which element to press; and
+`fill`, under each `input` line, Playwright code that finds the box with every word written for it, each matched
+exactly, takes the Nth of them for `number N`, and puts the value in, such as
 `await page.getByPlaceholder("이메일", { exact: true }).and(page.getByTestId("login-email")).fill("member@example.com");`
 in a code span, followed by `(duru did not try it on the screen)`. The lines a person wrote (`need`, `link need from step N`,
 `input`, `expect`, `needs`, `expects at the end`) are not checked by duru. Under `preconditions`, the first-screen
@@ -1646,8 +1580,8 @@ the first screen, a role whose accounts the first-screen line already gives says
 setting guard gets one `setting` line for each setting it reads, which speaks for that setting only, not for other
 checks joined to it with `&&`: `met with no change`, `not met with no change` with the value to put, or `not known,
 its default was not read in full` with the value to put; a setting that only has to be there has no value to put. In
-brackets it says what it was judged against: `checked against <file>` when `app.settingsFile` is set and its file ran
-(read and run the way the review page does), or `source default; deployed settings not checked`, followed by the file
+brackets it says what it was judged against: `checked against <file>` when `app.settingsFile` is set and its file ran,
+or `source default; deployed settings not checked`, followed by the file
 and why when the file is not found or could not be run. A role guard whose roles duru could not read gets `role not read:`, and a setting guard duru could not read gets
 `setting not read:` and the reason. A guard that is neither a role nor a setting stays as its text on the precondition line. The text ends with empty tests carrying
 `@story:` and the `@screen:` of each screen on the map. Standard output holds only that text; for a story ID that is
@@ -1698,7 +1632,7 @@ has no open mark, and then has no `empty tests`; its cases with no tests stay un
 the code or the test as the comment says rather than write a new test. With no open mark the list starts with that
 and does not say `No open marks.` An item listed this way leaves once those tests pass again after a `rebuild`, or
 once a reviewer marks the whole screen or call `fine`; a comment after that brings it back. A comment left before
-the baseline ran does not count, which is why JUnit XML and verdict logs are kept with their modified time. When
+the baseline ran does not count. When
 `baselineTests` cannot be read, the line right under the head says
 `baselineTests <path> could not be read: <why>; screens and calls a reviewer sent by commenting on a regressed test are not listed`,
 the rest of the list is as without it, and `tasks` does not stop. When `outDir` has no `tests.json` yet, the line reads
@@ -1711,9 +1645,8 @@ tests: N`. A candidate is any screen or call for a kind without rules, and other
 (screens or calls); it is undecided while no rule picks it and its current mark of that kind is none, or a
 `not-needed` with no note. A candidate line is `<ID> — screen, component <file>, route at <file>:<line>`, or for a
 call `<ID> — call, sent from <screens>`, `<ID> — call, sent as the app starts by <name> (<file>), …` for a call of
-`appWide`, or `<ID> — call, sent from <screens> and sent as the app starts by …` for one screens send too. Requests
-other than `GET` come first (a request whose method was not read among them), then the other calls, then the
-screens, each group by ID. A candidate whose current mark a person left ends with
+`appWide`, or `<ID> — call, sent from <screens> and sent as the app starts by …` for one screens send too. A
+candidate whose current mark a person left ends with
 `— <author> marked it not-needed without a note on <date>, so only a person can decide it` (`took it out of a rule
 that no longer picks it` for a mark whose rule no longer picks it, `took back the agent's not-needed` for one a
 reviewer reverted): `case` does not change that mark. While an agent's `not-needed` waits for a reviewer on any
@@ -1725,29 +1658,23 @@ tests` for each; one listed above under its own marks is not repeated, and `case
 too, adding `, N of them under screens and calls listed above`. When this section has anything to do, the head of
 the list adds `N undecided case candidates, N cases with no tests`, with `, N under review` after the first while
 any wait, and with no open marks the list says the case kinds below still have work instead of `No open marks.`
-With `baselineMap`, the section's intro also says when to run `undecided --new` instead; the counts and lines do not
-change, and the task list does not read that map. Without `caseKinds` the list has no such section.
+With `baselineMap`, the section's intro also says when to run `undecided --new` instead. Without `caseKinds` the
+list has no such section.
 
 `case <config> <kind> <screen or call ID> needed|not-needed [--note "<why>"] [--author <name> | --server <review page address>]`
 writes a case mark of that kind for that screen or call, as the review page would, directly into `marksDir`: the
 author is `agent` unless `--author` names one, and the file also carries `"via": "duru case"`. Written this way, an
 open review page shows it the next time it is loaded. With `--server` and the address the review printed, the mark
 goes through the running review instead, which checks it and writes the same file with the author always `agent`,
-prints it on standard error as a `"mark"` line and shows it on every open page at once; the command itself then
-reads neither the map nor the marks. `--author` with `--server` stops with `a case sent with --server is always by
-agent; leave out --author` and exit code 2. It prints nothing when the mark is written, and stops with a line saying
-why and exit code 1, writing nothing, for a kind not in `caseKinds`, an ID not on the map, `not-needed` without
-`--note`, `needed` on a screen or call where a mark of that kind a person left holds (any mark without `via`), also
-one that leaves it undecided or one under an agent's `not-needed` waiting for a reviewer, either status where a
-reviewer reverted an agent's `not-needed` of that kind (`<reviewer> took back the agent's not-needed for <kind> on
-<ID> on <date>, so only a person decides it now`), and `not-needed` on a screen or call off the side the kind's rules
-pick that has no mark of that kind to take back, the same line with or without `--server`. A `not-needed` over a
-person's mark is written and waits for a reviewer, with that person's mark holding until then.
-A review that cannot be reached stops it with `could
-not reach the review page at <address>: …` and exit code 1, and a review started by an older duru answers `not
-found`. `needed` is also
-written where a rule already picks the target, so it stays picked when the rule changes. A `not-needed` where a rule
-picks the target carries `rule` like one saved on the page.
+prints it on standard error as a `"mark"` line and shows it on every open page at once.
+`--author` with `--server` stops with `a case sent with --server is always by
+agent; leave out --author` and exit code 2. `not-needed` needs `--note`, `needed` is not written over a mark of that
+kind a person left (any mark without `via`), and neither is written where a reviewer took back an agent's
+`not-needed` of that kind. It prints nothing when the mark is written; a mark it does not take stops it with a line
+saying why and exit code 1, writing nothing, the same with or without `--server`. A `not-needed` over a person's mark
+is written and waits for a reviewer, with that person's mark holding until then. A review that cannot be reached
+stops it with `could not reach the review page at <address>: …` and exit code 1, and a review started by an older
+duru answers `not found`.
 
 `undecided <config> [<kind>]` prints, for every kind or the one named, `case kind <kind>: N undecided` followed by its
 undecided candidates as in the task list. While an agent's `not-needed` waits for a reviewer, the kind's line ends
