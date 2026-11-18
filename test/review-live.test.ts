@@ -8,6 +8,7 @@ import { loadMarks } from '../src/marks.ts';
 import { startReviewServer } from '../src/review.ts';
 import { withRebuiltFixture, signer, withServer, postMark, browserMissing, toList, withPage, reply, decideCase, CASE_KINDS, pickedBoxes, WALK, withPathStories, flowPlace, storyRow, pickPathStory, lineSteps, nowStep, CANDIDATES, storiesTab } from './review-helpers.ts';
 import type { PageData, Kept } from './review-helpers.ts';
+import type { SessionStatus } from '../src/review.ts';
 
 declare const state: any;
 declare function load(): Promise<void>;
@@ -112,7 +113,7 @@ test('closing the review server ends the open event streams, and a stream opened
     const body = open.text();
     await postMark(base, { target: { node: '/home#Home' }, note: 'while the stream is open' });
     const closed = new Promise<void>((resolve) => server.close(() => resolve()));
-    assert.match(await body, /^data: \{"duru":"comment",[^\n]*"note":"while the stream is open"[^\n]*\n\nevent: end\ndata: review ended\n\n$/);
+    assert.match(await body, /^event: session\ndata: \{"connected":false,"checkedAgoMs":null\}\n\ndata: \{"duru":"comment",[^\n]*"note":"while the stream is open"[^\n]*\n\nevent: end\ndata: review ended\n\n$/);
     await closed;
 
     const again = await startReviewServer(config, { author: signer('reviewer'), onDone: () => null });
@@ -146,6 +147,7 @@ async function listenTo(url: string) {
     got,
     stories: () => [...got.text.matchAll(/^event: stories\ndata: (.*)$/gm)].map((m) => m[1]),
     taken: () => [...got.text.matchAll(/^event: taken\ndata: (.*)$/gm)].map((m) => JSON.parse(m[1]) as string[]),
+    session: () => [...got.text.matchAll(/^event: session\ndata: (.*)$/gm)].map((m) => JSON.parse(m[1]) as SessionStatus),
   };
 }
 
@@ -192,7 +194,7 @@ test('a change under the stories folder, in any of its sub-folders, or to a fold
       await until(() => stream.stories().length === 5, 'stories event for a file in the folder made again');
       assert.equal(stream.stories()[4], await version());
 
-      assert.match(stream.got.text, /^(event: stories\ndata: [0-9a-f]+\n\n)+$/);
+      assert.match(stream.got.text, /^event: session\ndata: .*\n\n(event: stories\ndata: [0-9a-f]+\n\n)+$/);
       assert.deepEqual(lines, []);
     } finally {
       server.close();
@@ -291,6 +293,39 @@ test('after the agent connection closes, a new comment stays not taken until ano
         if ((await dataOf(base)).takenComments.includes(comment.id)) return;
       }
       assert.fail('the comment was not taken by the second connection');
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
+test('a page connection hears at once that no duru wait is connected, then that one is as soon as it connects, still is for the grace time after it ends, and is not once that time has passed; the wait itself hears none of it', async () => {
+  await withRebuiltFixture({}, async (config) => {
+    const server = await startReviewServer(config, { author: signer('reviewer'), sessionGraceMs: 300 });
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    try {
+      const page = await listenTo(`${base}/api/events`);
+      await until(() => page.session().length === 1, 'session state on connecting');
+      assert.deepEqual(page.session()[0], { connected: false, checkedAgoMs: null });
+
+      const closing = new AbortController();
+      const agent = await fetch(`${base}/api/events?unanswered`, { signal: closing.signal });
+      await until(() => page.session().length === 2, 'session state when the wait connects');
+      assert.equal(page.session()[1].connected, true);
+      assert.ok(page.session()[1].checkedAgoMs! < 1000);
+
+      closing.abort();
+      await agent.body!.cancel().catch(() => {});
+      await until(() => page.session().length === 3, 'session state when the wait ends');
+      assert.equal(page.session()[2].connected, true);
+      await until(() => page.session().length === 4, 'session state when the grace time has passed');
+      assert.equal(page.session()[3].connected, false);
+      assert.ok(page.session()[3].checkedAgoMs! >= 300);
+
+      const again = await listenTo(`${base}/api/events?unanswered`);
+      await until(() => page.session().length === 5, 'session state when a wait connects again');
+      assert.equal(page.session()[4].connected, true);
+      assert.doesNotMatch(again.got.text, /event: session/);
     } finally {
       await new Promise((resolve) => server.close(resolve));
     }

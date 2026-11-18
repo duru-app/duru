@@ -444,6 +444,31 @@ function commentsTaken(event) {
   if (state.data) drawLive();
 }
 
+/** @type {{ status: import('../review.ts').SessionStatus, at: number } | null} */
+let session = null;
+
+function renderSession() {
+  const chip = document.getElementById('session');
+  if (!session || !chip) return;
+  const { connected, checkedAgoMs } = session.status;
+  const label = connected ? '세션 연결됨' : '세션 끊김';
+  const tip = connected
+    ? `코멘트를 받을 세션이 연결돼 있습니다 · 마지막 확인 ${Math.floor(((checkedAgoMs ?? 0) + Date.now() - session.at) / 1000)}초 전`
+    : '코멘트를 받을 세션이 없습니다. 지금 남긴 코멘트는 다음 세션이 duru wait 를 걸 때 전달됩니다';
+  chip.hidden = false;
+  chip.classList.toggle('off', !connected);
+  if (chip.textContent !== label) chip.textContent = label;
+  chip.title = tip;
+  chip.setAttribute('aria-label', tip);
+}
+
+function sessionHeard(event) {
+  session = { status: JSON.parse(event.data), at: Date.now() };
+  renderSession();
+}
+
+setInterval(renderSession, 1000);
+
 // 끊겼다가 다시 이어지면 그 사이에 저장된 것을 못 받았을 수 있으므로 다시 읽는다.
 const events = new EventSource('/api/events');
 let eventsOpened = false;
@@ -457,6 +482,7 @@ events.addEventListener('open', () => {
 events.addEventListener('message', heard);
 events.addEventListener('stories', storiesChanged);
 events.addEventListener('taken', commentsTaken);
+events.addEventListener('session', sessionHeard);
 events.addEventListener('end', () => events.close());
 
 // 리뷰를 끝낸 뒤에 늦게 실패한 읽기만 알리지 않고, 그리다 난 오류는 그대로 알린다.

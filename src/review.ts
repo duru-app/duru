@@ -72,6 +72,8 @@ export const PAGE_PARTS = [
 ];
 const BODY_LIMIT = 64 * 1024;
 const STORIES_SETTLE_MS = 100;
+const WAIT_PING_MS = 30_000;
+const SESSION_GRACE_MS = 120_000;
 const STORY_POSTS = ['/api/candidates/add', '/api/candidates/accept', '/api/candidates/discard', '/api/candidates/original', '/api/candidates/lines', '/api/candidates/steps', '/api/candidates/name', '/api/candidates/undiscard', '/api/stories/edit', '/api/stories/fields', '/api/stories/steps', '/api/stories/unaccept', '/api/stories/check', '/api/stories/add', '/api/needs/add', '/api/needs/edit', '/api/records'];
 
 function gitUserName(cwd: string) {
@@ -308,6 +310,8 @@ function pageData(config: any, data: ReturnType<typeof reviewData>, takenComment
 
 export type PageData = ReturnType<typeof pageData>;
 
+export type SessionStatus = { connected: boolean; checkedAgoMs: number | null };
+
 const SERVER_FAULTS = new Set(['EACCES', 'EPERM', 'EMFILE', 'ENFILE', 'EIO']);
 
 function sendFile(res: http.ServerResponse, type: string, file: string, missing = 'not found') {
@@ -437,7 +441,7 @@ type Where = ReturnType<typeof locatePart> | ReturnType<typeof locateStoryPart> 
 type Target = NonNullable<Mark['target']>;
 export type AnnouncedMark = Mark & { duru: string; where?: Where; wheres?: Where[] };
 
-export async function startReviewServer(config: any, { port = 0, author = reviewAuthor(config), onDone = () => {}, onMark = () => {}, baselineTests = config.baselineTests ? readBaselineTests(config) : null }: { port?: number; author?: ReviewAuthor; onDone?: () => (() => void) | void | null; onMark?: (line: AnnouncedMark, taken: () => void) => void; baselineTests?: BaselineTests | null } = {}) {
+export async function startReviewServer(config: any, { port = 0, author = reviewAuthor(config), onDone = () => {}, onMark = () => {}, baselineTests = config.baselineTests ? readBaselineTests(config) : null, sessionGraceMs = SESSION_GRACE_MS }: { port?: number; author?: ReviewAuthor; onDone?: () => (() => void) | void | null; onMark?: (line: AnnouncedMark, taken: () => void) => void; baselineTests?: BaselineTests | null; sessionGraceMs?: number } = {}) {
   const mapFile = path.join(config.outDir, 'map.json');
   // 없거나 아직 쓰는 중인 맵은 페이지가 요청할 때 알리고, 예전 형식의 맵만 서버를 띄우기 전에 알린다.
   let onDisk: any = null;
@@ -464,6 +468,19 @@ export async function startReviewServer(config: any, { port = 0, author = review
     if (!fresh.length) return;
     for (const id of fresh) takenComments.add(id);
     for (const stream of streams) stream.write(`event: taken\ndata: ${JSON.stringify(fresh)}\n\n`);
+  };
+  let waitSeenAt: number | null = null;
+  let graceEnds: NodeJS.Timeout | undefined;
+  const sessionEvent = () => {
+    const status: SessionStatus = { connected: agentStreams.size > 0 || graceEnds !== undefined, checkedAgoMs: waitSeenAt === null ? null : Date.now() - waitSeenAt };
+    return `event: session\ndata: ${JSON.stringify(status)}\n\n`;
+  };
+  const tellPages = () => {
+    for (const stream of streams) if (!agentStreams.has(stream)) stream.write(sessionEvent());
+  };
+  const waitSeen = () => {
+    waitSeenAt = Date.now();
+    tellPages();
   };
   let streamsEnded = false;
   // 열린 스트림이 남아 있으면 서버가 닫히지 않으므로, 끝났다고 알리고 닫는다.
@@ -596,12 +613,29 @@ export async function startReviewServer(config: any, { port = 0, author = review
         streams.add(res);
         res.on('close', () => {
           streams.delete(res);
-          agentStreams.delete(res);
+          if (!agentStreams.delete(res) || streamsEnded) return;
+          if (!agentStreams.size) {
+            graceEnds = setTimeout(() => {
+              graceEnds = undefined;
+              tellPages();
+            }, sessionGraceMs);
+          }
+          waitSeen();
         });
-        if (backlog) {
-          agentStreams.add(res);
-          takeComments(backlog.map((line) => line.id));
+        if (!backlog) {
+          res.write(sessionEvent());
+          return;
         }
+        clearTimeout(graceEnds);
+        graceEnds = undefined;
+        agentStreams.add(res);
+        const ping = setInterval(() => {
+          res.write('event: ping\ndata: \n\n');
+          waitSeen();
+        }, WAIT_PING_MS);
+        res.on('close', () => clearInterval(ping));
+        takeComments(backlog.map((line) => line.id));
+        waitSeen();
         return;
       }
       if (req.method === 'GET' && req.url === '/api/data') {
@@ -775,6 +809,7 @@ export async function startReviewServer(config: any, { port = 0, author = review
   server.close = ((callback?: (err?: Error) => void) => {
     stopWatching();
     clearTimeout(settling);
+    clearTimeout(graceEnds);
     endStreams();
     return close(callback);
   }) as typeof server.close;
