@@ -444,7 +444,6 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    none or is no longer found). Answer it once, covering every target it names. With an empty `targets` the reviewer
    asks without pointing at anything: answer from the map, the task list and the tests as a whole. Such a comment
    takes no status, and a reply to it carries the same `targets`.
-   After you have answered or fixed it, reply to the comment as above.
    When the reviewer presses 「리뷰 끝」 (or presses Ctrl+C in its terminal), the process exits with code 0 and its
    standard output is exactly the task list, the same text `duru tasks <config>` prints. Any other exit is an
    error: show its standard error to the user. In the task list a `reply` line sits under the `comment` line it
@@ -466,8 +465,7 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    put the tags in the test's `tag` option (`test('<what it checks>', { tag: ['@screen:<screen ID>'] }, …)`) and
    keep them out of the title (before Playwright 1.42, which has no `tag` option, put them at the end of the
    title); for Vitest put them at the end of the test's own title, for JUnit at the end of its
-   `@DisplayName`, and for a check script at the end of the `VERDICT` line. The review page and the story
-   candidates show a title without its tags either way. A test of a
+   `@DisplayName`, and for a check script at the end of the `VERDICT` line. A test of a
    call that sets an on/off option listed under it also carries `@option:<key>=true|false`; a mark on an
    option value (`withHistory=true at output depth`) asks for a test with that option tag at that depth.
    Under a call, `options that change this result — set on <call ID>` lists the options of that other call
@@ -570,7 +568,7 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    part is done when every candidate `duru undecided` still lists is one only a person can decide, such a line or
    one you could not tell from the code, or when none is left and it exits with 0; then tell the user which are
    left, with the author and date such a line gives, and that the review page's 「테스트 관점」 tab shows those with such
-   a line under the button with a person icon (「직접 판정」 on hover) to decide several at once, and how many of your `not-needed` wait under 「검토 중」 there
+   a line under the button with a person icon to decide several at once, and how many of your `not-needed` wait under 「검토 중」 there
    to be accepted or reverted; then go on with `cases with no tests`.
    When the user said to leave the older undecided candidates of a kind for later, run `duru undecided <config>
    <kind> --new` for that kind instead: it lists only the undecided candidates that the map named by `baselineMap`
