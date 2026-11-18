@@ -62,16 +62,12 @@ takes, and the exit code is 1.
 - `routesFile` — `routesFile` is one route file as text (`"Routes.js"`) or a list of them
   (`["Routes.js", "admin/Routes.js"]`) for an app that splits its routes over several files. duru reads exactly
   the files listed and does not follow imports to find more, so a route file left out of the list gives no
-  screens. An empty list, an entry that is not text or a file listed twice stops the run with an error, and a
-  listed file that is not there stops the map build with its name.
+  screens.
 - `routeElements`, `routeConstant` — the elements that declare routes (default `["Route"]`; a config that lists
-  them uses exactly the names listed) and the object that holds the route paths (`"Option.ROUTE_PATH"`). A route with a `path` gives a screen when duru can read which component
-  it draws. When duru sees a route that draws a screen it cannot read, it prints a `route not read` line saying why
-  (see "What extract and rebuild print").
-  `element={<Navigate to=… />}` is a redirect, not a screen. A route without `path` gives no screen.
+  them uses exactly the names listed) and the object that holds the route paths (`"Option.ROUTE_PATH"`), a dotted
+  name whose first name is a name in `constants`.
   `routeConstant` and `constants` may be left out, or set to `null` (`routeConstant` also to `""`), for an app that
-  has no table of its route paths. A `routeConstant` that is not a dotted name, or whose first name is not in
-  `constants`, stops the run with an error.
+  has no table of its route paths.
 - `routeTables` — route files that make one route for each item of a table (optional), such as mattermost's
   admin console, which draws one route per settings page:
 
@@ -92,15 +88,11 @@ takes, and the exit code is 1.
   "routeTables": [{ "route": "AppRoutes/index.tsx", "table": { "file": "AppRoutes/routes.ts", "const": "routes" }, "items": "*" }]
   ```
 
-  The items give screens whose sources hold the components each item names, with the path of the screen that draws
-  the route file in front. The conditions written in an item are not read, and neither are the conditions written
-  around a `push` of the list a tab component is handed (`routeTabs`). Without the entry, such a route gives no
-  screen for each item; the lines that can point to it are a `route not read` line whose reason starts with `made
-  for each item of a list` and a `route path not read` line that stopped at a field of the item, with its `{?}`
-  screen. An entry of another shape, one naming a file not in `routesFile`, or a route file named twice stops the run
-  with an error, as does an entry whose route file has no such route or more than one, whose route reads a field of
-  the item but whose screen duru cannot read, whose table const is not there, or none of whose items has the field
-  the route reads.
+  The items give screens, one for each item. The conditions written in an item are not read, and neither are the
+  conditions written around a `push` of the list a tab component is handed (`routeTabs`). Without the entry, such a
+  route gives no screen for each item; the lines that can point to it are a `route not read` line whose reason starts
+  with `made for each item of a list` and a `route path not read` line that stopped at a field of the item, with its
+  `{?}` screen.
 
   `menus` (optional) lists the files that draw a menu with one entry for each item of the table, such as
   mattermost's admin sidebar:
@@ -109,9 +101,7 @@ takes, and the exit code is 1.
   "menus": ["components/admin_console/admin_sidebar/admin_sidebar.tsx"]
   ```
 
-  Each file gives every screen that holds it links to the item screens, each with its `to` set to the screen's path
-  and the screen's `tableItem`. A menu file that is not there, or in which duru does not find the one element drawn
-  for each item, stops the run with an error.
+  Each file gives every screen that holds it a link to each item screen.
 - `routeTabs` — components that pick a tab by the address, such as SigNoz's `RouteTab`, which shows the tab whose
   address the browser is at and draws no route of its own (optional):
 
@@ -122,63 +112,45 @@ takes, and the exit code is 1.
   `import` and `name` name the component, `items` the prop the screen that draws it hands the list of tabs by, and
   `path` and `component` the fields of an item holding the tab's address and the component it draws; all five are
   required, and `path` and `component` may be dotted key paths inside the item, such as `"meta.path"`. `import` and
-  `name` are read as in `history`, with `default` for a default export. duru finds the screens whose own component draws the
-  component with that prop, or whose `<Route>` sits inside it in the function that draws the route, and reads the list
-  each hands it. The conditions written around a `push` are not read, as
-  for the items of a `routeTables` table, so every tab becomes a screen. A tab component that is not handed its list
-  through that prop, and reads it itself, is not read. Each item gives a screen for the address and the component it
-  names, with the ID `<address>#<Component>`: the screen that draws the tab component is its frame, so the tab
-  screen's sources include the drawing screen's, and that screen stays on the map with its own ID. An item address
-  that does not start with `/` gets the drawing screen's path in front, so `billing` under `/settings` gives
-  `/settings/billing`, and an absolute address is kept as it is; what follows `?` or `#` in an address is dropped. A
-  tab whose address is already the path of a route gives no screen, since the route gives it, and a tab that several
-  screens hand the same list for is one screen, framed by the first of them. A list duru cannot read gives no tab
-  screen and a `routeTabs` line, never an error (see "What extract and rebuild print"). An entry of another shape,
-  an `import` that names no file under `srcRoot` or a `name` that file does not export stops the run with an error
-  naming the key. Without the entry, such a component gives no screen for each tab.
+  `name` are read as in `history`, with `default` for a default export. The conditions written around a `push` are
+  not read, as for the items of a `routeTables` table, so every tab becomes a screen. A tab component that is not
+  handed its list through that prop, and reads it itself, is not read. Each item gives a screen for the address and
+  the component it names, with the ID `<address>#<Component>`: the screen that draws the tab component is its frame.
+  An item address that does not start with `/` gets the drawing screen's path in front, so `billing` under
+  `/settings` gives `/settings/billing`, and an absolute address is kept as it is. A list duru cannot read gives no
+  tab screen and a `routeTabs` line, never an error (see "What extract and rebuild print"). Without the entry, such
+  a component gives no screen for each tab.
 - `redirectElements` — the elements that redirect in the route files (default `Redirect` and
   `Navigate`; a config that lists them uses exactly the names listed).
 - `entryPaths` — route paths of further screens users start from when the code does not show them.
 - `history` — a history the app makes itself and moves through, such as mattermost's `getHistory().push(…)`
   (optional): `{ "import": "utils/browser_history", "name": "getHistory" }`. `import` is the module as the app
   imports it, resolved like an import in the source, and `name` what that module exports, a function that returns
-  the history or the history itself. Its `push` and `replace` calls become links. A key of another shape, an
-  `import` that names no file under `srcRoot` or a `name` that file does not export stops the run with an error
-  naming the key. Without it, a file that makes a history with `createBrowserHistory` or `createHashHistory` gets a
-  `history is not set` line (see "What extract and rebuild print").
+  the history or the history itself. Its `push` and `replace` calls become links. Without it, a file that makes a
+  history with `createBrowserHistory` or `createHashHistory` gets a `history is not set` line (see "What extract
+  and rebuild print").
 - `appWideComponents` — components drawn around all the routes, such as a provider in the app's entry file or the
   component of the routes file itself (optional): `[{ "import": "providers/App/App", "name": "AppProvider" }]`.
-  `import` and `name` are read as in `history`, with `default` for a default export, and a key of another shape, an
-  `import` that names no file under `srcRoot` or a `name` that file does not export stops the run with an error
-  naming the key. The requests each one's code reaches are sent once for the whole app, and go under `appWide` on the
-  map, not on a screen; duru does not go into the screens, route files, and components around or beside routes it
-  draws (see "The map").
+  `import` and `name` are read as in `history`, with `default` for a default export. The requests each one's code
+  reaches are sent once for the whole app, and go under `appWide` on the map, not on a screen (see "The map").
 - `linkComponents` — link components whose source duru does not read, such as a design system package's `Link`
-  (optional): `[{ "import": "@appsmith/ads", "name": "Link" }]`. Where one is used, its `to` is a link, except an
-  address of another site or a file opened in a new tab. A component that picks a tab by the address is named in
-  `routeTabs` instead.
+  (optional): `[{ "import": "@appsmith/ads", "name": "Link" }]`. Where one is used, its `to` is a link. A component
+  that picks a tab by the address is named in `routeTabs` instead.
 - `linkFunctions` — functions whose call stands for a link while the move happens elsewhere, such as a menu action
   made from an address (optional): `[{ "import": "~/actions", "name": "createInternalLinkAction", "address": "0.to"
   }]`. `address` is where the address is among the values the function is given, as the place of the value counted
   from 0 followed by the keys inside it, as in `requestFunction`.
 - In both keys `import` is the module as the app imports it, and an `import` starting with `.` is a path from
-  `srcRoot`. When it resolves to a file under `srcRoot`, `name` is what that file exports, and a screen's import is
-  matched by following it to that file; otherwise `import` is matched as written. A key of another shape, an
-  `import` starting with `.` that names no file under `srcRoot`, or a file under `srcRoot` that does not export
-  `name`, stops the run with an error naming the key. An entry that no element or call in a screen's sources uses
-  gets a `… is used nowhere in the screen sources` line.
+  `srcRoot`.
 - `tsconfig` — the tsconfig file that declares the app's import aliases (optional), such as
   `"client/tsconfig.json"`, relative to the config file like `srcRoot`. Name the file that holds `paths`, itself
   or through `extends`: in a project whose `tsconfig.json` only lists `references`, that is the referenced file,
   such as `"client/tsconfig.app.json"`. Without it an import such as `@domains/user/Form` is taken for an outside
-  package and the screen's sources stop at that import. Aliases are read from this file only; there is no config
-  key for writing them by hand. A tsconfig that cannot be used (missing, not JSON, a broken `extends`, no
-  `paths`) stops the command with an error that names the file and what is wrong.
+  package and the screen's sources stop at that import.
 - `constants`, `constantStubs` — modules run for route paths, API endpoint definitions and settings defaults,
   and stand-in source for imports they cannot run. `constants` is optional unless `routeConstant` or a settings
-  default names one of its modules, and when it is there it must be an object of file paths, or the run stops with
-  an error. A module's value is what it exports by default, or, without a
-  default export, an object of its named exports. A module and every file it imports, `.ts` files included, are
+  default names one of its modules, and is an object of file paths. A module's value is what it exports by default,
+  or, without a default export, an object of its named exports. A module and every file it imports, `.ts` files included, are
   run as written, so a value a function builds is read like a literal one. An import that finds no file gets an
   empty stand-in; when the extraction stops on one with a file and line, give that import a `constantStubs`
   entry, the source text of a stand-in module, keyed by the package name or by the relative import as written
@@ -196,7 +168,7 @@ takes, and the exit code is 1.
 
 - `apiModules`, `passThroughCalls` — where API functions live and which wrappers pass a URL through. Both may be left
   out; leaving out `apiModules` is the same as `[]`, for an app whose API code is read through `calledApiModules`
-  or sits in the screens. An `apiModules` that is not a list of paths from `srcRoot` stops the run with an error.
+  or sits in the screens. `apiModules` is a list of paths from `srcRoot`.
 - `calledApiModules`, `requestFunction` — for API code whose methods find their address somewhere else, such as in a
   table or through a prefix added when the request is sent. `calledApiModules` lists the files that export the API
   objects, API functions or API classes. `requestFunction` names the function the app sends its requests through:
@@ -204,24 +176,16 @@ takes, and the exit code is 1.
   that function is given, written as the position of the value counted from 0 followed by the keys inside it. `body`
   is the place of the request body and may be left out; without it duru does not check the input keys of the screens.
   An `import` starting with `.` is a path from `srcRoot`. duru runs the listed files with that function replaced by a
-  recorder, and what else its file exports stays as it is, calls every exported function, every method of every exported object and every static method of every
+  recorder, calls every exported function, every method of every exported object and every static method of every
   exported class once with fake values, and puts the method and address of each request on the map as that function's
   or method's call, with the prefix the app adds. A piece of an address that comes from a fake value is written `{?}`.
   Requests the listed files send with the global `fetch` are recorded too, so API code that sends only through
-  `fetch` lists its files in `calledApiModules` and leaves `requestFunction` out. So are the requests a method sends
-  by moving the browser (a link it makes and clicks, `window.open`, an address given to `location`), each as a
-  `GET`. Outside packages that `constantStubs` does not give are filled with values that do nothing, except
-  `react-query` and `@tanstack/react-query`: their `useQuery`, `useInfiniteQuery`, `useQueries` and `useMutation`,
-  with the suspense forms of the first three, call the query or mutation function they are given once with fake
-  values, and their `queryOptions`, `infiniteQueryOptions` and `mutationOptions` give back what they are given. So
-  a hook a listed file exports, such as one an OpenAPI generator writes around a request function, makes the
-  requests of that function, and a screen that calls the hook gets them. A `constantStubs` entry for either package
-  is used in place of this. With `requestFunction`, the files in `apiModules` are run too, only to learn which values
-  the screens pass reach a request; their addresses are still the ones reading them gives.
-  An API function that a screen's own source gives to react-query is a call of that screen, as one it calls
-  directly is. The `enabled` the screen gives that query, or gives a listed file's hook under `query`
-  (`useListUsers({ query: { enabled } })`), is a condition of the requests the query sends, as it is written. A call
-  stopped after one second counts as failed. Two listed files exporting different objects under one name, or a name
+  `fetch` lists its files in `calledApiModules` and leaves `requestFunction` out. A react-query hook a listed file
+  exports, such as one an OpenAPI generator writes around a request function, makes the requests of that function,
+  and a screen that calls the hook gets them. An API function that a screen's own source gives to react-query is a
+  call of that screen, as one it calls directly is. The `enabled` the screen gives that query, or gives a listed
+  file's hook under `query` (`useListUsers({ query: { enabled } })`), is a condition of the requests the query
+  sends, as it is written. Two listed files exporting different objects under one name, or a name
   `apiModules` already has, get the file path in front of the name. On into-sign 2.0.0:
 
   ```json
@@ -260,21 +224,7 @@ takes, and the exit code is 1.
   running it: a call of the global `fetch`, of axios, or of the function or object `requestFunction` names, in a
   file the screen reaches. `requestFunction` alone is enough for this, without `calledApiModules`. Such a request
   is a call of the screen, marked `"direct": true` among its `apiCalls`, with how it is sent (`fetch`,
-  `axios.post`, `<form action>`) where an API function's name would be, and it joins `calls` by its method and
-  address like the calls of API functions. A piece of the address that the source takes from a value is written
-  `{?}`. A form that posts is read the same way. Any other move of the browser written in a screen source is a
-  call only when the config shows that its path goes to the server: the server list holds the path, or the path
-  starts with one of `app.apiPaths`. An address on another host is read only when that host is `app.server`.
-
-  In an app that uses redux-saga, a request a saga sends is a call of each screen that dispatches an action the
-  saga waits for, among the sagas the app runs with a `createSagaMiddleware()` result. No key turns this on. The
-  requests are those of the API functions and of `requestFunction` that the saga reaches, as a screen's are.
-
-  A request sent by a method of a store the screens get from a React context hook, such as a MobX store from
-  `useStores()`, is a call of the screens that call that method. duru reads which method is called from the
-  TypeScript types of the source, with the options of `tsconfig` when the config names one. A screen that gets the
-  store only from the hook gets those calls too, though the store files are not in its `sourceFiles` and their
-  setting reads and links are not on the screen.
+  `axios.post`, `<form action>`) where an API function's name would be.
 - `sourcePackages` — packages of the same repository whose source duru reads like the app's own (optional),
   each package name with its source folder as a path from the config file. An import of a package that is not
   listed here runs as a value that does nothing, as an outside package does. For a client whose API class lives in
@@ -294,8 +244,7 @@ takes, and the exit code is 1.
   `{ "POST:/api/v1/report/export": ["withHistory"] }`, for a body the source does not show.
 - `bodyTypeExclusions` — on/off fields read from the body type to leave out of a call's options, per call ID
   (optional), as `{ "POST:/api/v1/documents": ["enabledPkiSign", "signers[].required"] }` with the field paths as
-  the map names them, for a field no screen lets the user change. A field it leaves out is not taken from the bodies
-  of the requests the tests sent either.
+  the map names them, for a field no screen lets the user change.
 - `settingsRoots` — identifiers through which settings are read.
 - `settingsDefaults` — where the default values of a settings root are written (optional), as
   `{ "globalSettings": { "file": "store/settings.js", "const": "defaults" } }`: the object literal that a
@@ -352,8 +301,6 @@ takes, and the exit code is 1.
   in the map), and picks only what every key it writes matches. In a pattern, `*` stands for one whole part between
   `/`s and `**` for any number of parts, none included. A rule with `screen` alone picks screens; a rule with
   `methods` or `api` picks the calls that the screens its `screen` matches send, or any call when it has no `screen`.
-  A kind is a case of a screen or call where one of its rules picks it or a reviewer picks it on the review page; a
-  rule's pick is taken out only by a mark that names the rule (see **Marks**).
 
 ### Output and review
 
@@ -374,16 +321,14 @@ takes, and the exit code is 1.
   screen. See **Story candidates**.
 - `baselineMap` — the `map.json` of an earlier version of the same client (optional), such as the map kept from
   the last release. `rebuild` and the review page then show what changed since it. Build it with the same duru as
-  the current map: a map from another duru can differ for reasons in duru rather than in the client, and one from a
-  duru that did not record the roles a route guard lets through is refused.
+  the current map: a map from another duru can differ for reasons in duru rather than in the client.
 - `baselineTests` — the test results of an earlier version of the same client (optional), written like `tests`,
   such as `[{ "format": "playwright", "path": "releases/1.5.0/e2e.json", "depth": "ui" }]`. `rebuild` then compares
   them with the current results and prints the tests that passed there and fail or are pending now (see **What
   extract and rebuild print**), and the review page marks them (see **Review page**). It works with or without `baselineMap`. An empty list compares nothing and prints no
   line about it. To keep the results of a release, run the whole suite on that version and copy its result files
   straight into that version's folder, such as `releases/1.5.0/`; copy JUnit XML and verdict logs with their modified
-  time kept (`cp -p`), since that is the time duru takes for when they ran. In a git checkout, where that time is
-  the checkout's, such a file unchanged since its last commit takes the author date of that commit when it is earlier. Keeping the results of a run of only some
+  time kept (`cp -p`), since that is the time duru takes for when they ran. Keeping the results of a run of only some
   of the tests leaves the rest out of the comparison: those under a screen or call now count as `only now`. Tests of the two results are matched by their title without
   tags, their Playwright project and their test file, so a test renamed or moved to another file counts once in
   `only in baseline` and once in `only now`.
@@ -435,8 +380,7 @@ takes, and the exit code is 1.
   list API is called with the token in `login.header`. A variable can also take an API that issues the value,
   such as a one-time code an outside service opens a screen with:
   `{ "api": "/api/v2/one-time-code/create", "method": "POST", "header": { "X-API-KEY": "{key}" }, "keyEnv": "APP_API_KEY", "body": { … }, "value": "contents.code" }`.
-  It is sent with only `header`, `{key}` filled from the environment variable named by `keyEnv`, and called again
-  every time the screen opens. A key that starts with `?` fills a query parameter instead of a path variable
+  It is sent with only `header`, `{key}` filled from the environment variable named by `keyEnv`. A key that starts with `?` fills a query parameter instead of a path variable
   (`"?token"` gives `?token=<value>`), and `{documentId}` in the `body` of an issuing API is replaced with the
   value of that path variable of the same route.
 
@@ -444,9 +388,7 @@ takes, and the exit code is 1.
   settings without touching the test server: `path` is where the app requests it, `global` the object the file
   assigns, `root` the `settingsRoots` entry it feeds (it needs a `settingsDefaults` entry too), and `merged` the
   top-level sections the app merges one level deep over its defaults. Only settings in a `merged` section can be
-  changed; changes last until the review ends and are never sent to the server. `story` reads the same file, without
-  logging in, to say whether each setting a story needs is already met; a file at a web address that does not answer
-  in 10 seconds counts as not read.
+  changed; changes last until the review ends and are never sent to the server.
 
 ## The map
 
