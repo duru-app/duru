@@ -229,7 +229,7 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
   const kinds = Object.keys(caseKinds);
   const listed = storyCandidates(config, map, mapFile, traced);
   const candidates = { ...listed, list: proposeStoryIds(listed.list, storyIds, tests.stories ?? {}, map) };
-  const marks = classifyMarks(loadMarks(config.marksDir).map(mergedStatus), map, storyIds, kinds, linked, config.roleGuards, candidates.list.map((c) => c.key), stories.list as StoryPath[]);
+  const marks = classifyMarks(loadMarks(config.marksDir).map(mergedStatus), map, storyIds, kinds, linked, config.roleGuards, candidates.list.map((c) => c.key), stories.list as StoryPath[], candidates.became);
   const targets = caseTargets(map, caseKinds, marks.attached);
   const pickedCases = (id: string) => pickedKinds(targets, id);
   const settingsFile = config.app?.settingsFile ? { root: config.app.settingsFile.root, merged: config.app.settingsFile.merged, file: fileSettings?.file ?? null } : null;

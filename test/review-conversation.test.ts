@@ -793,7 +793,7 @@ test('a comment on a test saved while tests.json cannot be read is still saved a
 const TRACE_CANDIDATE = '/home#Home > /help#Help';
 const TRACE_TITLES = ['opens home and then help', 'follows a link while waiting for the new address', 'uses the mouse right after the address changes', 'clicks a button that appears after the address changes'];
 
-test('a comment on a candidate from a trace is announced with its result file, test titles and screen order; once the candidate is accepted it is detached under the candidate name and a reply to it is announced with where as null', async () => {
+test('a comment on a candidate from a trace is announced with its result file, test titles and screen order; once the candidate is accepted it stays attached with the story it became, a reply to it is announced with where as null, undoing the acceptance gives it back to the candidate, and discarding the candidate detaches it under the candidate name', async () => {
   await withRebuiltFixture({ ...CANDIDATES, ...TRACED }, async (config) => {
     const lines: unknown[] = [];
     const server = await startReviewServer(config, { author: signer('reviewer'), onMark: (line) => lines.push(line) });
@@ -811,9 +811,18 @@ test('a comment on a candidate from a trace is announced with its result file, t
       assert.equal(answered.status, 201);
       assert.deepEqual(lines.slice(1).map((l) => [(l as { duru: string }).duru, (l as { target: unknown }).target, (l as { where: unknown }).where]), [['reply', target, null]]);
       data = await (await fetch(`${base}/api/data`)).json();
-      assert.deepEqual(data.marks.detached.map((m) => m.target), [target]);
+      const onCandidate = (data: PageData) => data.marks.attached.filter((m) => m.key === `candidate(${TRACE_CANDIDATE})`).map((m) => [m.target, m.became ?? null]);
+      assert.deepEqual(onCandidate(data), [[target, { story: 'home-help' }]]);
+      assert.deepEqual(data.marks.detached, []);
       assert.equal(data.candidates.gone[TRACE_CANDIDATE], 'opens home and then help');
       assert.equal(taskList(config), taskList({ ...config, marksDir: path.join(config.outDir, 'no-marks') }));
+
+      assert.equal((await postJson(base, '/api/stories/unaccept', { id: 'home-help' })).status, 200);
+      data = await (await fetch(`${base}/api/data`)).json();
+      assert.deepEqual(onCandidate(data), [[target, null]]);
+      assert.equal((await postJson(base, '/api/candidates/discard', { key: TRACE_CANDIDATE, reason: '도움말만 연다' })).status, 201);
+      data = await (await fetch(`${base}/api/data`)).json();
+      assert.deepEqual(data.marks.detached.map((m) => [m.target, m.became ?? null]), [[target, null]]);
     } finally {
       server.close();
     }
@@ -889,7 +898,7 @@ test('in a browser, a comment on a story candidate shows in 「전체」 under t
   });
 });
 
-test('in a browser, once a candidate with comments is accepted or discarded, its comments show under 「떨어져 나감」 of the stories with the candidate name, and not under the screens', { skip: browserMissing }, async () => {
+test('in a browser, once a candidate with comments is discarded, its comments show in the detached list of the stories with the candidate name, and not under the screens, while those of an accepted candidate do not', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ ...CANDIDATES, ...TRACED }, (config) => {
     addMark(config.marksDir, { target: { candidate: HELP_KEY }, note: 'why the beta inbox?', author: 'reviewer' });
     addMark(config.marksDir, { target: { candidate: TRACE_CANDIDATE }, note: 'which test gives this?', author: 'reviewer' });
@@ -906,7 +915,6 @@ test('in a browser, once a candidate with comments is accepted or discarded, its
         await p.waitForSelector('#candidate-list li:has-text("opens home and then help")', { state: 'detached' });
         assert.deepEqual(await p.locator('#left .detached li').evaluateAll((items) => items.map((li) => [li.querySelector('code')!.textContent, li.querySelector('div')!.textContent])), [
           ['후보 opens home and then help', 'which test gives this?'],
-          ['후보 open-help', 'why the beta inbox?'],
         ]);
         await p.click('#view-list');
         await p.waitForSelector('#screen-list li');

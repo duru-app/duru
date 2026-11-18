@@ -9,6 +9,7 @@ import { jsonFiles } from './json-files.ts';
 import { catchAllScreens } from './map-fitness.ts';
 import { loadMarks, orderKey, recordKind, recordName, targetsOf, writeNewRecord } from './marks.ts';
 import { pathParts } from './path-values.ts';
+import type { Became } from './marks.ts';
 import type { SentRequests } from './request-options.ts';
 import { addStory, CANDIDATES, checkFreeStoryId, DISCARDED, inputsProblem, joinedFields, keptSteps, RECORDS, isDate, isScreenList, isSource, isText, loadStories, sameBox, sourceAfterSteps, SOURCE_SHAPES, STEP_FIELDS, stepProblem, STORY_ID, writableStoriesFolder } from './stories.ts';
 import type { CommentSource, ReplacedCandidate, StepFields, StepInput, StorySource } from './stories.ts';
@@ -727,6 +728,18 @@ function sameSource(a: Candidate['source'], b: Candidate['source']) {
 const acceptedOrders = (stored: { screens: string[]; source: Candidate['source']; acceptedAs?: string }[], stories: { id: string }[], rules: SkipRule[]) =>
   new Map(stored.flatMap((c) => (stories.some((s) => s.id === c.acceptedAs) ? [[JSON.stringify(shownOrder(c.screens, rulesFor(c.source, rules))), c.acceptedAs!] as const] : [])));
 
+function becameStories(stored: { screens: string[]; source: Candidate['source']; acceptedAs?: string }[], stories: { id: string }[], rules: SkipRule[]) {
+  const ids = new Set(stories.map((s) => s.id));
+  const became: Record<string, Became> = {};
+  for (const c of stored) {
+    if (c.acceptedAs === undefined || !ids.has(c.acceptedAs)) continue;
+    const story = { story: c.acceptedAs };
+    for (const r of ('comment' in c.source && c.source.replaces) || []) became[r.screens.join(' > ')] = story;
+    became[shownOrder(c.screens, rulesFor(c.source, rules)).join(' > ')] = story;
+  }
+  return became;
+}
+
 const takenBy = (stories: { source?: Candidate['source'] }[]) => {
   const sources = stories.flatMap((s) => (s.source ? [s.source] : []));
   return (source: Candidate['source']) => sources.some((s) => sameSource(source, s));
@@ -741,11 +754,13 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   const all = [...notices, ...[...discardedNotices, ...storedNotices].map((n) => ({ ...n, file: relative(config.configDir, path.join(config.storiesDir, n.file)) }))];
   const current = discardedNow(discarded);
   const shown = shownDiscarded(current);
+  const rules: SkipRule[] = config.candidateSkipScreens ?? [];
+  const stories = loadStories(config.storiesDir).stories;
+  const became = becameStories(stored, stories, rules);
   if (linksFromOldDuru(map)) {
-    return { list: [], discarded: shown, notices: all, stale: records.length || traced.length || stored.length ? staleMapMessage(mapFile, '후보') : undefined };
+    return { list: [], discarded: shown, became, notices: all, stale: records.length || traced.length || stored.length ? staleMapMessage(mapFile, '후보') : undefined };
   }
   const screenAt = screenFinder(map);
-  const rules: SkipRule[] = config.candidateSkipScreens ?? [];
   const found = new Set<string>();
   const cut = new Set<string>();
   const ruledOrCut = (candidate: Candidate) => {
@@ -753,7 +768,6 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
     if (after !== candidate) cut.add(JSON.stringify(candidate.screens));
     return after;
   };
-  const stories = loadStories(config.storiesDir).stories;
   // 고친 후보를 받거나 버린 뒤에도 원래 후보는 목록에 올리지 않는다. 원래대로 되돌린 후보만 예외다.
   const replaced = replacedNow(stored, stories, current);
   const seen = new Set([...stories, ...current, ...replaced].map((s) => JSON.stringify(s.screens)));
@@ -856,7 +870,8 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
     const acceptProblem = stepsLeftProblem(stories, c);
     return [{ ...c, ...(originals && { originals }), ...(left && { stepsLeft: left }), ...(acceptProblem && { acceptProblem }) }];
   });
-  return { list: checkStories(map, checked), discarded: shown, gone, notices: all, missedRules, cutByRules: cut.size, onlyCatchAll };
+  for (const c of checked) for (const r of c.originals ?? []) became[r.screens.join(' > ')] ??= { candidate: c.key };
+  return { list: checkStories(map, checked), discarded: shown, became, gone, notices: all, missedRules, cutByRules: cut.size, onlyCatchAll };
 }
 
 type StoryTagged = Record<string, { title: string; source: string }[]>;

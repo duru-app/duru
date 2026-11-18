@@ -26,7 +26,7 @@ export type FlowNode = { id: string; imported?: number; label: string; component
 export type ScreenLink = { from: string; file: string; line: number; guards: Guard[]; fromKinds: string[] };
 export type MapScreen = { id: string; path: string; component: string; componentFile?: string; dead?: boolean; routeGuards: string[]; access: { links: ScreenLink[] }; links?: object[]; settingReads?: object[]; apiCalls: object[] };
 export type Story = { id: string; name: string; screens: string[]; links: { verdict: string }[]; broken: boolean; detached: boolean; unjudged: boolean; status: string; reach: Reach[]; contentHash: string };
-export type Mark = { key: string; target: unknown; current: { status: string; note: string; author: string } };
+export type Mark = { key: string; target: unknown; current: { status: string; note: string; author: string }; became?: { story: string } | { candidate: string } };
 export type AppData = { url: string; signedOutUrl: string; roles: { role: string; account: string; error: string | null; url: string }[]; settings: { overrides: object[] } };
 export type PageData = {
   takenComments: string[];
