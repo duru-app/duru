@@ -1021,7 +1021,7 @@ keep in its `inputs`. A comment on a screen order takes no `replaces`.
 While the new candidate is listed, accepted or discarded, the candidates it replaces are not
 listed, even after a `rebuild` gives them again from the records or the traces. A discard made with 「되돌리기」 is the
 exception: it lists them again. The page shows each order replaced folded under 「원래 순서 N」 with where it came
-from, each dropped step struck through with its reason under it and 「판단」 on a step the agent judged.
+from, the reason under each dropped step and 「판단」 on a step the agent judged.
 
 ## Review page
 
@@ -1259,7 +1259,7 @@ the candidate is listed again and chosen. It asks first only when conditions, in
 in the story. The comments left on that story then show under 「떨어져 나감」, as for any story file that is gone. A
 story made with 「새 스토리」 or written by hand has no such button. 「버린 후보 N」, below the candidates, lists the
 discarded candidates with their reason and date; 「복원」 on one writes the undo file and lists the candidate again. A
-candidate an agent posted in place of others has 「되돌리기」: it puts the candidate, and every other candidate posted
+candidate an agent posted in place of others has 「되돌리기」: it puts the candidate, and every other listed candidate posted
 for the same comment in place of the same original, under 「버린 후보」 with the reason `원래대로 되돌림` and lists the
 originals again, also after the next `rebuild`. 「복원」 on that entry brings the
 candidate back and takes the originals off the list.
