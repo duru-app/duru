@@ -715,9 +715,17 @@ function recordSources(config: any) {
 const sourceKey = (source: Candidate['source']) => JSON.stringify('comment' in source ? { comment: source.comment, ...(source.replaces && { replaces: source.replaces.map((r) => [r.screens, r.dropped.map((d) => d.step)]) }) } : source);
 
 const replacedIn = (holders: { source?: unknown }[], freeOf?: string): ReplacedCandidate[] => holders.flatMap(({ source }: any) => (isSource(source) && source.replaces && source.comment !== freeOf && source.replaces) || []);
-function replacedNow(stored: { screens: string[] }[], stories: { source?: unknown }[], current: any[], freeOf?: string) {
-  const back = new Set(current.filter((d) => d.backToOriginal).map((d) => JSON.stringify(d.screens)));
-  return replacedIn([...stored.filter((s) => !back.has(JSON.stringify(s.screens))), ...stories, ...current.filter((d) => !d.backToOriginal)], freeOf);
+function replacedNow(stored: { screens: string[]; source?: unknown }[], stories: { source?: unknown }[], current: any[], freeOf?: string) {
+  const replacerAt = new Map(stored.flatMap((s: any) => (isSource(s.source) && 'comment' in s.source && s.source.replaces ? [[JSON.stringify(s.screens), s.source as CommentSource] as const] : [])));
+  const replacerOf = (d: { screens: string[] }) => replacerAt.get(JSON.stringify(d.screens));
+  const backs = current.filter((d) => d.backToOriginal);
+  const sameSplit = (a: CommentSource, b: CommentSource) => a.comment === b.comment && a.replaces!.some((r) => b.replaces!.some((x) => isDeepStrictEqual(r.screens, x.screens)));
+  const wentBack = (d: any) => {
+    const replacer = replacerOf(d);
+    return replacer && backs.some((b) => compare(b.date, d.date) >= 0 && replacerOf(b) && sameSplit(replacerOf(b)!, replacer));
+  };
+  const back = new Set([...backs, ...current.filter((d) => !d.backToOriginal && wentBack(d))].map((d) => JSON.stringify(d.screens)));
+  return replacedIn([...stored.filter((s) => !back.has(JSON.stringify(s.screens))), ...stories, ...current.filter((d) => !back.has(JSON.stringify(d.screens)))], freeOf);
 }
 
 function sameSource(a: Candidate['source'], b: Candidate['source']) {

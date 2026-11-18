@@ -1729,12 +1729,12 @@ const postSplit = (comment: (target?: object) => string, post: (comment: string,
   const id = comment({ candidate: a.join(' > ') });
   post(id, { name: '홈', screens: [HOME], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }, { step: 3, reason: '도움말은 다른 후보로 나눕니다' }] }] });
   post(id, { name: '도움말', screens: [HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }, { step: 2, reason: '홈은 다른 후보로 나눕니다' }] }] });
-  return a;
+  return { a, id };
 };
 
 test('one comment on a candidate may split it into several candidates that each name it in replaces, each showing the original with the steps the others took, while a candidate for another comment still cannot name it', () => {
   withReplaceable(HELP_VISITS, ({ cfg, comment, post, listed, files }) => {
-    const a = postSplit(comment, post);
+    const { a } = postSplit(comment, post);
     const at = (name: string) => listed().list.find((c) => c.name === name)!;
     assert.deepEqual(listed().list.map((c) => c.name).sort(), ['b', '도움말', '홈']);
     assert.deepEqual(at('홈').originals!.map((r) => [r.screens, r.elsewhere]), [[a, [[], [], ['도움말']]]]);
@@ -1753,7 +1753,7 @@ test('one comment on a candidate may split it into several candidates that each 
 for (const [which, pressed] of [['first', '홈'], ['second', '도움말']]) {
   test(`going back to the original from the ${which} split candidate takes down every candidate the comment split the original into and lists the original again`, () => {
     withReplaceable(HELP_VISITS, ({ cfg, comment, post, listed }) => {
-      const a = postSplit(comment, post);
+      const { a } = postSplit(comment, post);
       const list = listed().list;
       backToOriginal(cfg.storiesDir, list.find((c) => c.name === pressed)!, list, { author: 'hit' }, new Date('2026-10-21T03:00:00Z'));
       assert.deepEqual(listed().list.map((c) => c.screens), [a, [SIGNIN, LAB]]);
@@ -1761,6 +1761,35 @@ for (const [which, pressed] of [['first', '홈'], ['second', '도움말']]) {
     });
   });
 }
+
+const goBackAfterDiscardingOnePart = ({ cfg, comment, post, listed }: Parameters<Parameters<typeof withReplaceable>[1]>[0]) => {
+  const split = postSplit(comment, post);
+  discardCandidate(cfg.storiesDir, listed().list.find((c) => c.name === '홈')!, { reason: '필요 없음', author: 'hit' }, new Date('2026-10-21T03:00:00Z'));
+  const list = listed().list;
+  backToOriginal(cfg.storiesDir, list.find((c) => c.name === '도움말')!, list, { author: 'hit' }, new Date('2026-10-21T04:00:00Z'));
+  return split;
+};
+
+test('going back to the original from a split candidate lists the original also when the reviewer already discarded another part of the split for another reason, which keeps its discard and reason', () => {
+  withReplaceable(HELP_VISITS, (ctx) => {
+    const { a } = goBackAfterDiscardingOnePart(ctx);
+    assert.deepEqual(ctx.listed().list.map((c) => c.screens), [a, [SIGNIN, LAB]]);
+    assert.deepEqual(ctx.listed().discarded.map((d: any) => [d.screens, d.reason]).sort(), [[[HELP], '원래대로 되돌림'], [[HOME], '필요 없음']]);
+  });
+});
+
+test('restoring a split part discarded for another reason before another part went back to the original lists that part again and takes the original off the list, and a part posted again after going back still hides the original', () => {
+  withReplaceable(HELP_VISITS, (ctx) => {
+    goBackAfterDiscardingOnePart(ctx);
+    undiscardCandidate(ctx.cfg.storiesDir, [HOME], { author: 'hit' }, new Date('2026-10-21T05:00:00Z'));
+    assert.deepEqual(ctx.listed().list.map((c) => c.name), ['b', '홈']);
+  });
+  withReplaceable(HELP_VISITS, (ctx) => {
+    const { a, id } = goBackAfterDiscardingOnePart(ctx);
+    ctx.post(id, { name: '홈에서 도움말', screens: [HOME, HELP], replaces: [{ screens: a, dropped: [{ step: 1, reason: NO_SIGNIN }] }] });
+    assert.deepEqual(ctx.listed().list.map((c) => c.name), ['b', '홈에서 도움말']);
+  });
+});
 
 test('a candidate for a comment on a candidate or on nothing is refused with why, writing nothing, without the originals it replaces, with an original not listed, a step left out without a reason, the steps in another order, dropped steps that do not fit or an order already listed, while a candidate for a comment on a screen order takes no originals', () => {
   withReplaceable(HELP_VISITS, ({ cfg, comment, post, files }) => {

@@ -2380,6 +2380,11 @@ by the steps each dropped as well, so accepting one part leaves the others liste
 same answer. A part whose original a story still replaces, such as the part left after another was accepted, shows no
 originals and no 「되돌리기」, as a candidate whose comment already gave a story does, because the undo could not
 bring the original back (model's decisions in #606, not yet confirmed).
+A part the reviewer had already discarded for another reason stops hiding the original once 「되돌리기」 is pressed on
+another part of the same split, so the undo brings the original back as it says. That discard keeps its file and its reason, and 「복원」 on it brings the part back and hides the original
+again, as 「복원」 on any part does after going back. A part posted for the comment after the undo, or discarded after
+it, hides the original as any candidate does, since only a discard dated no later than the undo is passed over
+(coordinator's decision in #606, recorded as a model decision, not yet confirmed).
 Alternatives compared:
 - A split id written into the candidate's source: groups the parts without comparing originals, but adds a stored
   field that older files lack, and the comment and the original already say the same.
