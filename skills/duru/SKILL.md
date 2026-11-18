@@ -462,7 +462,12 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    `duru rebuild`, and read the list again.
 3. **Write the tests.** In the target project, write tests for each screen, API call and story in the task list,
    following its marks and notes. The top of the list says how to tag a test so that it attaches to a screen or call
-   (`@screen:<screen ID>`, `@call:<call ID>`, `@depth:<depth>`); every new test needs those tags. For Playwright,
+   (`@screen:<screen ID>`, `@call:<call ID>`, `@depth:<depth>`); every new test needs those tags. A depth is one of
+   `ui` (drives the app through its screens), `api` (calls the API), `render` (only draws a screen or component),
+   `code`, `data` and `output` (checks the content of what the app produces, such as an exported or downloaded
+   file). A test without `@depth:` takes the depth its result file is registered with in `tests`, so a test in a
+   browser run that checks the content of a file the app made is counted as `ui` unless it carries
+   `@depth:output`. For Playwright,
    put the tags in the test's `tag` option (`test('<what it checks>', { tag: ['@screen:<screen ID>'] }, …)`) and
    keep them out of the title (before Playwright 1.42, which has no `tag` option, put them at the end of the
    title); for Vitest put them at the end of the test's own title, for JUnit at the end of its
