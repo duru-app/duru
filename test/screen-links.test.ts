@@ -1212,6 +1212,31 @@ export default function Home({ id, rest }) {
   assert.deepEqual(linksOf(map, '/home#Home').map(([to, line]) => [to, line]), [['/help', lineOf(home, '>help<')]]);
 });
 
+test('a move with more than 8 different addresses still gives {*} for a value glued after another when that value is, on every branch, empty or text starting with ? or #, and no link for any other glued value', async () => {
+  const teams = `export function teamOf(tab) {\n${Array.from({ length: 8 }, (_, i) => `  if (tab.is${i}) return 'crew${i}/list';\n`).join('')}  return 'crew/list';\n}\n`;
+  const home = `import { useNavigate } from 'react-router-dom';
+import { teamOf } from './teams';
+
+export default function Home({ tab, flag, rest }) {
+  const navigate = useNavigate();
+  const param = flag ? \`?tab=\${flag}\` : '';
+  return (
+    <div>
+      <button onClick={() => navigate(\`/team/\${teamOf(tab)}\${param}\`)}>query</button>
+      <button onClick={() => navigate(\`/team/\${teamOf(tab)}\${flag ? '#top' : ''}\`)}>hash</button>
+      <button onClick={() => navigate(\`/team/\${teamOf(tab)}\${rest}\`)}>glued</button>
+    </div>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Routes.js': V6_ROUTES, 'Home.js': home, 'teams.js': teams }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home').map(([to, line]) => [to, line]), [
+    ['/team/{*}', at('>query<')],
+    ['/team/{*}', at('>hash<')],
+  ]);
+});
+
 const OPTION = "export default { ROUTE_PATH: { HOME: '/home', LOGIN: '/login', HELP: '/help', TEAM: '/team' } };\n";
 const withRouteConstant = (files: Record<string, string>, keys: Record<string, unknown> = {}) => writeApp(
   { 'Option.js': OPTION, ...files },

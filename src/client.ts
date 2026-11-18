@@ -1161,12 +1161,14 @@ export async function extractClient(config: any) {
     });
   }
 
-  function tailText(p: NodePath<any>): string {
+  function tailText(p: NodePath<any>, stops: NodePath[] = []): string {
     if (p.isStringLiteral()) return p.node.value;
-    if (p.isTemplateLiteral()) return p.node.quasis.map((q, i) => (i ? tailText(p.get(`expressions.${i - 1}`) as NodePath) : '') + q.value.cooked).join('');
-    if (p.isBinaryExpression({ operator: '+' })) return tailText(p.get('left')) + tailText(p.get('right'));
+    if (p.isTemplateLiteral()) return p.node.quasis.map((q, i) => (i ? tailText(p.get(`expressions.${i - 1}`) as NodePath, stops) : '') + q.value.cooked).join('');
+    if (p.isBinaryExpression({ operator: '+' })) return tailText(p.get('left'), stops) + tailText(p.get('right'), stops);
     const value = lossless(p) ? evaluate(p) : undefined;
-    return typeof value === 'string' || typeof value === 'number' ? String(value) : UNREADABLE_PIECE;
+    if (typeof value === 'string' || typeof value === 'number') return String(value);
+    stops.push(p);
+    return UNREADABLE_PIECE;
   }
 
   function pathSegments(text: string) {
@@ -1255,15 +1257,16 @@ export async function extractClient(config: any) {
 
   // 링크 요소의 to 나 history 이동에 적은 주소. 동적 세그먼트는 {*} 로 두고, 값으로 시작하는 주소는 {?} 다.
   // 갈래가 너무 많으면 함수를 따라가지 않고, 호출마다 읽지 못한 조각으로 둔 주소 하나를 준다.
-  const linkAddresses = (p: NodePath, keepGlued = false) => addressesOf(linkReading.branches(p), () => tailText(p), keepGlued);
+  const linkAddresses = (p: NodePath, keepGlued = false) => addressesOf(linkReading.branches(p), (stops) => tailText(p, stops), keepGlued);
 
   // 주소 함수가 돌려준 갈래 가운데 끝까지 읽었는데 / 로 시작하지 않는 것은 링크가 아니고, // 가 생기는 것은 {?} 다.
   // sides 는 그 주소를 내는 갈래가 모두 같은 쪽에서만 생길 때 그 설정 값들이다.
-  function addressesOf(read: Read, tooMany: () => string, keepGlued = false): { to: string; sides?: Side[] }[] {
+  function addressesOf(read: Read, tooMany: (stops: NodePath[]) => string, keepGlued = false): { to: string; sides?: Side[] }[] {
     const linkable = (text: string, stops?: NodePath[]) => keepGlued || !gluedUnknowns(text, stops);
     const one = () => {
-      const text = tooMany();
-      return linkable(text) ? [{ to: writtenAddress(text) }] : [];
+      const stops: NodePath[] = [];
+      const text = tooMany(stops);
+      return linkable(text, stops) ? [{ to: writtenAddress(text) }] : [];
     };
     if ('tooMany' in read) return one();
     const found = new Map<string, Side[] | null>();
@@ -1284,9 +1287,9 @@ export async function extractClient(config: any) {
 
   const keptBranches = (read: Read, keep: (text: string) => boolean): Read => ('tooMany' in read ? read : { branches: read.branches.filter((b) => keep(b.text)) });
   // linkComponents 의 컴포넌트는 바깥 사이트도 연다.
-  const outsideAddresses = (newTab: boolean) => (p: NodePath) => addressesOf(keptBranches(linkReading.branches(p), (text) => !/^https?:\/\//i.test(text)), () => tailText(p))
+  const outsideAddresses = (newTab: boolean) => (p: NodePath) => addressesOf(keptBranches(linkReading.branches(p), (text) => !/^https?:\/\//i.test(text)), (stops) => tailText(p, stops))
     .filter(({ to }) => !newTab || (to !== UNKNOWN && !/\.\w+$/.test(to.split(/[?#]/)[0])));
-  const listedAddresses = (p: NodePath) => addressesOf(keptBranches(linkReading.branches(p), (text) => text !== ''), () => tailText(p));
+  const listedAddresses = (p: NodePath) => addressesOf(keptBranches(linkReading.branches(p), (text) => text !== ''), (stops) => tailText(p, stops));
 
   // 라우트 파일의 Redirect · Navigate 가 보내는 곳은 링크가 아니라서 붙은 부분도 {*} 로 둔다.
   const oneAddress = (p: NodePath) => {
