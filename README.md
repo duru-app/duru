@@ -1016,68 +1016,41 @@ from, each dropped step struck through with its reason under it and 「판단」
 
 `review` serves a local page that reads `map.json` and `tests.json` from `outDir` and writes only marks, judgments,
 story files and the visits recorded on it. With only `map.json` there, as after `extract`, the page shows the map with
-no test results, so without judgments of tests and without the `baselineTests` comparison (with `baselineTests` set,
-the task list it prints at the end says so); `rebuild` writes `tests.json`. The page keeps the place being looked at in its address, so the back
+no test results; `rebuild` writes `tests.json`. The page keeps the place being looked at in its address, so the back
 button, a reload and a copied address work.
 
 **Flow.** The page opens on the flow: one line per screen, in columns by how many links or moves they are from an
 entry screen, with a square for the status of its tagged tests, the number of its API calls, and 「역할」 or 「설정」 when
-it opens only under a role or a setting; hovering shows what it needs and its untagged tests. A dashed line is a
-link under a setting or role condition, and a green dotted line is a move written in `moves`, whose reason shows on
-hovering the screen it leads to. The flow follows a move as it follows a link: a screen not yet drawn goes under the
-screen the move leaves, and one already drawn in another branch stays where it is. The links a menu named in
-`routeTables` gives for each table item are left out of the flow. Entry screens with no screen
-drawn under them are gathered below the rest, under a thin line whose hover says why they are there.
-On a map of more than 100 screens, the gathered
-screens that share the start of their address are folded into one box per group (a group of more than 20 is split
-again by the next part of the address): the box shows the shared start, the number of screens and, with the squares
-of the status buttons, how many pass, are within a limit, are pending, fail or have no tagged test. Pressing the box opens the group in
-its place across a whole row; pressing the group's name above the row folds it again. On such a map, every entry
-screen with screens under it is drawn folded among the gathered screens, with 「+N」 at its right end for the N
-screens under it and, with the same squares, how many of them pass, are within a limit, are pending, fail or have no tagged test. 「+N」 draws that entry screen above the gathered
-screens with its tree, where a screen with more than six screens under it is folded the same way; 「−」 folds it
-again, and pressing the box still picks the screen. A tree that no entry screen reaches is folded at its first
-screen in the same way, in its place.
-The bar above counts the drawn screens by status on buttons
-(「테스트 없음 4」, 「실패 5」 …); pressing one fades the other screens, and the search box does the same by route or
-component. With nothing picked, the right column lists the failing screens and then the ones without a tagged
-test. Pressing a screen keeps strong only the paths through it, marks the screens its links and moves reach in other
-branches, and shows the list view's middle and right panes for it beside the drawing; 「선택 해제」, Escape or a click
-on an empty spot of the drawing lets it go.
+it opens only under a role or a setting; the legend in the bar names the kinds of line. Entry screens with no screen
+drawn under them are gathered below the rest. On a map of more than 100 screens, the gathered
+screens that share the start of their address are folded into one box per group. Pressing the box opens the group;
+pressing the group's name above the row folds it again. On such a map, every entry
+screen with screens under it is drawn folded among the gathered screens, with 「+N」 at its right end for the N screens
+under it. 「+N」 draws that entry screen above the gathered screens with its tree, where a
+screen with more than six screens under it is folded the same way; 「−」 folds it again. A tree that no entry screen
+reaches is folded at its first screen in the same way.
+The bar above counts the drawn screens by status on buttons (「테스트 없음 4」, 「실패 5」 …); pressing one fades the
+other screens, and the search box does the same by route or component. Pressing a screen shows the list view's middle
+and right panes for it beside the drawing; 「선택 해제」 lets it go.
 
 **Story tab.** The third tab at the top, 「스토리」, shows one story at a time. The left column lists the stories, the
-candidates and the need files. In the middle, the chosen story's steps are drawn left to right on one line that stays
-at the top while the rest scrolls: each step is a box with its step number, its screen and the colour of its test
-status, and a step not on the map is drawn dashed. The line between two steps shows how they are joined: solid for a
-link with no condition, blue dashed for a link under a condition, green dotted for a move written in `moves`, red
-dashed with 「링크 없음」 where the map has no link, and orange dotted where a step is not on the map or a link's address
-could not be read; the 「i」 above the line shows these. Pressing a box outlines it and that step's card; pressing the line between two steps brings that link's row into view. Below the line are the story's cards: its name with its link verdict beside it, a folded 「사전 조건 N」, a folded
-「손볼 화면 N」 listing the failing and untested screens on its path, each bringing up its step card, the name and memo
-with 「저장」, the 「스토리 전체」 box, its tests, then each step and the link into it. The right column holds the
-story's conversation, as for a screen. The address of a story is `#story?story=<ID>`,
-with `&step=<N>` added while step N is outlined, so opening that address, going back to it or reloading it outlines
-the same step and brings its card into view.
+candidates and the need files. In the middle, the chosen story's steps are drawn left to right on one line; the 「i」
+above the line shows how two steps are joined. Below the line are the story's cards: its name with its link verdict,
+「사전 조건 N」, 「손볼 화면 N」 listing the failing and untested screens on its path, the name and memo with 「저장」, the
+「스토리 전체」 box, its tests, then each step and the link into it. The right column holds the story's conversation, as
+for a screen. The address of a story is `#story?story=<ID>`, with `&step=<N>` added for a step pressed on the line.
 
 **A new story.** 「새 스토리」 is made in the story tab only. The flow tab's bar has a 「새 스토리」 button (「새 스토리 이어
-쓰기」 once it has steps) that moves to the story tab's new-story screen, and `#flow?new=1` and `#stories?new=1` open
-the same screen. The left column lists the screens, and the middle shows the verdict beside the title, a folded
-「사전 조건 N」, and ID, name and memo with 「스토리 저장」 above the steps chosen so far and the whole flow. The right column
-shows 「에이전트와 대화」 on the screen order chosen so far, and its form carries that order as the tag 「화면 순서 /signin →
-/home」, which follows each step added or taken out (see **Comments on a screen order**); before the first step the form
-is greyed out, with a line saying the order chosen becomes its tag.
-Pressing a screen in the list or a box in the drawing adds that screen as the next step, and the drawing scrolls to
-keep the box pressed in place where it can.
-Each chosen box carries its step number. Two neighbouring steps are joined in the style of their verdict: on the link
-itself when the second box hangs under the first, otherwise by a mark in each of the two boxes with the other step's
-number. Pressing a step shows 「이전 단계 추가」 above it, 「다음 단계 추가」 below it and 「제외」 on it, as in 「순서
-고치기」; a step is moved by taking it out and adding it again. The same screen twice in a row is refused as in the
-list; a box already chosen is added again, since a story can pass a screen twice. 「스토리 목록」 closes the screen and
-keeps the steps for 「새 스토리 이어 쓰기」. In the flow tab a box opens its screen.
+쓰기」 once it has steps) that moves to the story tab's new-story screen, and `#stories?new=1` opens the same screen.
+Pressing a screen in the left column's list or a box in the drawing adds that screen as the next step. Pressing a step
+shows 「이전 단계 추가」 above it, 「다음 단계 추가」 below it and 「제외」 on it, as in 「순서 고치기」; a step is moved by
+taking it out and adding it again. The same screen twice in a row is refused. ID, name and memo are saved with 「스토리
+저장」. The right column shows 「에이전트와 대화」 on the screen order chosen so far, and its form carries that order as the
+tag 「화면 순서 /signin → /home」 (see **Comments on a screen order**). 「스토리 목록」 closes the screen and keeps the steps
+for 「새 스토리 이어 쓰기」.
 
 **Recording a walk through the app.** When `app` is set, the title row of 「새 스토리」 has 「● 기록」. It opens the app in
-the middle column in place of the drawing, and the screens the app passes through stack up as steps in the left column
-in place of the screen list, after the steps chosen before, under the verdict and a folded 「사전 조건 N」 of the steps
-so far. While the app is open the ID, name and memo are put away, and 「기록 끝」 shows them again as they were typed.
+the middle column, and the screens the app passes through are added as steps after the steps chosen before.
 Each address change is read, an address on the same screen as the step before joins that step, and an address no
 screen matches becomes a step marked 「맵에 없는 화면」. A value typed into a box found by its placeholder, label or test
 ID is kept on its step; a password, a select, a checkbox or a box with none of these is only counted. The bar above
@@ -1092,15 +1065,13 @@ sent to the paths in `app.apiPaths` while the record was made, and that reached 
 leading to them, so a password or a token sent as a value is not written to the file; one used as the name of a field
 is. `shown` comes from the request's `Referer` when it names an address of the app, so an app that sends no `Referer`
 leaves it out. A request whose `Referer` names another address of the app than those the record passed through, as
-from the same app open in another tab, is left out; one whose `Referer` is only `/`, when the record did not pass
-`/`, keeps the request without `shown`, since a `Referer` cut to the origin reads the same. 「기록 끝」 waits up to five seconds for requests sent
+from the same app open in another tab, is left out. 「기록 끝」 waits up to five seconds for requests sent
 after recording started that the API server has not yet answered. The review server holds, for each account, the
-last 1000 such requests and at most 32 MB of their bodies, so a recording longer than that loses its first ones. The record is listed as a candidate even if the
-page is closed before saving. 「기록 끝」 also draws the steps on one line as a story's
-steps are drawn; 「전체 그림에서 보기」 shows them on the whole flow, where pressing a box adds a step, and 「한 줄로
-보기」 goes back. If no address came, as when the app's Content Security Policy blocks inline scripts, the page says so
-and writes no record. A window the app opens with `window.open` is not
-recorded. With only `appUrl` set, the page says that recording needs `app`.
+last 1000 such requests and at most 32 MB of their bodies, so a recording longer than that loses its first ones. The
+record is listed as a candidate even if the page is closed before saving. 「기록 끝」 also draws the steps on one line;
+「전체 그림에서 보기」 shows them on the whole flow, where pressing a box adds a step, and 「한 줄로 보기」 goes back. If no
+address came, as when the app's Content Security Policy blocks inline scripts, the page says so and writes no record.
+A window the app opens with `window.open` is not recorded.
 
 The pencil on 「스토리 전체」 and on each step opens a table for the conditions, the inputs and the expected results,
 written like those of a saved story and saved into the story file with it; 「닫기」 closes the table and keeps what was
@@ -1109,137 +1080,94 @@ written. A recorded value is changed there like any other input.
 **List.** The left column lists screens with filters for no tests, dead screens, screens that open only under a
 setting or a role, and screens with only untagged tests. With `app` set, the middle shows the chosen screen's app
 in a frame, already logged in, with a role picker, boxes for path values and a line for the settings the screen's
-conditions name, which can be turned on and off. When the app in the middle frame a screen shows lands on one of the
-`signedOutPaths`, the review server logs that account in again and reopens the address the app was at. When that
-happens twice within a minute it stops and says so above the frame, naming another login of the same account as
-a possible cause, and a login that fails shows its error there too. A walk being recorded, the cut of 「앱 화면」 and
-「가운데에 앱 화면 전체 열기」 stay on the sign-in screen instead. Below come the
-screen's tests by depth and its API calls, with
+conditions name, which can be turned on and off. When the app in the frame lands on one of the `signedOutPaths`, the
+review server logs that account in again and reopens the address the app was at; when that happens twice within a
+minute it stops and says so above the frame. Below come the screen's tests by depth and its API calls, with
 a row per option value. The table holds the calls the screen's own code sends; the calls it gets only from a component
 around or beside its route (`layout`) and those of `appWide` are folded below it under 「공통 N」, with the same
-columns, and stay open or folded on other screens until toggled. Choosing such a call shows, after where this screen
-calls it, 「앱 시작 때 부르는 곳」 for an `appWide` call. With `body` in `requestFunction`, 「입력 키 N」 follows the
+columns. With `body` in `requestFunction`, 「입력 키 N」 follows the
 call table: the state keys the screen writes and hands to an API function that does not send them (see `input keys to
 check`), one row per function and key with every place the key is written. ✓ saves `fine` on that key — the screen,
 the function and the key — and folds the row under 「확인함 N」; ✕ on a folded row saves `needs-more` and puts the
-row back in the list, where a row whose mark was saved before the screen's code changed carries 「코드 바뀜」. A
-folded 「모름 N」 lists, with the reason, the calls of the screen whose input keys could not be read, and gathers the
-calls whose arguments duru does not read as screen state into one line, `화면 값을 읽지 못한 호출 K`, that names
-each of their API functions once; N counts both kinds of call (see `input calls not read`).
-A screen that opens only under a role or a setting carries 「역할」 or 「설정」 next to its
-name, as its line in the flow does. Under the tables, 「화면 정보」 starts folded, with the number of links into the
-screen other than a menu's, links out of it from its own code and settings it reads on its line. Opened, it says under 「접근 조건」 what it takes to open
+row back in the list. A folded 「모름 N」 lists the calls of the screen whose input keys could not be read (see `input
+calls not read`).
+Under the tables, 「화면 정보」 says under 「접근 조건」 what it takes to open
 the screen, then shows the tests of each role and setting case by depth under 「관점별 테스트」, the links into it
 with their guards, the conditions inside the screen, where its route and component are, the links out of it and the
-settings it reads. The links into it and out of it also list the moves written in `moves` as 「설정에 적은 이동」 with their
-reason. The links out of it that have `layout`, such as those of a menu drawn around the route, are folded below the
-others under 「공통 N」, and so are the links into it that a menu named in `routeTables` gives for its table item; each
-stays open or folded on other screens until toggled. An entry screen that only such menu links lead to shows
-「메뉴로만」 beside 「들어오는 링크」. Choosing a call, by its name or a count in
-the table or from a link elsewhere, opens its details under the call table and scrolls the middle pane to them: where
-its option was found, the server match, its tests, untagged tests linked to it, where this screen calls it and the
-screens that use it.
+settings it reads. Choosing a call, by its name or a count in the table or from a link elsewhere, opens its details
+under the call table: where its option was found, the server match, its tests, untagged tests linked to it, where this
+screen calls it and the screens that use it.
 With `caseKinds` set, 「관점별 테스트」 has a button per kind for every screen, and for a call in its details: pressing one
 makes the kind a case there, with its tests by depth, and pressing it again takes it out. Each press is listed under
 「전체」's 「변경 기록」, not in the conversation of the screen or call. A picked kind with values
 has a row per value under it, with that value's tests by depth and result, or 「테스트 없음」. Next to each picked
-kind a chip says who picked it: 「규칙」 when a rule in `picks` did, with the rule shown on hover, or the name of the
-person or agent who did, with the date on hover and, when a rule picks it too, the rule. A kind a rule picks starts
-out picked, and while it is picked, whoever picked it, its row has 「이 요청은 규칙에서 빼기…」 (「이 화면은 규칙에서 빼기…」 on a screen);
-that and pressing its button both open a dialog that saves only with a reason. The kind then shows as 「대상 아님 ·
-<author>」 with the date and the rule on hover and the reason on the line below, and pressing its button again picks
-it back in that person's name. A kind marked 「대상 아님」 with a reason on a screen or call no rule picks, as `case` writes
-it, shows the same row, with the date on hover; one pressed off with no reason shows no such row. Each kind
-still undecided on that screen or call (see **Task list**) has its own lines under the others: the kind, and below it
-「「미판정」 아직 아무도 정하지 않았습니다」, with 「신규」 after 「미판정」 for a screen or call the baseline map does not have (see
-**Case kinds tab**), and two icon buttons: ✓ saves 「대상」 at once, and ✕ asks for a reason, as 「대상 아님…」 does, and
-saves nothing without one. Where a mark, a person's or an agent's,
-keeps the kind undecided, the line says who left it instead of 「아직 아무도 정하지 않았습니다」, in the words of the
-「테스트 관점」 tab: 「<author> 가 <date> 에 이유 없이 뺐습니다」 for a kind pressed off, or 「… 에 규칙에서 뺐지만 규칙이 더는
-고르지 않습니다」 with the old reason for a kind taken out of a rule that no longer picks that screen or call. Only where
-the kind no longer takes that screen or call as a candidate at all does a kind taken out of a rule keep its 「대상
-아님」 row, which then says 「규칙이 이 요청을 더는 고르지 않아, 이 표시는 쓰이지 않습니다」. A kind an agent marked 「대상 아님」
-with `case` waits for a reviewer and has its own lines too: the kind, and below it 「검토 중」 with ✓ and ✕, the agent with
-the date, and the agent's reason. Until then the kind
-stays as it was before the agent's mark, so one a rule picks stays picked with its tests. ✓ makes it 「대상 아님 ·
-<reviewer>」 with the agent's reason; ✕ puts back the mark a person left before the agent's, or, with none, leaves it
-to the rule or undecided, its 「미판정」 line then saying 「<reviewer> 가 <date> 에 에이전트 판정을 되돌렸습니다」. Pressing the kind
-button, 「이 요청은 규칙에서 빼기…」 or ✓ ✕ of a 「미판정」 line instead saves the reviewer's own mark, which also ends the wait.
-The kind buttons below stay as they are. The flow shows the same middle and right panes for a picked screen.
+kind a chip says who picked it: 「규칙」 when a rule in `picks` did, or the name of the person or agent who did. A kind
+a rule picks starts out picked, and while it is picked its row has 「이 요청은 규칙에서 빼기…」 (「이 화면은 규칙에서
+빼기…」 on a screen); that and pressing its button both open a dialog that saves only with a reason. The kind then
+shows as 「대상 아님 · <author>」 with the reason, and pressing its button again picks it back in that person's name. Each
+kind still undecided on that screen or call (see **Task list**) has a 「미판정」 line, with 「신규」 after it for a screen
+or call the baseline map does not have (see **Case kinds tab**), and two icon buttons: ✓ saves 「대상」 at once, and ✕
+asks for a reason, as 「대상 아님…」 does, and saves nothing without one. Where a mark keeps the kind undecided, the line
+says who left it and why. A kind an agent marked 「대상 아님」 with `case` waits for a reviewer on a 「검토 중」 line with ✓
+and ✕, the agent with the date, and the agent's reason. Until then the kind stays as it was before the agent's mark.
+✓ makes it 「대상 아님 · <reviewer>」 with the agent's reason; ✕ puts back the mark a person left before the agent's, or,
+with none, leaves it to the rule or undecided. Pressing the kind button, 「이 요청은 규칙에서 빼기…」 or ✓ ✕ of a 「미판정」
+line instead saves the reviewer's own mark, which also ends the wait.
 
 **Case kinds tab.** With `caseKinds` set, the list has a third tab, 「테스트 관점 N」, after 「화면」 and 「태그 없음」; N adds
 up the undecided candidates of every kind and those waiting for a reviewer, and is 0 when none is left. Hovering
 over it gives the two apart, 「미판정 U · 검토 중 R」. The tab lists the kinds in config order, each
 with its text, `case:<kind>` and 「대상 N · 미판정 N · 빈칸 N」, where 빈칸 is the number of cases with no tests that
 `rebuild` prints, and 「검토 중 N」 before 「미판정」 while any wait for a reviewer. With `baselineMap`, 「(신규 M)」 follows
-「미판정 N」 while M of the undecided candidates are screens or calls the baseline map does not have; the tab's own number
-stays the same. A chosen kind shows four numbers:
-「대상」 with how many a rule, a person and an agent (`duru case`) picked, 「대상 아님」, 「미판정」 and 「시험 없는 값 칸」, and
-「검토 중」 too while any wait; 「미판정」 has 「신규 M」 under it while M of them are new to the baseline map. A screen or call a rule picks and a person or agent then marked
+「미판정 N」 while M of the undecided candidates are screens or calls the baseline map does not have. A chosen kind shows
+four numbers: 「대상」 with how many a rule, a person and an agent (`duru case`) picked, 「대상 아님」, 「미판정」 and 「시험
+없는 값 칸」, and 「검토 중」 too while any wait. A screen or call a rule picks and a person or agent then marked
 「대상」 counts as theirs, so the rule's number can be smaller than what the rule picks. Under them each rule has a line
-with what it picks, how many it picks and how many of those were taken out as 「대상 아님」, and 「아무것도 고르지 못함」
-when it picks nothing; a kind without rules says every screen and call is a candidate. Pressing a rule's line shows
-only what it picks in the 「대상」 list, until 「모두 보기」 or the line is pressed again. 「대상 N」 and 「대상 아님 N」 start
-folded and stay as they were left when the page is drawn again; 「대상 아님」 shows who, when and why. Above 「미판정 N」,
-「검토 중 N」 lists, open and in the same three groups, the candidates on which an agent's 「대상 아님」 waits for a
-reviewer: each line has 「검토 중」, the chip of what holds until then (「규칙」 or the name of whoever picked it), the
-agent with the date and the agent's reason. These count only here, not under 「미판정」. Check boxes on the lines, on
-the group titles and its own 「모두 고르기」 choose them; once one is chosen, 「✓ N」 accepts and 「✕ N」 reverts them all,
-with 「받아들이기」 and 「되돌리기」 on hover, as ✓ and ✕ of 「관점별 테스트」 do. One the agent wrote again after the page read
-it is not saved, and the line under the buttons says which were saved and which were not. 「미판정 N」 lists the
-undecided candidates in three groups, 「쓰기 요청」 (a request whose method was not read among them), 「조회 요청」 and
-「화면」, leaving out an empty group. A candidate kept undecided by a person's mark has a line under it: 「<author> 가 <date> 에 이유 없이
-뺐습니다」, or 「… 에 규칙에서 뺐지만 규칙이 더는 고르지 않습니다」 with the old reason. These are the ones `duru case`
-leaves to a person; a button above the list with a person icon and their number, 「직접 판정」 on hover, shows only
-them. With `baselineMap`, each candidate the baseline map does not have carries 「신규」 in the colour of the screen
-list's 「신규」, with 「<folder> 지도에 없던 요청입니다」 (or 「화면」) on hover and for a screen reader, and 「신규 M」 beside
+with what it picks, how many it picks and how many of those were taken out as 「대상 아님」. Pressing a rule's line shows
+only what it picks in the 「대상」 list, until 「모두 보기」 or the line is pressed again. 「대상 아님」 shows who, when and
+why. 「검토 중 N」 lists, open and in the same three groups, the candidates on which an agent's 「대상 아님」 waits for a
+reviewer: each line has the chip of what holds until then, the agent with the date and the agent's reason. Check boxes
+choose them; once one is chosen, 「✓ N」 accepts and 「✕ N」 reverts them all, as ✓ and ✕ of 「관점별 테스트」 do. One the
+agent wrote again after the page read it is not saved, and the line under the buttons says which were saved and which
+were not. 「미판정 N」 lists the undecided candidates in three groups, 「쓰기 요청」 (a request whose method was not read
+among them), 「조회 요청」 and 「화면」. A candidate kept undecided by a person's mark says who left it and why. These are
+the ones `duru case` leaves to a person; a button above the list with a person icon and their number, 「직접 판정」 on
+hover, shows only them. With `baselineMap`, each candidate the baseline map does not have carries 「신규」, and 「신규 M」 beside
 the person button shows only those. Pressing either button again, or choosing another kind, shows every candidate.
 A check box on each line, on each group title and 「모두 고르기」 choose candidates; once one of the lines shown is
 chosen, 「대상 (N)」 or 「대상 아님… (N)」 shows and decides the chosen ones among the lines shown, each with its own
-mark, while one chosen and then hidden by a button stays chosen and is not saved; 「대상 아님…」 asks for one reason and saves nothing without one. The marks are saved one by one; if
-one fails, saving stops, a line says which were saved and which were not, and those not saved stay checked. Pressing a line shows that screen or call's conversation and comment form on the right, kept apart
-from the one chosen in 「화면」; a comment left unsaved there is asked about at 「리뷰 끝」. Pressing the name opens the
-screen, or the call on the screen that sends it. The address is `#cases?kind=<kind>&node=<ID>`; an unknown kind
-goes to 「화면」. A kind decided here is listed under 「전체」's 「변경 기록」, where 「대상」 reads 켬 and 「대상 아님」 reads 끔, and
+mark; 「대상 아님…」 asks for one reason and saves nothing without one. If one fails, saving stops, a line says which
+were saved and which were not, and those not saved stay checked. Pressing a line shows that screen or call's
+conversation and comment form on the right; a comment left unsaved there is asked about at 「리뷰 끝」. Pressing the
+name opens the screen, or the call on the screen that sends it. The address is `#cases?kind=<kind>&node=<ID>`. A kind
+decided here is listed under 「전체」's 「변경 기록」, where 「대상」 reads 켬 and 「대상 아님」 reads 끔, and
 a reviewer's answer to an agent's 「대상 아님」 reads 받아들임 or 되돌림.
 
-**Pane widths.** The edge on either side of the middle pane, in the list, in the story tab and beside a picked screen
-in the flow, can be dragged to widen or narrow the panes.
-
-**Changes since a baseline.** With `baselineMap` set, the header names the baseline by its folder, with the map's path on
-hover (「비교 기준」). A screen in the list carries 「신규」 (one the baseline does not have), 「조건 바뀜」 (the conditions before and after on hover) or
-「호출 +N −N」, and 「바뀐 화면만」 in the box 「<folder> 와 비교」 keeps only those. Below the list come the screens only the
-baseline has, and how many screens changed their role or setting conditions and how many calls their server match.
-A changed screen opens with a line saying what changed; its call table has a column 「<folder> 와 비교」 with 「생김」 or
-「서버 대조 바뀜 (before → after)」, and the calls it no longer sends are listed struck through with 「없어짐」. A
-`baselineMap` that cannot be read stops `review` before the page is served.
+**Changes since a baseline.** With `baselineMap` set, the header names the baseline by its folder (「비교 기준」).
+A screen in the list carries 「신규」 (one the baseline does not have), 「조건 바뀜」 or 「호출 +N −N」, and 「바뀐 화면만」 in
+the box 「<folder> 와 비교」 keeps only those. Below the list come the screens only the baseline has, and how many
+screens changed their role or setting conditions and how many calls their server match. A changed screen's call table
+has a column 「<folder> 와 비교」 with 「생김」 or 「서버 대조 바뀜 (before → after)」, and the calls it no longer sends are
+listed with 「없어짐」. A `baselineMap` that cannot be read stops `review` before the page is served.
 
 **Regressions since a baseline's test results.** With `baselineTests` set, the 「비교 기준」 box in the header names the
-baseline by its last folder, such as 「1.5.0」 (the whole path on hover), and 「결과 N」, how many result files it has;
-hovering 「결과 N」 lists them with the time each run started. With `baselineMap` as well, the box shows both. A test
-row that passed in the baseline and fails or is pending now carries 「통과→실패」 or 「통과→보류」 when the row itself
-fails or is pending, under the tags of a screen or call and under 「불러오는 테스트」, 「지나간 테스트」,
-「호출한 테스트」 and 「태그 대기」 alike; hovering it names the baseline folder and the result file the test was
-compared with. In the screen list a screen carries 「회귀 N」, the regressed tests tagged on it, importing its source,
-waiting for its tag, or that pressed, typed or checked something on it by their trace. Hovering splits N into
-failing and pending and says how many regressions of tests that only passed through the screen were not counted:
-those show on their rows when the screen is opened, not in the list. A regressed test tagged only on calls puts a
-dashed 「호출 회귀 N」 on each screen that sends one of those calls, apart from 「회귀 N」, naming the calls on hover; a
-screen whose 「회귀 N」 already counts the test does not count it again. 「회귀만 N」 in the box 「<folder> 와 비교」
-keeps the screens with either; checked with 「바뀐 화면만」, only screens that are both stay, and the 「신규」 and
-「조건 바뀜」 marks show in the same list. Without `baselineMap` it is the box's only filter, and the box and the
-column below take the `baselineTests` folder's name. The call table has the column 「<folder> 와 비교」 with
-「회귀 N」 for a call whose tagged, importing or handed-over tests regressed; a test that only sent the call by its
-trace is not counted. A test only in the baseline whose tags name a screen or call on the map is listed, folded, under
-「기준에만 N」 in that screen or call, and below the screen list 「기준에만 N」 lists every test only in the baseline,
-folded by test file, with 「파일 없음」 on a file none of whose tests are in the current results. Those rows take no
-comment: to have a deleted test written again, mark the screen 「테스트 필요」. The counts are those of the
-`test results since` line `rebuild` prints for the same results; the page compares on each load with the pairs as
-judged then, and keeps nothing.
+baseline by its last folder, such as 「1.5.0」, and 「결과 N」, how many result files it has. A test row that passed in
+the baseline and fails or is pending now carries 「통과→실패」 or 「통과→보류」 wherever it shows; hovering it names the
+baseline folder and the result file the test was compared with. In the screen list a screen carries 「회귀 N」, the
+regressed tests tagged on it, importing its source, waiting for its tag, or that pressed, typed or checked something
+on it by their trace; regressions of tests that only passed through the screen show on their rows when the screen is
+opened, not in the list. A regressed test tagged only on calls puts 「호출 회귀 N」 on each screen that sends one of
+those calls. 「회귀만 N」 in the box 「<folder> 와 비교」 keeps the screens with either. The call table has the column
+「<folder> 와 비교」 with 「회귀 N」 for a call whose tagged, importing or handed-over tests regressed. A test only in the
+baseline whose tags name a screen or call on the map is listed, folded, under 「기준에만 N」 in that screen or call, and
+below the screen list 「기준에만 N」 lists every test only in the baseline by test file, with 「파일 없음」 on a file none
+of whose tests are in the current results. Those rows take no comment: to have a deleted test written again, mark the
+screen 「테스트 필요」. The counts are those of the `test results since` line `rebuild` prints for the same results; the
+page compares on each load with the pairs as judged then, and keeps nothing.
 
 **Code state.** The header follows the map's date with its commit (「커밋 <first 7 characters>」, 「커밋 모름」 when
 `srcRoot` is not in a git repository), 「+ 커밋 안 한 수정」 when files under `srcRoot` had changes not committed, and
-the duru version; hovering shows the commits in full, duru's own among them. The 「비교 기준」 box shows the same for the baseline
+the duru version. The 「비교 기준」 box shows the same for the baseline
 map. A map built by a duru that did not record them shows none. After a `rebuild`, a mark whose screen or call
 code hash differs from the one saved with it shows 「코드 바뀜」 beside its status in the screen list and
 the tables, and so does a judged pair, under 「제외한 짝」 or 「태그 대기」 and in the 「태그 없음」 tab, when the hash of
@@ -1248,19 +1176,16 @@ reviewer's call. A mark or judgment saved without a hash shows as it always did.
 
 **What a test did.** A Playwright test's row under a screen or a call has 「단계」. It opens, under the row, the
 test's steps in the order they ran, each with its screen: 「열기」 for an address it opened, 「누르기」, 「넣기」 with the
-box and the value, 「••••••」 in place of a value duru did not keep, or 「찾은 상자를 읽지 못함」 in place of a box duru could not name, and 「확인」, with 「실패」 on an
-action that ended in an error. Between the steps come the requests the test sent, with their status or 「응답 없음」; a
-request that matches a call opens that call. A test that ran in several projects has a chip for each. A test without
-a trace, with a trace that could not be read, or that was skipped says so instead. When Playwright recorded the trace
-with screenshots (`screenshots` in its `trace` option), a step and an opened page show a small
-picture of the screen after it, and pressing it shows it large. 「재생」 under 「단계」 shows those steps one at a time in a large window. It shows only when at least one step has a picture.
+box and the value, and 「확인」, with 「실패」 on an action that ended in an error, and between the steps the requests the
+test sent. A test without a trace, with a trace that could not be read, or that was skipped says so instead. When
+Playwright recorded the trace with screenshots (`screenshots` in its `trace` option), a step shows a picture of the
+screen after it, and 「재생」 under 「단계」 shows those steps one at a time in a large window. It shows only when at
+least one step has a picture.
 「trace」 opens the test's trace in Playwright's trace viewer in a new tab, served by the review page itself; it is
 greyed out when the trace file is no longer where `rebuild` read it.
-A story candidate that came from browser tests has the same 「재생」 and 「trace」 beside each test title on its card, so
-what a test did can be seen without finding a screen it passed through; a candidate from a visit record or from an
-agent has neither. After it is accepted, its card has them beside each test under 「스토리 테스트」, the tests tagged
-with its story ID.
-Under 「호출한 테스트」 a test shows, next to 「호출함」, the status it got for that call.
+A story candidate that came from browser tests has the same 「재생」 and 「trace」 beside each test title on its card; a
+candidate from a visit record or from an agent has neither. After it is accepted, its card has them beside each test
+under 「스토리 테스트」, the tests tagged with its story ID.
 
 **Untagged tests.** An untagged test linked to a screen by its imports or its trace has 「제외」, to discard the
 pair with a reason asked for in a window, and 「포함」, to hand it over so a coding agent adds the tag. A handed-over
