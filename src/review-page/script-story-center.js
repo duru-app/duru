@@ -375,7 +375,7 @@ const nameButton = (c) => h('button', {
 
 function storyIdTag(id) {
   const problem = storyIdProblem(id);
-  return h('span', { class: problem ? 'story-id mono taken' : 'story-id mono muted', title: problem ?? '스토리로 받을 때 쓸 ID' }, id);
+  return h('span', { class: problem ? 'story-id mono taken' : 'story-id mono muted', title: problem ?? '스토리로 받을 때 쓸 ID' }, id.slice(0, -1), h('span', { class: 'id-tail' }, id.slice(-1)));
 }
 
 const WORD_JOINER = '\u2060';

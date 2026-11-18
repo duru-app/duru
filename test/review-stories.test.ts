@@ -648,7 +648,7 @@ test('in a browser, the story list has a group of candidates, a chosen candidate
 
 const LONG_SENTENCE = '발행하려는 문서를 올린 사람이 승인 대기열에서 마지막으로 확인한 뒤에 공개한다 발행하려는 문서를 올린 사람이 승인 대기열에서 마지막으로 확인한 뒤에 공개한다';
 
-test('in a browser, ✎ and the ID tag stay on the line of the last character of a candidate\'s name at every page width and name length', { skip: browserMissing }, async () => {
+test('in a browser, ✎ and the ID tag stay on the line of the last character of a candidate\'s name at page widths from 375 to 1280 and name lengths from 35 to 87 characters', { skip: browserMissing }, async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -672,7 +672,7 @@ test('in a browser, ✎ and the ID tag stay on the line of the last character of
         });
         const apart: string[] = [];
         const check = async (label: string, withId: boolean) => {
-          for (const width of [768, 800, 850, 900, 1024, 1280]) {
+          for (const width of [375, 414, 480, 560, 640, 700, 743, 767, 768, 800, 850, 900, 1024, 1280]) {
             await p.setViewportSize({ width, height: 800 });
             await p.evaluate(() => new Promise((done) => { requestAnimationFrame(() => requestAnimationFrame(done)); }));
             const { edit, idStart } = await lineOf();

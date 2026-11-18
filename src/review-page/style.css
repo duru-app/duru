@@ -439,7 +439,8 @@
   .title-row .name-line > h3, .title-row .name-end { display: inline; }
   .title-row .name-tail, .title-row .name-end { white-space: nowrap; }
   .title-row .name-end { margin-left: 8px; }
-  .title-row .name-end .story-id { margin-right: 8px; white-space: normal; overflow-wrap: break-word; }
+  .title-row .name-end .story-id { margin-right: 8px; white-space: normal; word-break: break-all; }
+  .title-row .id-tail { white-space: nowrap; }
   .title-row .story-id { font-size: 12px; }
   .title-row .story-id.taken { color: var(--fail); }
   .title-row button.edit-name { padding: 0 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--muted); font: inherit; font-size: 13px; line-height: 20px; cursor: pointer; }
