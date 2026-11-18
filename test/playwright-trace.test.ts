@@ -661,6 +661,8 @@ test('a press that only changes the part after # opens when the press ends, even
 });
 
 const SHOWN = path.join(import.meta.dirname, 'fixtures/app/results/playwright-steps/test-results/steps-shows-the-screen-after-each-step-chromium/trace.zip');
+const picture = (name: string, bytes = 4096) => name.padEnd(bytes, '.');
+const drawnPictures = (...names: string[]) => Object.fromEntries(names.map((name) => [`resources/${name}.jpeg`, picture(name)]));
 
 test('the walk gives each step the first screen picture taken after it ended and a page opened at an address the last one before the next step acts, so a click that moved the page shows the page it moved to, and leaves the picture off a line that would repeat the one before', () => {
   const shots = walkOf(SHOWN).map((line) => (line.kind === 'request' ? `${line.method} ${line.url}` : `${line.kind} ${line.url} ${line.shot?.slice(-18) ?? '-'}`));
@@ -697,7 +699,7 @@ test('a step on a page that has no screen picture yet, as the first action in a 
     ...act('3', 'q', 'click', 50, 60), frameSnapshot('before@3', 'http://x/pop', 50), frameSnapshot('after@3', 'http://x/pop', 60),
     ...act('4', 'p', 'click', 70, 80), frameSnapshot('before@4', 'http://x/home', 70), frameSnapshot('after@4', 'http://x/home', 80),
     { type: 'screencast-frame', pageId: 'p', sha1: 'home.jpeg', timestamp: 22 },
-  ], [], { 'resources/home.jpeg': 'h' })));
+  ], [], drawnPictures('home'))));
   assert.deepEqual(lines.map((line) => (line.kind === 'request' ? line.url : `${line.kind} ${line.url} ${'shot' in line ? line.shot : 'same'}`)), [
     'open /home home.jpeg',
     'open /pop null',
@@ -719,7 +721,7 @@ test('a page first seen when the next action starts shows the picture from when 
     ...act('3', 'fill', 50, 60, { selector: 'internal:label="메모"', value: 'a' }),
     frameSnapshot('before@3', 'http://x/new', 50), frameSnapshot('input@3', 'http://x/new', 55), frameSnapshot('after@3', 'http://x/new', 60),
     frame('home.jpeg', 22), frame('new.jpeg', 45), frame('filled.jpeg', 62),
-  ], [], { 'resources/home.jpeg': 'h', 'resources/new.jpeg': 'n', 'resources/filled.jpeg': 'f' })));
+  ], [], drawnPictures('home', 'new', 'filled'))));
   assert.deepEqual(lines.map((line) => (line.kind === 'request' ? line.url : `${line.kind} ${line.url} ${line.shot ?? '-'}`)), [
     'open /home home.jpeg',
     'press /home new.jpeg',
@@ -742,7 +744,7 @@ test('a page opened at an address shows the last picture before the next step on
     ...act('4', 'click', 72, 90),
     frameSnapshot('before@4', 'http://x/next', 72), frameSnapshot('input@4', 'http://x/next', 74), frameSnapshot('after@4', 'http://x/next', 90),
     frame('blank.jpeg', 21), frame('drawn.jpeg', 35), frame('filled.jpeg', 45), frame('next.jpeg', 80),
-  ], [], { 'resources/blank.jpeg': 'b', 'resources/drawn.jpeg': 'd', 'resources/filled.jpeg': 'f', 'resources/next.jpeg': 'n' })));
+  ], [], drawnPictures('blank', 'drawn', 'filled', 'next'))));
   assert.deepEqual(lines.map((line) => (line.kind === 'request' ? line.url : `${line.kind} ${line.url} ${line.shot ?? '-'}`)), [
     'open /home drawn.jpeg',
     'write /home filled.jpeg',
@@ -764,7 +766,7 @@ test('a page opened at an address keeps the first picture after the move when th
     ...act('3', 'goto', 60, 70), frameSnapshot('after@3', 'http://x/list', 70),
     ...act('4', 'expect', 72, 90), frameSnapshot('before@4', 'http://x/list', 72), frameSnapshot('after@4', 'http://x/list', 90),
     frame('login.jpeg', 22), frame('home.jpeg', 25), frame('filled.jpeg', 45), frame('empty.jpeg', 71), frame('rows.jpeg', 85),
-  ], [], { 'resources/login.jpeg': 'l', 'resources/home.jpeg': 'h', 'resources/filled.jpeg': 'f', 'resources/empty.jpeg': 'e', 'resources/rows.jpeg': 'r' })));
+  ], [], drawnPictures('login', 'home', 'filled', 'empty', 'rows'))));
   assert.deepEqual(lines.map((line) => (line.kind === 'request' ? line.url : `${line.kind} ${line.url} ${line.shot ?? '-'}`)), [
     'open /login login.jpeg',
     'open /home home.jpeg',
@@ -785,13 +787,13 @@ test('a page opened at an address whose part after # changes before the next ste
     ...act('2', 'click', 30, 40), frameSnapshot('before@2', 'http://x/#/home', 30), frameSnapshot('input@2', 'http://x/#/home', 35), frameSnapshot('after@2', 'http://x/#/home', 40),
     ...act('3', 'goto', 50, 60), frameSnapshot('after@3', 'http://x/docs', 60),
     ...act('4', 'click', 70, 80), frameSnapshot('before@4', 'http://x/docs#intro', 70), frameSnapshot('input@4', 'http://x/docs#intro', 75), frameSnapshot('after@4', 'http://x/docs#intro', 80),
-    frame('login.jpeg', 22), frame('home.jpeg', 25), frame('pressed.jpeg', 45), frame('blank.jpeg', 62), frame('docs.jpeg', 65), frame('clicked.jpeg', 85),
-  ], [], { 'resources/login.jpeg': 'l', 'resources/home.jpeg': 'h', 'resources/pressed.jpeg': 'p', 'resources/blank.jpeg': 'b', 'resources/docs.jpeg': 'd', 'resources/clicked.jpeg': 'c' })));
+    frame('login.jpeg', 22), frame('home.jpeg', 25), frame('pressed.jpeg', 45), frame('first.jpeg', 62), frame('docs.jpeg', 65), frame('clicked.jpeg', 85),
+  ], [], drawnPictures('login', 'home', 'pressed', 'first', 'docs', 'clicked'))));
   assert.deepEqual(lines.map((line) => (line.kind === 'request' ? line.url : `${line.kind} ${line.url} ${line.shot ?? '-'}`)), [
     'open /#/login login.jpeg',
     'open /#/home home.jpeg',
     'press /#/home pressed.jpeg',
-    'open /docs blank.jpeg',
+    'open /docs first.jpeg',
     'open /docs#intro docs.jpeg',
     'press /docs#intro clicked.jpeg',
   ]);
@@ -801,10 +803,12 @@ const pageAct = (callId: string, method: string, startTime: number, endTime: num
   { type: 'before', callId, pageId: 'p', method, startTime, params },
   { type: 'after', callId, endTime },
 ];
-const pictureLines = (events: object[], pictures: [string, number][]) => inTempDir((dir) => walkOf(traceZip(dir, [
+const pictureWalk = (events: object[], pictures: [string, number, number?][]) => inTempDir((dir) => walkOf(traceZip(dir, [
   ...events,
   ...pictures.map(([name, timestamp]) => ({ type: 'screencast-frame', pageId: 'p', sha1: `${name}.jpeg`, timestamp })),
-], [], Object.fromEntries(pictures.map(([name]) => [`resources/${name}.jpeg`, name]))))).map((line) => (line.kind === 'request' ? line.url : `${line.kind} ${line.url} ${line.shot ?? '-'}`));
+], [], Object.fromEntries(pictures.map(([name, , bytes]) => [`resources/${name}.jpeg`, picture(name, bytes)])))));
+const pictureLines = (events: object[], pictures: [string, number, number?][]) =>
+  pictureWalk(events, pictures).map((line) => (line.kind === 'request' ? line.url : `${line.kind} ${line.url} ${line.shot ?? '-'}`));
 
 test('a page a click moved to shows the last picture before the next step on it acts, while the click keeps the first picture after it', () => {
   assert.deepEqual(pictureLines([
@@ -843,6 +847,43 @@ test('a page with no step after its move shows its last picture', () => {
     ...pageAct('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/done', 20),
   ], [['blank', 21], ['drawn', 60]]), [
     'open /done drawn.jpeg',
+  ]);
+});
+
+test('a page opened or a check whose picture before the next step acts is under 4 KB, a screen not drawn yet, is marked as having no picture rather than showing the blank one or one taken after that step, while a press keeps its blank picture', () => {
+  const lines = pictureWalk([
+    ...pageAct('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/login', 20),
+    ...pageAct('2', 'click', 30, 40), frameSnapshot('before@2', 'http://x/login', 30), frameSnapshot('input@2', 'http://x/login', 35), frameSnapshot('after@2', 'http://x/home', 40),
+    ...pageAct('3', 'fill', 50, 60, { selector: 'internal:label="메모"', value: 'a' }),
+    frameSnapshot('before@3', 'http://x/home', 50), frameSnapshot('input@3', 'http://x/home', 55), frameSnapshot('after@3', 'http://x/home', 60),
+    ...pageAct('4', 'expect', 70, 80), frameSnapshot('before@4', 'http://x/home', 70), frameSnapshot('after@4', 'http://x/home', 80),
+    ...pageAct('5', 'click', 85, 95), frameSnapshot('before@5', 'http://x/home', 85), frameSnapshot('input@5', 'http://x/home', 88), frameSnapshot('after@5', 'http://x/home', 95),
+  ], [
+    ['login', 22], ['white', 41, 2500], ['spinner', 45, 4095], ['home', 56], ['filled', 62],
+    ['stillDrawn', 81], ['reloading', 83, 3000], ['clicked', 96],
+  ]);
+  assert.deepEqual(lines.map((line) => (line.kind === 'request' ? line.url : `${line.kind} ${line.url} ${'shot' in line ? line.shot : 'same'}`)), [
+    'open /login login.jpeg',
+    'press /login white.jpeg',
+    'open /home null',
+    'write /home filled.jpeg',
+    'assert /home null',
+    'press /home clicked.jpeg',
+  ]);
+});
+
+test('a page first seen as the next step starts, after a click whose last snapshot still shows the old address, is marked as having no picture when the last one until then is under 4 KB', () => {
+  const lines = pictureWalk([
+    ...pageAct('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/home', 20),
+    ...pageAct('2', 'click', 30, 40), frameSnapshot('before@2', 'http://x/home', 30), frameSnapshot('after@2', 'http://x/home', 40),
+    ...pageAct('3', 'fill', 50, 60, { selector: 'internal:label="메모"', value: 'a' }),
+    frameSnapshot('before@3', 'http://x/new', 50), frameSnapshot('input@3', 'http://x/new', 55), frameSnapshot('after@3', 'http://x/new', 60),
+  ], [['home', 22], ['pressed', 42], ['white', 47, 2500], ['filled', 62]]);
+  assert.deepEqual(lines.map((line) => (line.kind === 'request' ? line.url : `${line.kind} ${line.url} ${'shot' in line ? line.shot : 'same'}`)), [
+    'open /home home.jpeg',
+    'press /home pressed.jpeg',
+    'open /new null',
+    'write /new filled.jpeg',
   ]);
 });
 
