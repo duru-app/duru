@@ -399,6 +399,25 @@ test('in a browser, a save that is refused shows its message in the dock above t
   );
 });
 
+test('in a browser, a comment saved under a long conversation scrolls the conversation so the new comment is in view', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await openDocumentScreenInShortViewport(p, base);
+        await p.fill('#right-dock textarea', 'the newest remark');
+        await p.click('#right button.save');
+        await p.waitForSelector('#right .history li:has-text("the newest remark")');
+        await p.waitForFunction(() => {
+          const li = [...document.querySelectorAll('#right .history li')].find((e) => e.textContent?.includes('the newest remark'));
+          const pane = document.getElementById('right')!.getBoundingClientRect();
+          const r = li?.getBoundingClientRect();
+          return !!r && r.top >= pane.top && r.bottom <= pane.bottom;
+        });
+      }),
+    ),
+  );
+});
+
 test('in a browser, a save whose reload fails after the review ended raises no page error', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>

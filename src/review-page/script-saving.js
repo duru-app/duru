@@ -49,6 +49,7 @@ async function postMark(picked, draftKey, statusOn) {
     state.error = isShown(target) ? `저장했지만 다시 읽지 못했습니다: ${err.message}` : `「${targetName(target)}」 코멘트는 저장했지만 다시 읽지 못했습니다: ${err.message}`;
   }
   render();
+  document.querySelector(`#right [data-record="${CSS.escape(saved.id)}"]`)?.scrollIntoView({ block: 'nearest' });
   return saved.id;
 }
 

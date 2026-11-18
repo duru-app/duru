@@ -283,7 +283,7 @@ const scrollRightToBottom =(p: Page) => p.locator('#right-info').evaluate((el) =
 const scrollRightTo = (p: Page, top: number) => p.locator('#right-info').evaluate((el, y) => { el.scrollTop = y; return el.scrollTop; }, top);
 const rightScroll = (p: Page) => p.locator('#right-info').evaluate((el) => el.scrollTop);
 
-test('in a browser, choosing another screen or call target opens the right pane at its top, and redrawing the same target keeps the scroll offset', { skip: browserMissing }, async () => {
+test('in a browser, choosing another screen or call target opens the right pane at its top, redrawing the same target keeps the scroll offset, and saving a mark there scrolls no further than it takes to show the saved record', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -305,7 +305,13 @@ test('in a browser, choosing another screen or call target opens the right pane 
         assert.equal(await rightScroll(p), kept);
         await p.click('#right button.save');
         await p.waitForSelector('table.calls td.cell.selected .chip.needs-more');
-        assert.equal(await rightScroll(p), kept);
+        const saved = await p.evaluate(() => {
+          const pane = document.querySelector('#right')!.getBoundingClientRect();
+          const record = [...document.querySelectorAll('#right [data-record]')].at(-1)!.getBoundingClientRect();
+          return { top: record.top - pane.top, below: record.bottom - pane.bottom };
+        });
+        assert.ok(saved.top >= 0 && saved.below <= 1, JSON.stringify(saved));
+        assert.ok((await rightScroll(p)) >= kept);
 
         await p.click('#screen-list li:has-text("/admin/report")');
         assert.equal(await rightScroll(p), 0);
