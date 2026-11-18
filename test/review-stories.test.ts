@@ -646,6 +646,31 @@ test('in a browser, the story list has a group of candidates, a chosen candidate
   );
 });
 
+test('in a browser, a long candidate name wraps on a narrow page and ✎ stays on the line where the name ends', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#candidate-list li:has-text("publish-document")');
+        await p.setViewportSize({ width: 900, height: 800 });
+        const place = await p.evaluate(() => {
+          const h3 = document.querySelector('#center .title-row h3')!;
+          h3.textContent = '발행하려는 문서를 올린 사람이 승인 대기열에서 마지막으로 확인한 뒤에 공개한다 '.repeat(2).trim();
+          const range = document.createRange();
+          range.selectNodeContents(h3);
+          const lines = [...range.getClientRects()];
+          const last = lines[lines.length - 1]!;
+          const b = document.querySelector('#center .title-row button.edit-name')!.getBoundingClientRect();
+          return { lines: new Set(lines.map((l) => Math.round(l.top))).size, nameEnd: Math.round(last.right), gap: Math.round(b.left - last.right), above: Math.round(last.top - b.top), below: Math.round(b.bottom - last.bottom) };
+        });
+        assert.ok(place.lines >= 2, `the name wraps: ${JSON.stringify(place)}`);
+        assert.ok(place.gap >= 0 && place.gap < 40 && place.above <= 4 && place.below <= 8, `✎ sits beside the last line of the name: ${JSON.stringify(place)}`);
+      }),
+    ),
+  );
+});
+
 const PUBLISH_FILE = (storiesDir: string) => {
   const dir = path.join(storiesDir, 'candidates');
   const name = fs.existsSync(dir) ? fs.readdirSync(dir).find((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')).screens.join(' > ') === PUBLISH_KEY) : undefined;
@@ -656,7 +681,7 @@ test('in a browser, ✎ right after a candidate\'s name opens a window for the I
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
-        const edit = '#center .title-row > button.edit-name';
+        const edit = '#center .title-row .name-line > button.edit-name';
         const ask = '#accept-ask';
         await p.waitForSelector('#screen-list li');
         await p.click(storiesTab);

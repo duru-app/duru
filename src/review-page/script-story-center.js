@@ -198,7 +198,7 @@ function renderStoryCenter() {
   const c = candidateOf();
   if (c) {
     return fillStoryCenter(center, c, [
-      h('div', { class: 'title-row' }, h('h3', {}, c.name), c.storyId ? storyIdTag(c.storyId) : null, nameButton(c), byAgent(c) ? agentChip('candidate') : null, walkChip(c), ...reachChips(c), candidateActions(c)),
+      h('div', { class: 'title-row' }, h('div', { class: 'name-line' }, h('h3', {}, c.name), c.storyId ? storyIdTag(c.storyId) : null, nameButton(c)), byAgent(c) ? agentChip('candidate') : null, walkChip(c), ...reachChips(c), candidateActions(c)),
       storyErrorLine(),
       sourceView(c.source, '후보가 나온', true),
       foundOrder(c),
