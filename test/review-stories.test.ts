@@ -495,6 +495,27 @@ test('in a browser, each step of a candidate has a ✕ that strikes the step thr
   );
 });
 
+test('in a browser, accept pressed while ✕ saves are still running accepts the candidate once they finish, without a second press', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await openHelpCandidate(p);
+        const steps = await p.locator('#center .story-path .step').count();
+        const accept = await p.evaluate(() => {
+          for (let i = 0; i < 10; i++) (document.querySelector('#center button[name="step-off-2"]') as HTMLButtonElement).click();
+          const box = document.querySelector('#center button.accept')!.getBoundingClientRect();
+          return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+        });
+        await p.mouse.click(accept.x, accept.y);
+        await p.waitForSelector('#story-list li.selected:has-text("open-help")');
+        const saved = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'open-help.json'), 'utf8'));
+        assert.equal(saved.screens.length, steps);
+        assert.deepEqual(errors, []);
+      }),
+    ),
+  );
+});
+
 test('in a browser, a ✕ keeps the focus and its state when the page draws the candidate again, after its save or after another step is taken out elsewhere', { skip: browserMissing }, async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', (base) =>

@@ -686,7 +686,7 @@ test('in a browser, accepting a candidate asks for an ID in a window only when t
         await p.click('#candidate-list li:has-text("publish-document")');
         const writes = holdRequests(p, '**/api/candidates/accept');
         await p.click('#center button.accept');
-        await p.waitForFunction(() => document.querySelector<HTMLFieldSetElement>('#center .story-form')!.disabled);
+        await p.waitForFunction(() => document.querySelector<HTMLButtonElement>('#center button.accept')!.disabled);
         await p.click('#story-list li:has-text("실험실을 열어")');
         writes.release!();
         await p.waitForSelector('#center .story-error');

@@ -11,6 +11,7 @@ const storyPath = (st, stepRanges, story, added = [], pick = null, off = null) =
 // 저장을 기다리는 동안에도 누른 대로 보이도록, 아직 저장하지 않은 줄의 켜고 끈 상태를 둔다.
 const unsavedPicks = new Map();
 let lineWrites = Promise.resolve();
+let picksSaving = 0;
 const lineName = (l) => `line-${l.step}-${l.field}-${l.line}`;
 const pickKey = (c, l) => `${c.key}\n${lineName(l)}`;
 const lineOn = (c, l) => unsavedPicks.get(pickKey(c, l)) ?? l.on;
@@ -23,8 +24,10 @@ function pickLine(c, l, on) {
   const save = async () => {
     await writeStories('/api/candidates/lines', { key: c.key, step: l.step, field: l.field, line: l.line, on });
     if (unsavedPicks.get(key) === on) unsavedPicks.delete(key);
+    picksSaving--;
     redrawStory();
   };
+  picksSaving++;
   lineWrites = lineWrites.then(save, save);
 }
 
@@ -41,8 +44,10 @@ function pickStep(c, n, on) {
   const save = async () => {
     await writeStories('/api/candidates/steps', { key: c.key, step: n, on });
     if (unsavedSteps.get(key) === !on) unsavedSteps.delete(key);
+    picksSaving--;
     redrawStory();
   };
+  picksSaving++;
   stepWrites = stepWrites.then(save, save);
 }
 
@@ -378,14 +383,14 @@ function storyIdTag(id) {
   return h('span', { class: problem ? 'story-id mono taken' : 'story-id mono muted', title: problem ?? '스토리로 받을 때 쓸 ID' }, id);
 }
 
-const candidateActions = (c) => h('fieldset', { class: 'story-form candidate-acts', disabled: state.storyWriting },
+const candidateActions = (c) => h('fieldset', { class: 'story-form candidate-acts' },
   lineCount(c),
   h('div', { class: 'candidate-buttons' },
-    h('button', { class: 'accept', title: c.acceptProblem ?? '이 화면 순서로 스토리 파일을 씁니다.', disabled: Boolean(c.acceptProblem), onclick: acceptChosen }, '스토리로 받기'),
+    h('button', { class: 'accept', title: c.acceptProblem ?? '이 화면 순서로 스토리 파일을 씁니다.', disabled: Boolean(c.acceptProblem) || (state.storyWriting && !picksSaving), onclick: acceptAfterPicks }, '스토리로 받기'),
     c.originals?.length
-      ? h('button', { class: 'back-to-original', title: BACK_TO_ORIGINAL, 'aria-label': BACK_TO_ORIGINAL, onclick: () => goBackToOriginal(c) }, '되돌리기')
+      ? h('button', { class: 'back-to-original', title: BACK_TO_ORIGINAL, 'aria-label': BACK_TO_ORIGINAL, disabled: state.storyWriting, onclick: () => goBackToOriginal(c) }, '되돌리기')
       : null,
-    h('button', { class: 'discard', title: '버린 후보 파일을 남기고, 같은 화면 순서는 다시 후보로 내지 않습니다. 이유를 적어야 합니다', onclick: () => askDiscard(c) }, '버리기')));
+    h('button', { class: 'discard', disabled: state.storyWriting, title: '버린 후보 파일을 남기고, 같은 화면 순서는 다시 후보로 내지 않습니다. 이유를 적어야 합니다', onclick: () => askDiscard(c) }, '버리기')));
 
 function storyEdit(st) {
   if (state.storyEdit?.id !== st.id) state.storyEdit = { id: st.id, name: st.name, memo: st.memo, read: { name: st.name, memo: st.memo } };
@@ -473,6 +478,18 @@ async function acceptChosen() {
   if (storyIdProblem(idOf(c))) return askAccept(c, 'button.accept', null);
   if (await acceptAs(c, idOf(c), c.name)) return;
   if (state.candidate === c.key) askAccept(c, 'button.accept', takeStoryError());
+}
+
+let acceptPresses = 0;
+
+async function acceptAfterPicks() {
+  const press = ++acceptPresses;
+  let pending;
+  do {
+    pending = [lineWrites, stepWrites];
+    await Promise.all(pending);
+  } while (lineWrites !== pending[0] || stepWrites !== pending[1]);
+  if (press === acceptPresses) await acceptChosen();
 }
 
 const acceptDialog = /** @type {HTMLDialogElement} */ (document.getElementById('accept-ask'));
