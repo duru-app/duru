@@ -698,8 +698,10 @@ const replacedOrders = (c) => (c.originals ?? []).map((r, i) => {
     sourceView(r.source, '원래 후보가 나온', true),
     h('ol', {}, r.screens.map((screen, step) => {
       const d = dropped.get(step + 1);
-      return h('li', { class: d ? 'skipped' : null },
-        h('span', { class: 'found-screen mono' }, screen),
+      const away = r.elsewhere?.[step] ?? [];
+      const whose = r.elsewhere && (!d ? '이 후보' : away.length ? `→ 「${away.join('」, 「')}」` : '남은 단계');
+      return h('li', { class: d && !away.length ? 'skipped' : null },
+        h('span', { class: away.length ? 'found-screen mono muted' : 'found-screen mono', ...(whose && { title: whose, 'aria-label': whose }) }, screen),
         d?.judged ? h('span', { class: 'chip judged', title: JUDGED, 'aria-label': JUDGED }, '판단') : null,
         d ? h('div', { class: 'drop-reason muted', title: '이 단계를 뺀 이유' }, d.reason) : null);
     })));
