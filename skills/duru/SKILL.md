@@ -11,12 +11,11 @@ The reviewer decides what is missing and talks to you through comments on that p
 tests.
 
 A screen's own tests are the tests that carry its tag. duru also finds *importing* tests: a
-test linked to a screen only by the source files it imports, shown on the review page under 「불러오는 테스트」. They
-are not counted as tests of the screen until they carry the screen's tag, and duru recomputes them on every
-rebuild. The same holds for *passed-through* tests: a Playwright test whose trace shows that it opened a screen
-(「지나간 테스트」) or sent an API call (「호출한 테스트」) without carrying that tag. Opening a screen or sending a
-call is not checking it, so never report such a test as a test of the screen or call. The reviewer can discard
-such a pair or hand it over for tagging; a handed-over pair appears in the task list under `# Tagging`.
+test linked to a screen only by the source files it imports.
+They are not counted as tests of the screen until they carry the screen's tag. The same holds for *passed-through*
+tests: a Playwright test whose trace shows that it opened a screen or sent an API call without carrying that tag.
+Opening a screen or sending a call is not checking it, so never report such a test as a test of the screen or call.
+A pair the reviewer hands over for tagging appears in the task list under `# Tagging`.
 
 ## Before you start
 
@@ -27,19 +26,17 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   no `tsconfig`, duru takes them for outside packages and a screen's sources stop at the first one, so its
   API calls, settings reads and links are missing from the map. Add the item, pointing at the tsconfig file
   of the client that holds `paths` (when `tsconfig.json` only lists `references`, the referenced file such as
-  `tsconfig.app.json`); duru reads `paths`, `baseUrl` and `extends` from it. There is no item for aliases written by
-  hand.
+  `tsconfig.app.json`). There is no item for aliases written by hand.
 - Settings defaults: `settingsDefaults` gives each settings root either `{ "file", "const" }`, an object literal
   written in a file, or `{ "constant": "<constants name>[.<path>]" }`, the value a `constants` module gives when
-  run, for defaults a function builds. duru runs `constants` modules, `.ts` ones after turning them into
-  JavaScript. When the defaults come from a function the app never calls at load, or that needs arguments, add a
-  small module beside the config that calls it and exports the result, and list it in `constants`.
+  run, for defaults a function builds. When the defaults come from a function the app never calls at load, or that
+  needs arguments, add a small module beside the config that calls it and exports the result, and list it in
+  `constants`.
 - Settings read through a function: when the app reads its settings from the object a function returns, such as
   `const signing = readSystemSettings({ SIGN_LIST: [] })` and then `signing.SIGN_LIST`, add the function to
   `settingsFunctions` as `{ "import", "name", "root", "section" }`, with the settings root and the key under it
-  the function reads. Without it those reads and the conditions on them are missing from the map. The object
-  passed to the function gives the defaults. Lines starting with `settingsFunctions` in the `extract` summary
-  name a call duru did not read in the files the route files lead to, a default that differs from another one or
+  the function reads. Without it those reads and the conditions on them are missing from the map.
+  Lines starting with `settingsFunctions` in the `extract` summary name a call duru did not read in the files the route files lead to, a default that differs from another one or
   cannot be compared with it, or a function called in none of those files; tell the user, since the settings
   behind them are missing or their defaults unknown.
 - The command: `duru` when `npm link` put it on the path, otherwise `node <duru checkout>/src/cli.ts`, on Node
@@ -54,19 +51,10 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   `table item <key> at <file>:<line>` after `route at`, and the `duplicate screen ID` line names that item's file
   and line instead of the route's.
 - The route shapes duru reads: `component={Home}`, `element={<Home />}`, `element={wrap(<Home />)}`,
-  `element={<Suspense><Home /></Suspense>}`, where the screen is the element inside the wrapping ones, and
-  `element={<Wrapper Page={Signer} />}`, where the screen is the first of the wrapper and the passed components whose
-  file is found, or the passed component when the wrapper is declared in the route file itself. A wrapper declared there also
-  passes a screen written as JSX, `element={<Gate element={<Home />} />}`, when it renders that prop,
-  `render={() => <Home />}`, a render function that returns one element, read as `element=` reads it, and
-  `<Route path=…><Home /></Route>`, a child element read the same way. A route whose render function or children
-  hold other routes only wraps them. A route whose element is `element={<Navigate to=… />}` is a redirect, not a
-  screen. The redirect element names come from
-  `redirectElements` in the config, default `Redirect` and `Navigate`; a config that lists them uses only the
-  names listed. A route file that another screen draws, whose paths start with the address that screen's route
-  matched (`${match.url}/…`, `useRouteMatch().path`), gets that screen's path in front. A route made for each item
-  of a table, an object or a list, in a route file the config's `routeTables` names, gives screens for its items; the conditions written in an item (such as
-  `isHidden`) are not read, so such a screen shows none of them.
+  `element={<Suspense><Home /></Suspense>}`, `element={<Wrapper Page={Signer} />}`, `render={() => <Home />}` and
+  `<Route path=…><Home /></Route>`. A route whose element is `element={<Navigate to=… />}` is a redirect, not a
+  screen. The redirect element names come from `redirectElements` in the config, default `Redirect` and `Navigate`; a
+  config that lists them uses only the names listed.
 - A settings page that picks its tab by the address: when one route draws a page that shows a different tab at each
   address under it (SigNoz's `/settings` and its `RouteTab`), those tabs have no screen and the links to them reach
   nothing. Add a `routeTabs` entry to the config yourself as you add the other config items, naming the component, the
@@ -91,17 +79,12 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   `requestFunction` is left out: check whether it sends through something `requestFunction` should name. Tell the
   user which methods are missing; do not write tests or fixes for them as if their endpoints were gone. Most come
   from the fake values, for example a method that checks a value it is given or picks its address by it. A `{?}` in
-  a call's address is a piece that came from a fake value, a path variable. In an app that sends its requests
-  through react-query, a hook a listed file exports (`useListChannels` from a generator) has the requests of the
-  function it gives react-query, and the screens that call the hook have them; no config key turns this on. A
-  request's `guards` include the `enabled` given to the react-query query that sends it, so a request only an
-  admin's screen sends shows that condition; the screen's access still comes from its routes and links only.
+  a call's address is a piece that came from a fake value, a path variable. A request's `guards` include the
+  `enabled` given to the react-query query that sends it.
 - A request a screen sends from its own source, by `fetch`, axios or the function or object `requestFunction`
   names, is among that screen's `apiCalls` with `"direct": true` and how it is sent (`fetch`, `axios.post`,
-  `<form action>`) where an API function's name would be. A form that posts is there too, and another move of the
-  browser (`href`, `window.open`, an address given to `location`) only when the server list holds its path or
-  `app.apiPaths` covers it. A `request <how> ← <file>:<line>: address not read (<reason>)` line in the summary
-  names a request whose address duru could not work out; it is on the screen without an address, in no call, and
+  `<form action>`) where an API function's name would be.
+  A `request <how> ← <file>:<line>: address not read (<reason>)` line in the summary names a request whose address duru could not work out; it is on the screen without an address, in no call, and
   listed under `unreadRequests`. An `api call <name> ← <file>:<line>: address not read (<reason>)` line is the same
   for a screen's call of an API function at that place. Tell the user which requests and calls those are and why,
   from the reason, which is also the `reason` of the call's `unresolved` server match on the map:
@@ -144,9 +127,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   and how many calls carry one of them; a test of one is tagged `@option:<key>=true|false` like any other option.
   A request a page sent in such a trace also ties its call to the screen the page showed then, when the source
   does not: the call carries `tracedScreens`, and a `calls tied to screens only by traces and visit records N | screens
-  they were sent from M` line counts them. Such a tie comes from what a test did, not from the code, so it is no change
-  against the baseline map. A visit record recorded on the review page keeps the write requests the app sent in
-  `requests`, and they count the same way, with the record file in place of a test's title.
+  they were sent from M` line counts them.
+  A visit record recorded on the review page keeps the write requests the app sent in `requests`, and they count the same way, with the record file in place of a test's title.
   A write call a screen reaches that no trace or visit record sent carries `unrecorded: true`, and a `write calls on
   screens no trace or visit record sent N | screens with them M` line counts them: an `unrecorded` call with no options may still have some,
   so tell the user a browser test that sends it is what fills them in. When `rebuild` also reports
@@ -264,12 +246,10 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
 1. **Rebuild the map.** Run `duru rebuild <config>`. It writes `map.json` and `tests.json` and prints a summary.
    Stop and report if it fails. When it fails with `JavaScript heap out of memory`, run it once more with
    `NODE_OPTIONS=--max-old-space-size=4096` in front, and tell the user it needed a larger Node heap.
-   When the summary prints a line starting with `map not yet fit for story candidates or test matching`, most of the
-   addresses the tests and visit records opened fell through to a catch-all route or no screen, or most screen paths
-   were not read whole, so the screens the tests are matched to and the story candidates do not say where the tests
-   went. Stop before any story or test work, tell the user the line as printed, and do not write a story file or a
-   tag from that map. A `traces only on a catch-all N` count in the candidate line is the same cause: those tests
-   gave no candidate.
+   When the summary prints a line starting with `map not yet fit for story candidates or test matching`, the map
+   cannot yet tell which screens the tests went through.
+   Stop before any story or test work, tell the user the line as printed, and do not write a story file or a tag
+   from that map.
    When the summary also prints an `unchecked` count and a line saying the server API list is absent, the
    config has no server endpoint list (or one with no endpoint lines), so no call was compared with the server:
    a call's server match is `unchecked`, no call is dead and no screen is a dead screen. The task list then
@@ -306,8 +286,7 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    review printed. It exits as soon as there is a comment nobody has replied to, and its standard output then holds
    every such comment, oldest first, one JSON line each. Answer each one as below, then, if the review command is
    still running, start `duru wait` again the same way. Reply to every comment it brings, even only to say what you
-   could not do: a comment without a reply comes back at once. It also brings comments saved before it started or
-   between two runs, so none is lost while it is not running.
+   could not do: a comment without a reply comes back at once.
    When it exits with code 0 and nothing on standard output, that review has ended; read the task list from the
    review command and start no more `duru wait` for it. A non-zero exit means it got no comments from the review
    page: show its standard error to the user, unless you stopped it yourself or were starting the review again just
@@ -326,21 +305,20 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    comment when it arrives: it is the reviewer asking about or for something on that target, so answer the
    question or do what it asks (a missing test is written as in step 3, with the target's tags). Then answer it on
    the page with `duru reply <config> <the comment's id> "<answer>" --server <the review page address>`, using the
-   address the review printed; the reply shows under the comment on the reviewer's open page at once. Keep the
-   answer to what you found or did, in a sentence or two. Once the review has ended, as the review command exiting or
+   address the review printed. Keep the answer to what you found or did, in a sentence or two.
+   Once the review has ended, as the review command exiting or
    `duru wait` exiting with code 0 and nothing on standard output tells you, run the same `duru reply` without
    `--server`; the reply is then written to the marks folder. If `reply` exits with a non-zero code, show its
    standard error to the user. Each reply sent with `--server` also comes out on the review's standard error as a
-   `"reply"` line with `replyTo` set to the comment's `id`; it asks for nothing. A mark with `needs-more`
-   (「테스트 필요」 on the page) will be in the task list, and you may start on it now. A
-   target can also carry a `depth` or an `option` of a call, and a mark whose target has a `case` (status `needed`
-   or `not-needed`) or whose status is `fine` asks for nothing by itself. A `not-needed` case mark that also carries
+   `"reply"` line with `replyTo` set to the comment's `id`; it asks for nothing.
+   A mark with `needs-more` will be in the task list, and you may start on it now. A target can also carry a
+   `depth` or an `option` of a call, and a mark whose target has a `case` (status `needed` or `not-needed`) or whose status is `fine` asks for nothing by itself. A `not-needed` case mark that also carries
    `rule`, `{ "index", "pick" }`, took that screen or call out of the rule at that place in the kind's `picks`
    (counted from 0, `pick` as the rule was written); its `note` says why, and no test of that kind is wanted there.
    A comment can also be about one part of a screen or call, named in `target.part` as `{ "kind", "key" }`. Such a
    line carries `where`, saying where that part is now, or `null` when it is no longer found or `tests.json` (for a
    test) or `map.json` could not be read at that moment (a `rebuild` was writing it), so check the task list before taking it as gone; a reply to the comment
-   carries the same `target` and `where`. A part takes comments only, never a status. By kind:
+   carries the same `target` and `where`. By kind:
    - `"kind": "test"`: one test row under the screen or call. `key` names the test by its result file (`source`),
      test file and title without tags. `where` gives the test `file` and `line`, the result file `source`, its
      `status`, a `detail` for a verdict line, and its `relation` to the target: `tagged` (it carries the tag),
@@ -429,9 +407,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    `reason` must be that order with the dropped steps taken out, neighbouring steps of one screen joined into one;
    a screen you put in carries `reason` as above. When two listed candidates become the same order, post one
    candidate naming both in `replaces`; if they typed different values into one box, give the value to keep in that
-   step's `inputs`. You may post several candidates for one such comment. The candidates it replaces leave the list. If the reviewer
-   presses `되돌리기` on your candidate, it goes among the discarded ones with the reason `원래대로 되돌림` and those candidates
-   are listed again; that order stays refused, so a new attempt posts another order. A comment on a screen order takes no `replaces`.
+   step's `inputs`. You may post several candidates for one such comment. The candidates it replaces leave the list.
+   When the reviewer reverts a candidate of yours, the candidates it replaced are listed again and its order stays
+   refused, so a new attempt posts another order. A comment on a screen order takes no `replaces`.
    When a comment asks for steps to be taken out of a candidate, take out only the steps nobody needs. Keep a step
    that means something in the story, such as signing in again under another role. Give every dropped step its
    `reason`, and set `judged: true` on a step you took out without being asked. For a comment with no target, read
@@ -444,7 +422,6 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    none or is no longer found). Answer it once, covering every target it names. With an empty `targets` the reviewer
    asks without pointing at anything: answer from the map, the task list and the tests as a whole. Such a comment
    takes no status, and a reply to it carries the same `targets`.
-   After you have answered or fixed it, reply to the comment as above.
    When the reviewer presses 「리뷰 끝」 (or presses Ctrl+C in its terminal), the process exits with code 0 and its
    standard output is exactly the task list, the same text `duru tasks <config>` prints. Any other exit is an
    error: show its standard error to the user. In the task list a `reply` line sits under the `comment` line it
@@ -471,8 +448,7 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    put the tags in the test's `tag` option (`test('<what it checks>', { tag: ['@screen:<screen ID>'] }, …)`) and
    keep them out of the title (before Playwright 1.42, which has no `tag` option, put them at the end of the
    title); for Vitest put them at the end of the test's own title, for JUnit at the end of its
-   `@DisplayName`, and for a check script at the end of the `VERDICT` line. The review page and the story
-   candidates show a title without its tags either way. A test of a
+   `@DisplayName`, and for a check script at the end of the `VERDICT` line. A test of a
    call that sets an on/off option listed under it also carries `@option:<key>=true|false`; a mark on an
    option value (`withHistory=true at output depth`) asks for a test with that option tag at that depth.
    Under a call, `options that change this result — set on <call ID>` lists the options of that other call
@@ -575,8 +551,7 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    part is done when every candidate `duru undecided` still lists is one only a person can decide, such a line or
    one you could not tell from the code, or when none is left and it exits with 0; then tell the user which are
    left, with the author and date such a line gives, and that the review page's 「테스트 관점」 tab shows those with such
-   a line under the button with a person icon (「직접 판정」 on hover) to decide several at once, and how many of your `not-needed` wait under 「검토 중」 there
-   to be accepted or reverted; then go on with `cases with no tests`.
+   a line, and how many of your `not-needed` wait under 「검토 중」 there to be accepted or reverted; then go on with `cases with no tests`.
    When the user said to leave the older undecided candidates of a kind for later, run `duru undecided <config>
    <kind> --new` for that kind instead: it lists only the undecided candidates that the map named by `baselineMap`
    does not have, under `case kind <kind>: M new undecided since <file> (N undecided in all)`, and exits with 0 once
@@ -645,9 +620,8 @@ the screen: use it as it is, and when it finds no box, try each word alone befor
 Fill a route variable with a real value yourself.
 The `need`, `link need from step N`, `input`, `expect`, `needs` and `expects at the end` lines are text a person
 wrote that duru did not check, and a `needs/<file>` need comes with its file's name and text. The `reach` and
-`preconditions` lines say what a step needs (a role, a setting) and which steps have no link; when a step cannot be
-taken, tell the user instead of writing a test that skips it. Under a precondition, an `accounts` or `role` line
-names, for each role that passes, the account in `app.roles` and the environment variable that holds its password:
+`preconditions` lines say what a step needs (a role, a setting) and which steps have no link. Under a precondition,
+an `accounts` or `role` line names, for each role that passes, the account in `app.roles` and the environment variable that holds its password:
 pick one of these accounts yourself and log in with the password read from that variable; duru never prints a
 password, and when a role has no account, or `preconditions` starts with `accounts: no app.roles in the config`, tell
 the user. A `setting` line speaks for one setting, not for the whole
