@@ -28,7 +28,7 @@ import { checkStoryFiles } from './story-paths.ts';
 import { addTracedScreens } from './traced-screens.ts';
 import { markUnrecorded } from './unrecorded-calls.ts';
 import { atTableItem, linkText, storyBrief, taskList, undecidedLines } from './tasks.ts';
-import { linkTests, sentTraces, writeShots } from './test-links.ts';
+import { linkTests, sentTraces, unreadResults, writeShots } from './test-links.ts';
 
 const COMMANDS = ['extract', 'rebuild', 'review', 'tasks', 'story', 'reply', 'wait', 'case', 'undecided', 'candidate'];
 const DEFAULT_PORT = 4400;
@@ -481,6 +481,9 @@ if (command === 'tasks') {
     }
     for (const n of links.traceNotices) console.log(`  trace ${n.file} ← ${n.test.file}:${n.test.line} ${n.test.title}: ${n.reason}`);
     for (const m of links.missingSources) console.log(`  missing test results ${m}`);
+    for (const u of unreadResults(config)) {
+      console.log(`  tests reads ${u.read} ${u.format} result ${u.read === 1 ? 'file' : 'files'} in ${u.folder}, not the other ${u.unread} there`);
+    }
     for (const u of unknownTags) console.log(`  unknown ${u.tag} ← ${u.test.file}:${u.test.line} ${u.test.title}`);
 
     const unjudged = list.flatMap((s) => s.links).filter((l) => l.verdict === 'unknown').length;

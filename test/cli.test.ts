@@ -557,6 +557,58 @@ test('rebuild goes on past a trace that is gone and one that is broken, and name
   assert.match(stdout, /^stories /m);
 });
 
+function rebuildWithTests(change: (copy: string, config: any) => void) {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    const configFile = path.join(copy, 'config.json');
+    const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    change(copy, config);
+    fs.writeFileSync(configFile, JSON.stringify(config));
+    return execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+}
+
+const UNREAD_RESULTS = /^ {2}tests reads \d+ \w+ result files? in /m;
+const readOneReport = (config: any) => {
+  config.tests[0] = { format: 'playwright', path: 'results/playwright/e2e.json', depth: 'ui' };
+};
+
+test('rebuild prints one line when a tests entry names a file and the results of the same format beside it are read by no tests entry, counting a report only when the reader of that format reads tests from it', () => {
+  const stdout = rebuildWithTests((copy, config) => {
+    readOneReport(config);
+    const folder = path.join(copy, 'results/playwright');
+    fs.copyFileSync(path.join(copy, 'results/vitest/unit.json'), path.join(folder, 'unit.json'));
+    fs.writeFileSync(path.join(folder, 'notes.json'), JSON.stringify({ owner: 'qa' }));
+    fs.writeFileSync(path.join(folder, 'run.log'), 'started\n');
+    fs.mkdirSync(path.join(folder, 'older'));
+    fs.copyFileSync(path.join(folder, 'export.json'), path.join(folder, 'older/export.json'));
+  });
+  assert.match(stdout, /^ {2}tests reads 1 playwright result file in results\/playwright, not the other 2 there$/m);
+  assert.equal(stdout.match(new RegExp(UNREAD_RESULTS, 'gm'))?.length, 1);
+});
+
+test('rebuild prints no line about unread results when a tests entry names the folder, or when baselineTests reads the rest, and leaves what baselineTests reads out of the count', () => {
+  assert.doesNotMatch(rebuildWithTests(() => {}), UNREAD_RESULTS);
+  assert.match(rebuildWithTests((_copy, config) => {
+    readOneReport(config);
+    config.baselineTests = [{ format: 'playwright', path: 'results/playwright/export.json', depth: 'ui' }];
+  }), /^ {2}tests reads 1 playwright result file in results\/playwright, not the other 1 there$/m);
+  assert.doesNotMatch(rebuildWithTests((_copy, config) => {
+    readOneReport(config);
+    config.tests.push({ format: 'playwright', path: 'results/playwright', depth: 'ui' });
+  }), UNREAD_RESULTS);
+  assert.doesNotMatch(rebuildWithTests((_copy, config) => {
+    readOneReport(config);
+    config.baselineTests = [
+      { format: 'playwright', path: 'results/playwright/export.json', depth: 'ui' },
+      { format: 'playwright', path: 'results/playwright/screen-cases.json', depth: 'ui' },
+    ];
+  }), UNREAD_RESULTS);
+});
+
 test('rebuild with no server API list counts the unchecked calls and says the comparison was not made', () => {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {

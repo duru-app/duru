@@ -81,6 +81,34 @@ export function resultFiles(p: string, extensions: string[]) {
     .sort();
 }
 
+export function unreadResults(config: { configDir: string; tests: { format: string; path: string }[]; baselineTests: { format: string; path: string }[] | null }) {
+  const sources = [...config.tests, ...(config.baselineTests ?? [])].filter((s) => fs.existsSync(s.path));
+  const read = new Set(sources.flatMap((s) => resultFiles(s.path, READERS[s.format].extensions).map((file) => `${s.format}\n${file}`)));
+  const named = new Map<string, { folder: string; format: string; files: Set<string> }>();
+  for (const s of sources) {
+    if (!config.tests.includes(s) || fs.statSync(s.path).isDirectory()) continue;
+    const folder = path.dirname(s.path);
+    const key = `${s.format}\n${folder}`;
+    if (!named.has(key)) named.set(key, { folder, format: s.format, files: new Set() });
+    named.get(key)!.files.add(s.path);
+  }
+  const isResult = (format: string, file: string) => {
+    try {
+      return (READERS[format].read(file)?.length ?? 0) > 0;
+    } catch {
+      return false;
+    }
+  };
+  return [...named.values()].flatMap(({ folder, format, files }) => {
+    const unread = fs.readdirSync(folder, { withFileTypes: true })
+      .filter((e) => e.isFile() && READERS[format].extensions.some((ext) => e.name.endsWith(ext)))
+      .map((e) => path.join(folder, e.name))
+      .filter((file) => !read.has(`${format}\n${file}`) && isResult(format, file));
+    const shown = path.relative(config.configDir, folder).split(path.sep).join('/') || '.';
+    return unread.length ? [{ folder: shown, format, read: files.size, unread: unread.length }] : [];
+  }).sort((a, b) => compare(a.folder, b.folder) || compare(a.format, b.format));
+}
+
 export function sentTraces(config: any): SentRequests[] {
   const sent: SentRequests[] = [];
   for (const source of config.tests) {
