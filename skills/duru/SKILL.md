@@ -275,6 +275,10 @@ A pair the reviewer hands over for tagging appears in the task list under `# Tag
    only a regression a reviewer commented on, which the task list then shows, is yours to fix. A run that stops
    with a line starting with `baselineTests` names results that are missing, unreadable or hold no test: tell the
    user.
+   A line `tests reads N <format> result files in <folder>, not the other M there` means the config's `tests` names
+   only some of the result files in that folder, so the map, the review page and the task list judge only the tests
+   of those N files. Tell the user the line as printed before you judge what is tested from this map, and ask whether
+   `tests` should name the folder instead.
 2. **Open the review page.** Run `duru review <config>` (add `--port <n>` if port 4400 is taken). It prints
    `review page http://127.0.0.1:<port>/` on standard error; give that address to the user and ask them to
    mark the screens and stories and press 「리뷰 끝」 when they are done.
