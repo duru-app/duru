@@ -375,6 +375,22 @@ test('in a browser, a box the screen does not have and a count past the boxes th
   });
 });
 
+test('in a browser, when no box is found 앱 화면 draws the app screen from its top left corner at the smallest size a cut around a found box is drawn at', { skip: browserMissing }, async () => {
+  await withPointStory(async (p) => {
+    await lineAt(p, 0, 3).click();
+    await untilChip(p, 0, 3, '못 찾음');
+    const drawn = await p.locator('#right-app .point-crop').evaluate((crop) => {
+      const frame = crop.querySelector('iframe')!;
+      const at = frame.getBoundingClientRect();
+      const room = crop.getBoundingClientRect();
+      return { left: at.left - room.left - crop.clientLeft, top: at.top - room.top - crop.clientTop, scale: at.width / frame.offsetWidth, cropHeight: crop.clientHeight, frameHeight: at.height };
+    });
+    assert.ok(Math.abs(drawn.left) < 0.5 && Math.abs(drawn.top) < 0.5, `the app's top left corner sits at the cut's (${JSON.stringify(drawn)})`);
+    assert.ok(Math.abs(drawn.scale - READABLE) < 0.001, `the app is drawn at ${drawn.scale}`);
+    assert.ok(drawn.cropHeight > 0 && drawn.cropHeight <= drawn.frameHeight + 0.5, `the cut is filled with the app (${JSON.stringify(drawn)})`);
+  });
+});
+
 test('in a browser, a count past the boxes there says 못 찾음 also when those boxes lie farther apart than the app frame can hold', { skip: browserMissing }, async () => {
   await withPointStory(async (p, app) => {
     await lineAt(p, 0, 0).click();

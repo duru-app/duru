@@ -144,6 +144,22 @@ test('in a browser, a kind shows its picks by rule, person and agent, its rules 
   });
 });
 
+test('in a browser, each request of a kind carries its method on a colour of its own: GET blue, POST green, PUT orange, PATCH teal and DELETE red', { skip: browserMissing }, async () => {
+  const methods = 'client/src/_define/Option.js';
+  await withRebuiltFixture({ caseKinds: KINDS }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await openKind(p, 'ended');
+        const colours = await p.locator('#center .case-undecided .method').evaluateAll((els) => Object.fromEntries(els.map((e) => [e.textContent, getComputedStyle(e).backgroundColor])));
+        assert.deepEqual(colours, { GET: 'rgb(37, 99, 235)', POST: 'rgb(22, 163, 74)', PUT: 'rgb(234, 88, 12)', PATCH: 'rgb(13, 148, 136)', DELETE: 'rgb(220, 38, 38)' });
+      })), [
+    ['client/src/_define/Enum.js', "PUT: 'PUT'", "PUT: 'PUT', PATCH: 'PATCH', DELETE: 'DELETE'"],
+    [methods, "HTTP_METHOD.POST, URL: this.API_PATH + 'report/export'", "HTTP_METHOD.PUT, URL: this.API_PATH + 'report/export'"],
+    [methods, "HTTP_METHOD.POST, URL: this.API_PATH + 'report/archive'", "HTTP_METHOD.PATCH, URL: this.API_PATH + 'report/archive'"],
+    [methods, "HTTP_METHOD.GET, URL: this.API_PATH + 'lab/experiment'", "HTTP_METHOD.DELETE, URL: this.API_PATH + 'lab/experiment'"],
+  ]);
+});
+
 test('in a browser, an agent\'s 「대상 아님」 waits in an open 「검토 중」 group above 「미판정」, counted in the tab with undecided and apart on hover, in the kind\'s line and in a box of its own; checked ones are accepted with ✓ or reverted with ✕, one the agent wrote again since the page read it is refused, and 「변경 기록」 says 받아들임 or 되돌림', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ caseKinds: KINDS }, (config) => {
     runCli(config, 'case', 'ended', RENAME, 'not-needed', '--note', '이름은 막지 않는다');
