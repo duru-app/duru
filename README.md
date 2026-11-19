@@ -701,7 +701,7 @@ listing the places whose value the source does not show in full.
   routes or the config the other lines name before writing stories or tests from them.
 - `  tests reads N <format> result files in <folder>, not the other M there` — printed by `rebuild` when an entry of
   `tests` names a file, and the folder holding it has M more result files of that format that no entry of `tests` or
-  `baselineTests` reads. `N` counts the entries of `tests` naming a file of that format in that folder, and `<folder>`
+  `baselineTests` reads. `N` counts the files of that format in that folder that `tests` names, and `<folder>`
   is written from the config's folder. A file counts when the reader of that format gets at least one test out of it,
   so a Vitest report beside Playwright reports, or a `.log` with no `VERDICT` line, is not counted; folders inside
   `<folder>` are not looked into. The map and the review page show only the tests of the N files: name the folder in
