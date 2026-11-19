@@ -31,6 +31,7 @@ import { atTableItem, linkText, storyBrief, taskList, undecidedLines } from './t
 import { linkTests, sentTraces, unreadResults, writeShots } from './test-links.ts';
 
 const COMMANDS = ['extract', 'rebuild', 'review', 'tasks', 'story', 'reply', 'wait', 'case', 'undecided', 'candidate'];
+const TASK_LISTS = ['--unrecorded', '--open-candidates', '--unsent-options'];
 const DEFAULT_PORT = 4400;
 const CASE_OPTIONS = ['--note', '--author', '--server'];
 const UNDECIDED_LEFT = 3;
@@ -44,9 +45,9 @@ const waitServer = command === 'wait' && extra.length === 2 && extra[0] === '--s
 const caseArgs = command === 'case' ? caseArgsOf(extra) : null;
 const undecidedArgs = command === 'undecided' ? undecidedArgsOf(extra) : null;
 const candidateArgs = command === 'candidate' && (extra.length === 2 || (extra.length === 4 && extra[2] === '--server' && extra[3])) && extra[1] ? { comment: extra[0], from: extra[1], server: extra[3] ?? null } : null;
-const argsFit = command === 'story' ? extra.length === 1 && extra[0] !== '' : command === 'reply' ? replyArgs : command === 'wait' ? waitServer : command === 'case' ? caseArgs : command === 'undecided' ? undecidedArgs : command === 'candidate' ? candidateArgs : command === 'tasks' ? extra.length === 0 || (extra.length === 1 && extra[0] === '--unrecorded') : extra.length === 0 || Number.isInteger(portArg);
+const argsFit = command === 'story' ? extra.length === 1 && extra[0] !== '' : command === 'reply' ? replyArgs : command === 'wait' ? waitServer : command === 'case' ? caseArgs : command === 'undecided' ? undecidedArgs : command === 'candidate' ? candidateArgs : command === 'tasks' ? extra.every((a) => TASK_LISTS.includes(a)) && new Set(extra).size === extra.length : extra.length === 0 || Number.isInteger(portArg);
 if (!COMMANDS.includes(command) || !configPath || !argsFit) {
-  console.error(`usage: duru <extract|rebuild|tasks> <config.json>\n       duru tasks <config.json> --unrecorded\n       duru story <config.json> <story ID>\n       duru review <config.json> [--port <n>]\n       duru reply <config.json> <comment ID> <text> [--server <review page address>]\n       duru wait <config.json> --server <review page address>\n       duru case <config.json> <kind> <screen or call ID> needed|not-needed [--note <why>] [--author <name> | --server <review page address>]\n       duru undecided <config.json> [<kind>] [--new]\n       duru candidate <config.json> <comment ID> <candidate.json | -> [--server <review page address>]`);
+  console.error(`usage: duru <extract|rebuild|tasks> <config.json>\n       duru tasks <config.json> [--unrecorded] [--open-candidates] [--unsent-options]\n       duru story <config.json> <story ID>\n       duru review <config.json> [--port <n>]\n       duru reply <config.json> <comment ID> <text> [--server <review page address>]\n       duru wait <config.json> --server <review page address>\n       duru case <config.json> <kind> <screen or call ID> needed|not-needed [--note <why>] [--author <name> | --server <review page address>]\n       duru undecided <config.json> [<kind>] [--new]\n       duru candidate <config.json> <comment ID> <candidate.json | -> [--server <review page address>]`);
   process.exit(2);
 }
 if (caseArgs && caseArgs.server !== null && caseArgs.author !== null) {
@@ -115,7 +116,7 @@ try {
 }
 
 if (command === 'tasks') {
-  process.stdout.write(taskList(config, extra[0] === '--unrecorded'));
+  process.stdout.write(taskList(config, { unrecorded: extra.includes('--unrecorded'), candidates: extra.includes('--open-candidates'), options: extra.includes('--unsent-options') }));
 } else if (command === 'story') {
   let brief;
   try {

@@ -163,9 +163,9 @@ function optionRows(s, call, depths) {
         value && o.sources.includes('type') ? h('span', { class: 'chip config', title: 'API 메서드가 보내는 본문의 타입에서 읽은 옵션' }, '본문 타입') : null,
         value && o.sources.includes('config') ? h('span', { class: 'chip config', title: '설정 bodyOptions 에 적은 옵션' }, '설정') : null,
         value && o.sources.includes('request') ? h('span', { class: 'chip config', title: '테스트가 보낸 요청의 본문에서 읽은 옵션' }, '보낸 요청') : null),
-      cell(target, matching, sent
-        ? sentCount('값', sent, 'none recorded')
-        : '테스트 없음'),
+      cell(target, matching, o.unsent?.includes(value)
+        ? '테스트 없음'
+        : sentCount('값', sent, 'none recorded')),
       depths.map((d, i) => cell({ ...target, depth: d }, split[i])),
       compareGap());
   }));

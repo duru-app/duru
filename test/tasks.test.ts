@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { loadConfig } from '../src/config.ts';
+import { discardCandidate } from '../src/candidates.ts';
 import { addJudgment } from '../src/judgments.ts';
 import type { ScreenMap } from '../src/map.ts';
 import { addMark, addReply, loadMarks } from '../src/marks.ts';
@@ -45,7 +46,9 @@ const REPORT_CASES = ['role:ADMIN', 'role:OWNER', 'role:other', 'setting:SYSTEM.
 const AUDIT_CASES = ['role:ADMIN', 'role:AUDITOR', 'role:other'];
 
 const UNRECORDED_HEAD = '# Write calls no trace or visit record sent';
+const UNSENT_COUNTED = ['', '# Option values no test sent', '', '10 option values (true or false of an option) on 2 screens were sent by no test: no test is tagged with them and no trace\'s request body carried them. `duru tasks <config> --unsent-options` lists each under each screen that shows it.', ''].join('\n');
 const UNRECORDED_COUNTED = ['', UNRECORDED_HEAD, '', '6 write calls (POST, PUT, PATCH or DELETE) on 6 screens were sent by no trace or visit record. `duru tasks <config> --unrecorded` lists each under each screen that reaches it.', ''].join('\n');
+const COUNTED_ENDING = UNRECORDED_COUNTED + UNSENT_COUNTED;
 
 const EXPECTED = `# Test tasks — 4 screens, 1 call, 0 stories, 5 open marks
 
@@ -147,7 +150,7 @@ ${emptyTests(
 - server: not on the server
 - tests: none
 ${emptyTests(['@call:POST:/api/v1/archive/document @depth:api', 'call_POST_api_v1_archive_document_depth_api'])}
-${UNRECORDED_COUNTED}`;
+${COUNTED_ENDING}`;
 
 test('the task list holds the needs-more and missing marks of the fake client, leaving out fine and detached ones', () => {
   withFixtureCopy(({ cli }) => {
@@ -282,8 +285,8 @@ test('the task list carries the stories whose current mark is needs-more or miss
     cli('rebuild');
     const tasks = cli('tasks');
     assert.match(tasks, /^# Test tasks — 4 screens, 1 call, 3 stories, 8 open marks\n/);
-    assert.equal(tasks.slice(0, tasks.indexOf('\n# Stories\n')), EXPECTED.replace('0 stories, 5 open marks', '3 stories, 8 open marks').replace(UNRECORDED_COUNTED, ''));
-    assert.equal(tasks.slice(tasks.indexOf('\n# Stories\n')), EXPECTED_STORIES + UNRECORDED_COUNTED);
+    assert.equal(tasks.slice(0, tasks.indexOf('\n# Stories\n')), EXPECTED.replace('0 stories, 5 open marks', '3 stories, 8 open marks').replace(COUNTED_ENDING, ''));
+    assert.equal(tasks.slice(tasks.indexOf('\n# Stories\n')), EXPECTED_STORIES + COUNTED_ENDING);
   }, { storiesDir: 'example-stories' });
 });
 
@@ -568,7 +571,7 @@ test('a marked story whose file is still in the folder but cannot be read keeps 
       '  - needs-more — "The story test fails before the result page; add a UI test that walks it." (Kim Min, 2026-10-03)',
       '- story file: could not be read; `duru rebuild` prints why',
       '',
-    ].join('\n') + UNRECORDED_COUNTED);
+    ].join('\n') + COUNTED_ENDING);
   }, { storiesDir: 'example-stories' });
 });
 
@@ -887,7 +890,7 @@ test('with case kinds configured but none picked, the task list differs from one
     const tasks = cli('tasks');
     const [listed, kinds] = tasks.split('\n# Case kinds\n');
     const [head, intro, ...rest] = listed.split('\n\n');
-    const [expectedHead, expectedIntro, ...expectedRest] = EXPECTED.replace(UNRECORDED_COUNTED, '').split('\n\n');
+    const [expectedHead, expectedIntro, ...expectedRest] = EXPECTED.replace(COUNTED_ENDING, '').split('\n\n');
     const candidates = 11 + 10;
     assert.equal(head, `${expectedHead}, ${candidates * 3} undecided case candidates, 0 cases with no tests`);
     assert.notEqual(intro, expectedIntro);
@@ -976,12 +979,12 @@ test('with no open marks but cases with no tests the task list says the case kin
     keepVisitRecord(copy, WRITES_SENT);
     cli('rebuild');
     const { marksDir, outDir } = loadConfig(configFile);
-    assert.match(cli('tasks'), /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks, 0 undecided case candidates, 11 cases with no tests\n[\s\S]*\nNo open marks, but the case kinds below still have undecided candidates or cases with no tests\.\n\n# Case kinds\n/);
+    assert.match(cli('tasks'), /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks, 0 undecided case candidates, 11 cases with no tests\n[\s\S]*\nNo open marks, but the case kinds below still have undecided candidates or cases with no tests, story candidates that no reviewer accepted or discarded are counted below, and option values that no test sent are counted below\.\n\n# Case kinds\n/);
     const map: ScreenMap = JSON.parse(fs.readFileSync(path.join(outDir, 'map.json'), 'utf8'));
     for (const s of map.screens) addMark(marksDir, { target: { node: s.id, case: 'boundary' }, status: 'not-needed', note: '입력 칸이 없다', rule: { index: 0, pick }, author: 'agent', via: 'duru case' });
-    assert.match(cli('tasks'), /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks, 0 undecided case candidates, 11 under review, 11 cases with no tests\n[\s\S]*\nNo open marks, but the case kinds below still have undecided candidates or cases with no tests\.\n\n# Case kinds\n[\s\S]*\n- undecided: none\n- under review: 11\n/);
+    assert.match(cli('tasks'), /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks, 0 undecided case candidates, 11 under review, 11 cases with no tests\n[\s\S]*\nNo open marks, but the case kinds below still have undecided candidates or cases with no tests, story candidates that no reviewer accepted or discarded are counted below, and option values that no test sent are counted below\.\n\n# Case kinds\n[\s\S]*\n- undecided: none\n- under review: 11\n/);
     for (const m of loadMarks(marksDir)) addMark(marksDir, { target: m.target, status: 'not-needed', note: m.note, rule: m.rule, author: '김민', of: m.id }, new Date(Date.now() + 60_000));
-    assert.match(cli('tasks'), /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks\n[\s\S]*\nNo open marks\.\n\n# Case kinds\n[\s\S]*\n- undecided: none\n- cases with no tests: none\n$/);
+    assert.match(cli('tasks'), /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks\n[\s\S]*\nNo open marks, but story candidates that no reviewer accepted or discarded are counted below, and option values that no test sent are counted below\.\n\n# Case kinds\n[\s\S]*\n- undecided: none\n- cases with no tests: none\n\n# Story candidates still open\n[\s\S]*\n# Option values no test sent\n[\s\S]*\n$/);
   }, { caseKinds: { boundary: { text: CASE_KINDS.boundary, picks: [pick] } } });
 });
 
@@ -992,7 +995,7 @@ test('with no open marks and only an agent\'s not-needed waiting on candidates n
     const { marksDir, outDir } = loadConfig(configFile);
     const map: ScreenMap = JSON.parse(fs.readFileSync(path.join(outDir, 'map.json'), 'utf8'));
     for (const n of [...map.screens, ...map.calls]) addMark(marksDir, { target: { node: n.id, case: 'boundary' }, status: 'not-needed', note: '입력 칸이 없다', author: 'agent', via: 'duru case' });
-    assert.match(cli('tasks'), /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks, 0 undecided case candidates, 21 under review, 0 cases with no tests\n[\s\S]*\nNo open marks, but the case kinds below still have candidates under review, and write calls that no trace or visit record sent are counted below\.\n\n# Case kinds\n/);
+    assert.match(cli('tasks'), /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks, 0 undecided case candidates, 21 under review, 0 cases with no tests\n[\s\S]*\nNo open marks, but the case kinds below still have candidates under review, write calls that no trace or visit record sent are counted below, and option values that no test sent are counted below\.\n\n# Case kinds\n/);
   }, { caseKinds: { boundary: CASE_KINDS.boundary } });
 });
 
@@ -1051,8 +1054,8 @@ test('with no open marks but write calls on screens that no trace or visit recor
     cli('rebuild');
     const counted = '6 write calls (POST, PUT, PATCH or DELETE) on 6 screens were sent by no trace or visit record.';
     assert.match(cli('tasks'), /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks\n/);
-    assert.ok(cli('tasks').endsWith(['', 'No open marks, but write calls that no trace or visit record sent are counted below.', '', UNRECORDED_HEAD, '', `${counted} \`duru tasks <config> --unrecorded\` lists each under each screen that reaches it.`, ''].join('\n')));
-    assert.ok(listUnrecorded(configFile).endsWith(['', 'No open marks, but write calls that no trace or visit record sent are listed below.', '', UNRECORDED_HEAD, '', `${counted} ${UNRECORDED_LISTED}`, '', ...UNRECORDED_ROWS, ''].join('\n')));
+    assert.ok(cli('tasks').endsWith(['', 'No open marks, but write calls that no trace or visit record sent are counted below, and option values that no test sent are counted below.', '', UNRECORDED_HEAD, '', `${counted} \`duru tasks <config> --unrecorded\` lists each under each screen that reaches it.`, UNSENT_COUNTED].join('\n')));
+    assert.ok(listUnrecorded(configFile).endsWith(['', 'No open marks, but write calls that no trace or visit record sent are listed below, and option values that no test sent are counted below.', '', UNRECORDED_HEAD, '', `${counted} ${UNRECORDED_LISTED}`, '', ...UNRECORDED_ROWS, UNSENT_COUNTED].join('\n')));
   });
 });
 
@@ -1061,8 +1064,8 @@ test('with no open marks and every write call on a screen sent by a visit record
     fs.rmSync(path.join(copy, 'example-marks'), { recursive: true });
     keepVisitRecord(copy, WRITES_SENT);
     cli('rebuild');
-    assert.match(cli('tasks'), /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks\n[\s\S]*\nNo open marks\.\n$/);
-    assert.match(listUnrecorded(configFile), /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks\n[\s\S]*\nNo open marks\.\n$/);
+    assert.match(cli('tasks'), /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks\n[\s\S]*\nNo open marks, but story candidates that no reviewer accepted or discarded are counted below, and option values that no test sent are counted below\.\n\n# Story candidates still open\n[\s\S]*\n# Option values no test sent\n[\s\S]*\n$/);
+    assert.match(listUnrecorded(configFile), /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks\n[\s\S]*\nNo open marks, but story candidates that no reviewer accepted or discarded are counted below, and option values that no test sent are counted below\.\n\n# Story candidates still open\n[\s\S]*\n# Option values no test sent\n[\s\S]*\n$/);
   });
 });
 
@@ -1660,8 +1663,123 @@ test('an API call with an open mark is listed once under API calls with its scre
         '  - ui fail — rename is refused by the server @call:PUT:/api/v1/document/{documentId}/name — document.spec.ts:4 (chromium)',
         emptyTests(['@call:PUT:/api/v1/document/{documentId}/name', 'call_PUT_api_v1_document_documentId_name']),
         '',
-      ].join('\n') + UNRECORDED_COUNTED,
+      ].join('\n') + COUNTED_ENDING,
     );
+  });
+});
+
+const OPEN_CANDIDATES_HEAD = '# Story candidates still open';
+const UNSENT_OPTIONS_HEAD = '# Option values no test sent';
+const OPEN_CANDIDATES_FLAG = '--open-candidates';
+const UNSENT_OPTIONS_FLAG = '--unsent-options';
+const tasksWith = (configFile: string, ...flags: string[]) => execFileSync(process.execPath, [CLI, 'tasks', configFile, ...flags], { encoding: 'utf8' });
+
+function keepCandidateRecord(copy: string, name: string, urls: string[]) {
+  const records = path.join(copy, 'out', 'stories', 'records');
+  fs.mkdirSync(records, { recursive: true });
+  fs.writeFileSync(path.join(records, `${name}.json`), JSON.stringify({ name, steps: urls.map((url) => ({ url })) }));
+}
+
+test('the task list counts the story candidates no reviewer accepted or discarded and, with --open-candidates, lists each with the screens it passes', () => {
+  withFixtureCopy(({ copy, configFile, cli }) => {
+    fs.rmSync(path.join(copy, 'example-marks'), { recursive: true });
+    cli('rebuild');
+    assert.ok(!cli('tasks').includes(OPEN_CANDIDATES_HEAD));
+    keepCandidateRecord(copy, 'read the documents', ['/home', '/document/1']);
+    keepCandidateRecord(copy, 'sign in again', ['/signin', '/home']);
+    cli('rebuild');
+    const counted = '2 story candidates are open: no reviewer accepted them as a story or discarded them.';
+    const tasks = cli('tasks');
+    assert.ok(tasks.includes(['', OPEN_CANDIDATES_HEAD, '', `${counted} \`duru tasks <config> ${OPEN_CANDIDATES_FLAG}\` lists them.`, ''].join('\n')), tasks);
+    assert.match(tasks, /\nNo open marks, but write calls that no trace or visit record sent are counted below, story candidates that no reviewer accepted or discarded are counted below, and option values that no test sent are counted below\.\n/);
+    const listed = tasksWith(configFile, OPEN_CANDIDATES_FLAG);
+    assert.match(listed, /\nNo open marks, but .*story candidates that no reviewer accepted or discarded are listed below[,.]/);
+    assert.ok(listed.includes(`\n${OPEN_CANDIDATES_HEAD}\n\n${counted} `));
+    assert.ok(listed.includes('\n- /home#Home > /document/:id#DocumentDetail — read the documents\n'), listed);
+    assert.ok(listed.includes('\n- /signin#SignIn > /home#Home — sign in again\n'), listed);
+    assert.ok(!tasks.includes('— read the documents'));
+  });
+});
+
+test('a story candidate leaves the open count once a reviewer discarded it', () => {
+  withFixtureCopy(({ copy, configFile, cli }) => {
+    fs.rmSync(path.join(copy, 'example-marks'), { recursive: true });
+    keepCandidateRecord(copy, 'read the documents', ['/home', '/document/1']);
+    keepCandidateRecord(copy, 'sign in again', ['/signin', '/home']);
+    cli('rebuild');
+    const { candidates } = reviewData(loadConfig(configFile), null);
+    discardCandidate(loadConfig(configFile).storiesDir, candidates.list[0], { reason: '같은 길이 이미 있다', author: '김민' });
+    assert.match(cli('tasks'), /\n1 story candidate is open: no reviewer accepted it as a story or discarded it\./);
+  });
+});
+
+const UNSENT_ROWS = [
+  '## /admin/audit#AdminAudit',
+  '',
+  '- POST:/api/v1/report/archive — signedOnly=false, withHistory=false',
+  '- POST:/api/v1/report/export — withAttachments=false',
+  '- POST:/api/v1/report/schedule — weekly=true, weekly=false',
+  '',
+  '## /admin/report#AdminReport',
+  '',
+  '- POST:/api/v1/report/archive — signedOnly=false, withHistory=false',
+  '- POST:/api/v1/report/export — withAttachments=false',
+  '- POST:/api/v1/report/schedule — weekly=true, weekly=false',
+];
+
+test('the task list counts the option values no test sent, by value row on each screen, and with --unsent-options lists them under each screen', () => {
+  withFixtureCopy(({ copy, configFile, cli }) => {
+    fs.rmSync(path.join(copy, 'example-marks'), { recursive: true });
+    cli('rebuild');
+    const counted = '10 option values (true or false of an option) on 2 screens were sent by no test: no test is tagged with them and no trace\'s request body carried them.';
+    const tasks = cli('tasks');
+    assert.ok(tasks.includes(['', UNSENT_OPTIONS_HEAD, '', `${counted} \`duru tasks <config> ${UNSENT_OPTIONS_FLAG}\` lists each under each screen that shows it.`, ''].join('\n')), tasks);
+    assert.match(tasks, /\nNo open marks, but .*option values that no test sent are counted below\./);
+    const listed = tasksWith(configFile, UNSENT_OPTIONS_FLAG);
+    assert.match(listed, /\nNo open marks, but .*option values that no test sent are listed below\./);
+    assert.ok(listed.includes(`\n${UNSENT_OPTIONS_HEAD}\n\n${counted} `));
+    assert.ok(listed.includes(`\n${UNSENT_ROWS.join('\n')}\n`), listed);
+  });
+});
+
+test('an option value a test trace\'s request body sent is not counted as unsent, the same as one an @option tag names', () => {
+  withFixtureCopy(({ copy, configFile, cli }) => {
+    fs.rmSync(path.join(copy, 'example-marks'), { recursive: true });
+    cli('rebuild');
+    const { outDir } = loadConfig(configFile);
+    editJson(path.join(outDir, 'map.json'), (map: ScreenMap) => {
+      const schedule = map.calls.find((c) => c.id === 'POST:/api/v1/report/schedule')!;
+      schedule.options[0].requests = [{ test: 'schedules weekly', file: 'e2e/report.spec.ts', line: 3, project: 'chromium', values: [true] }];
+    });
+    const listed = tasksWith(configFile, UNSENT_OPTIONS_FLAG);
+    assert.ok(listed.includes('\n- POST:/api/v1/report/schedule — weekly=false\n'), listed);
+    assert.ok(!listed.includes('weekly=true'));
+    assert.ok(listed.includes('\n8 option values (true or false of an option) on 2 screens were sent by no test'));
+  });
+});
+
+test('the review page data marks the same option value rows as unsent that the task list counts', () => {
+  withFixtureCopy(({ copy, configFile, cli }) => {
+    fs.rmSync(path.join(copy, 'example-marks'), { recursive: true });
+    cli('rebuild');
+    const { map } = reviewData(loadConfig(configFile), null);
+    const audit = map.screens.find((s) => s.id === '/admin/audit#AdminAudit')!;
+    const rows = Object.values(audit.callOptions).flat().flatMap((o) => (o.unsent ?? []).map((value) => `${o.key}=${value}`)).sort();
+    assert.deepEqual(rows, ['signedOnly=false', 'weekly=false', 'weekly=true', 'withAttachments=false', 'withHistory=false']);
+  });
+});
+
+test('--open-candidates and --unsent-options can be given with --unrecorded and each other', () => {
+  withFixtureCopy(({ copy, configFile, cli }) => {
+    fs.rmSync(path.join(copy, 'example-marks'), { recursive: true });
+    keepCandidateRecord(copy, 'read the documents', ['/home', '/document/1']);
+    cli('rebuild');
+    const all = tasksWith(configFile, '--unrecorded', OPEN_CANDIDATES_FLAG, UNSENT_OPTIONS_FLAG);
+    assert.ok(all.includes('\n- /home#Home > /document/:id#DocumentDetail — read the documents\n'));
+    assert.ok(all.includes('\n- POST:/api/v1/report/schedule — weekly=true, weekly=false\n'));
+    assert.ok(all.includes('\n- POST:/api/v1/report/archive — ajaxReportArchive at '));
+    const run = spawnSync(process.execPath, [CLI, 'tasks', configFile, '--nonsense'], { encoding: 'utf8' });
+    assert.equal(run.status, 2);
   });
 });
 
@@ -1966,7 +2084,7 @@ test('a comment on a test that did not regress lists no screen, and under a scre
     comment(RECENT_JUNIT, '2026-10-12T02:00:00Z');
     const tasks = cli('tasks');
     assert.match(tasks, /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks\n/);
-    assert.match(tasks, /\nNo open marks, but write calls that no trace or visit record sent are counted below\.\n/);
+    assert.match(tasks, /\nNo open marks, but write calls that no trace or visit record sent are counted below, and option values that no test sent are counted below\.\n/);
     addMark(marksDir, { target: { node: '/home#Home' }, status: 'needs-more', author: 'a' }, new Date('2026-10-12T03:00:00Z'));
     const marked = cli('tasks');
     assert.match(marked, /^# Test tasks — 1 screen, 0 calls, 0 stories, 1 open mark\n/);

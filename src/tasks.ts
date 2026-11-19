@@ -774,8 +774,39 @@ function unrecordedLines(map: any, attached: MarkEntry[], listed: boolean) {
   ])];
 }
 
-export function taskList(config: any, listUnrecorded = false) {
-  const { map, tests, marks, appLinks, stories, needs, caseTargets } = reviewData(config, null);
+const OPEN_CANDIDATES_HEAD = '# Story candidates still open';
+const UNSENT_OPTIONS_HEAD = '# Option values no test sent';
+
+const OPEN_CANDIDATES_LISTED = 'Each follows with the screens it passes, in order. A reviewer decides whether it becomes a story on the review page; you cannot accept one. When no mark is open and you look for what to test, a candidate shows a path through the screens that someone walked or a test ran: write a test along it, or tell the user which candidates you left.';
+const UNSENT_OPTIONS_LISTED = 'Each follows under each screen that shows it as `<call ID> — <option>=<true|false>`. Send the call from that screen with the option set that way, run the test with Playwright\'s `trace` on, and put `@option:<option>=<true|false>` on the test; after `duru rebuild` the value leaves this list. When no screen can set the option that way, tell the user which one instead of writing a test that sends the request to the API directly.';
+
+function openCandidateLines(candidates: { key: string; name: string; screens: string[] }[], listed: boolean) {
+  if (!candidates.length) return [];
+  const counted = `${count(candidates.length, 'story candidate')} ${candidates.length === 1 ? 'is' : 'are'} open: no reviewer accepted ${candidates.length === 1 ? 'it' : 'them'} as a story or discarded ${candidates.length === 1 ? 'it' : 'them'}.`;
+  if (!listed) return ['', OPEN_CANDIDATES_HEAD, '', `${counted} \`duru tasks <config> --open-candidates\` lists ${candidates.length === 1 ? 'it' : 'them'}.`];
+  return ['', OPEN_CANDIDATES_HEAD, '', `${counted} ${OPEN_CANDIDATES_LISTED}`, '', ...candidates.map((c) => `- ${c.screens.join(' > ')} — ${c.name}`)];
+}
+
+function unsentOptionLines(map: any, listed: boolean) {
+  const rows = map.screens.map((s: any) => ({
+    id: s.id,
+    lines: Object.entries<any[]>(s.callOptions).sort(([a], [b]) => compare(a, b)).flatMap(([callId, options]) => {
+      const values = options.flatMap((o) => (o.unsent ?? []).map((value: boolean) => `${o.key}=${value}`));
+      return values.length ? [{ values, text: `- ${callId} — ${values.join(', ')}` }] : [];
+    }),
+  })).filter((r: any) => r.lines.length).sort((a: any, b: any) => a.id.localeCompare(b.id));
+  if (!rows.length) return [];
+  const total = rows.reduce((n: number, r: any) => n + r.lines.reduce((m: number, l: any) => m + l.values.length, 0), 0);
+  const counted = `${count(total, 'option value')} (true or false of an option) on ${count(rows.length, 'screen')} ${total === 1 ? 'was' : 'were'} sent by no test: no test is tagged with ${total === 1 ? 'it' : 'them'} and no trace's request body carried ${total === 1 ? 'it' : 'them'}.`;
+  if (!listed) return ['', UNSENT_OPTIONS_HEAD, '', `${counted} \`duru tasks <config> --unsent-options\` lists each under each screen that shows it.`];
+  return ['', UNSENT_OPTIONS_HEAD, '', `${counted} ${UNSENT_OPTIONS_LISTED}`, ...rows.flatMap((r: any) => ['', `## ${r.id}`, '', ...r.lines.map((l: any) => l.text)])];
+}
+
+export type TaskLists = { unrecorded?: boolean; candidates?: boolean; options?: boolean };
+
+export function taskList(config: any, lists: TaskLists = {}) {
+  const listUnrecorded = lists.unrecorded ?? false;
+  const { map, tests, marks, appLinks, stories, needs, caseTargets, candidates } = reviewData(config, null);
   const appStart = appStartOf(map);
   const open = marks.attached.filter((m) => m.current?.status === 'needs-more');
   const relative = (p: string) => path.relative(config.configDir, p).split(path.sep).join('/');
@@ -857,11 +888,15 @@ export function taskList(config: any, listUnrecorded = false) {
   }
   if (map.serverNotCompared) out.push('', `${SERVER_NOT_COMPARED}, so no call below is written as missing on the server.`);
   const unrecorded = unrecordedLines(map, marks.attached, listUnrecorded);
+  const openCandidates = openCandidateLines(candidates.list, lists.candidates ?? false);
+  const unsentOptions = unsentOptionLines(map, lists.options ?? false);
   const left = [
     caseWork && (caseWork.undecided + caseWork.untested ? 'the case kinds below still have undecided candidates or cases with no tests' : 'the case kinds below still have candidates under review'),
     unrecorded.length && `write calls that no trace or visit record sent are ${listUnrecorded ? 'listed' : 'counted'} below`,
+    openCandidates.length && `story candidates that no reviewer accepted or discarded are ${lists.candidates ? 'listed' : 'counted'} below`,
+    unsentOptions.length && `option values that no test sent are ${lists.options ? 'listed' : 'counted'} below`,
   ].filter(Boolean);
-  if (!open.length && !passedIn.size) out.push('', left.length ? `No open marks, but ${left.join(', and ')}.` : 'No open marks.');
+  if (!open.length && !passedIn.size) out.push('', left.length ? `No open marks, but ${left.length > 1 ? `${left.slice(0, -1).join(', ')}, and ${left.at(-1)}` : left[0]}.` : 'No open marks.');
   for (const s of screens) {
     const marks = open.filter((m) => m.target.node === s.id);
     out.push(
@@ -914,7 +949,7 @@ export function taskList(config: any, listUnrecorded = false) {
   out.push(...codeChangedLines(marks.attached, tests));
   if (caseKinds) out.push(...caseKinds.lines);
   out.push(...taggingLines(tests.awaitingTag, new Set<string>(map.calls.map((c: any) => c.id))));
-  out.push(...unrecorded);
+  out.push(...unrecorded, ...openCandidates, ...unsentOptions);
   return out.join('\n') + '\n';
 }
 
