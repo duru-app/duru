@@ -5872,6 +5872,46 @@ Compared:
 - Leaving the catch-all-only traces out only while the line is printed: the not-found-page test keeps its candidate on
   a fit map, but two rules depend on each other and are harder to explain.
 
+**`extractClient` in `src/client.ts` is taken apart by what each part reads, one boundary per pull request, and
+`fileFacts` and the assembly at its end stay in it through the five moves below.** The function reads every source shape duru knows, so each fix
+for a shape a new app writes changed the same place. Its parts move out into modules shaped like the ones the file
+already calls (`nameFollower`, `addressReader`, `screenLinkReader`): a function that takes what it needs as one object
+and returns the readers, which `extractClient` takes back by name, so the lines that call them do not change.
+Chosen for #571 (2026-11-19). Measured on main `a3a933b` with the TypeScript compiler, following every name inside the
+function to its declaration: `src/client.ts` had 3,775 lines and `extractClient` 3,435 of them, in 348 top-level
+statements (211 functions, 107 pieces of state or values) with 2,202 references between them. Of the 107, 51 are used
+by more than one group below and 21 of those are written after they are declared, so the groups cannot be cut apart
+without handing state across.
+
+| group | what it holds | lines | names it takes from outside (places) |
+|---|---|---|---|
+| config values + source reading | values taken once from the config, parsing and its caches, following a declaration, working out a value | 380 | 3 (6) |
+| conditions | settings defaults and calls, guards, functions inside a condition | 196 | 12 (23) |
+| calls | API modules, request bodies, sagas, a screen's requests and inputs | 145 | 10 (20) |
+| links | route table keys, link addresses, screen links, link components | 552 | 30 (51) |
+| routes | paths, screens, the drawn tree, redirects, frames | 1,103 | 36 (97) |
+| facts of one file (`fileFacts`) | where what was read in one file is gathered | 323 | 50 (79) |
+| assembly | the straight run at the end that gathers the result | 466 | 66 (156) |
+
+The references run almost one way: config values → source reading → conditions → calls and links → facts of one file
+→ routes → assembly. Nine names point the other way, most of them `follower`, and each can be handed in as a function
+called later.
+The order is source reading → conditions → calls → links → routes, the least-changed first. Of the last 60 commits
+that changed the file (25 days, about two a day) 9 touched the first group, 3 conditions, 9 calls, 22 links and 24
+routes; a part that is changed while its move waits conflicts as a whole and has to be moved again by hand.
+`fileFacts` takes the most names (50) and 15 of those 60 commits changed it, and the assembly takes 66, so both stay
+through the five moves, after which `extractClient` is about 790 lines. Whether `fileFacts` moves after them is open.
+The small helpers several groups use (`objectAt`, `keysInOrder`, `tagOf`, `unwrapCalls`, the functions that follow a
+declaration to a function or a class) sat among the route readers; they belong to source reading, since leaving them
+would force routes to move before links.
+The first move is `sourceValueReader` in `src/source-values.ts`. It waits for the constants files to load, so it
+returns a promise where its siblings return at once, and it reaches `follower`, which is built from `fileFacts`,
+through a `declaration` function it is handed, as `sagaReader` does.
+Compared:
+- All at once: about 2,350 lines move in one pull request, which overlaps all 60 of those commits.
+- By pipeline stage, with calls, links and the facts of one file in one module: fewer names cross a boundary, but that
+  one stage overlaps 36 of the 60 commits.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
