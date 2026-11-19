@@ -5914,6 +5914,13 @@ calls when it is called, not on first use, so a config error in them is thrown f
 The third is `clientCallReader` in `src/client-calls.ts`, which returns at once and is called where the saga and
 request readers were made, after `follower`, not beside the first two; `src/api-calls.ts` runs the API modules, this
 one only reads source. `called`, which the assembly fills after the API modules have run, stays in `extractClient`.
+The fourth is `clientLinkReader` in `src/client-links.ts`, which returns at once and is called once, after
+`clientCallReader`, where the history file and the listed link components were first read; `src/screen-links.ts`
+reads one link element or history move from its syntax, this one holds what `extractClient` built around it (route
+table keys, the address reader, the config's link components, link functions and route tabs). It makes and returns the
+maps and sets that `fileFacts` and the assembly fill (`linkAddressRefs`, `movedTo`, `usedListed` and the like), is
+handed `factCache`, which stays with `fileFacts`, and reads the route constant's values through a function, since the
+assembly works them out after this call.
 Compared:
 - All at once: about 2,350 lines move in one pull request, which overlaps all 60 of those commits.
 - By pipeline stage, with calls, links and the facts of one file in one module: fewer names cross a boundary, but that
