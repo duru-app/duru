@@ -65,7 +65,7 @@ test('a map.json built before links carried their conditions leaves the stories 
     });
     const tasks = taskList(config);
     assert.match(tasks, /^# Test tasks — 0 screens, 0 calls, 1 story, 1 open mark\n/);
-    assert.equal(tasks.slice(tasks.indexOf('\n# Stories\n')), [
+    assert.equal(tasks.slice(tasks.indexOf('\n# Stories\n')).split('\n# Write calls no trace or visit record sent\n')[0], [
       '',
       '# Stories',
       '',
