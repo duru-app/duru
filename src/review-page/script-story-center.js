@@ -198,7 +198,7 @@ function renderStoryCenter() {
   const c = candidateOf();
   if (c) {
     return fillStoryCenter(center, c, [
-      h('div', { class: 'title-row' }, h('h3', {}, c.name), c.storyId ? storyIdTag(c.storyId) : null, nameButton(c), byAgent(c) ? agentChip('candidate') : null, walkChip(c), ...reachChips(c), candidateActions(c)),
+      h('div', { class: 'title-row' }, nameLine(c), byAgent(c) ? agentChip('candidate') : null, walkChip(c), ...reachChips(c), candidateActions(c)),
       storyErrorLine(),
       sourceView(c.source, '후보가 나온', true),
       foundOrder(c),
@@ -375,7 +375,17 @@ const nameButton = (c) => h('button', {
 
 function storyIdTag(id) {
   const problem = storyIdProblem(id);
-  return h('span', { class: problem ? 'story-id mono taken' : 'story-id mono muted', title: problem ?? '스토리로 받을 때 쓸 ID' }, id);
+  return h('span', { class: problem ? 'story-id mono taken' : 'story-id mono muted', title: problem ?? '스토리로 받을 때 쓸 ID' }, id.slice(0, -1), h('span', { class: 'id-tail' }, id.slice(-1)));
+}
+
+const WORD_JOINER = '\u2060';
+
+function nameLine(c) {
+  const letters = [...c.name];
+  const last = letters.pop() ?? '';
+  return h('div', { class: 'name-line' },
+    h('h3', {}, letters.join(''), h('span', { class: 'name-tail' }, last)),
+    h('span', { class: 'name-end' }, WORD_JOINER, c.storyId ? storyIdTag(c.storyId) : null, c.storyId ? WORD_JOINER : null, nameButton(c)));
 }
 
 const candidateActions = (c) => h('fieldset', { class: 'story-form candidate-acts', disabled: state.storyWriting },
