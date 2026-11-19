@@ -976,7 +976,10 @@ candidate it does not take is not written: the command prints why on standard er
 call exits with 2.
 
 On the review page each step of a candidate has a ✕ that takes the step out. The steps taken out are kept in the
-candidate file as `offSteps`, and accepting writes only the steps left into the story file.
+candidate file as `offSteps`, and accepting writes only the steps left into the story file. A story accepted from
+some consecutive steps of a candidate is kept in its candidate file under `takenSteps`, with the first and last step
+as the card numbers them and the story's ID; the candidate stays listed until every step has gone to a story, and
+undoing such a story gives its steps back.
 
 **Candidates that replace others.** A comment on a candidate, or one with no target, usually asks for steps nobody
 needs to be taken out, such as the login at the front of every test. The agent answers it with the same command and a
