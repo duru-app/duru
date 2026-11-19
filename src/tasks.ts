@@ -743,7 +743,7 @@ function caseKindLines(map: any, caseKinds: Record<string, CaseKind>, targets: R
   return { lines, undecided, untested, review };
 }
 
-const UNRECORDED_LISTED = 'Each follows under each screen that reaches it, with the API function and where that screen calls it. No reviewer asked for tests of them: when no mark is open and you look for defects or widen the tests, pick from these first. A call leaves this list once a trace kept from a test run or a visit record sent it and `duru rebuild` ran, or once a reviewer marks the whole call `fine`.';
+const UNRECORDED_LISTED = 'Each follows under each screen whose code reaches it, with the API function and where that screen calls it. The code reaches each of them, but a screen may never let anyone send one, for example when data such as a setting turns its control off. No reviewer asked for tests of them: when no mark is open and you look for defects or widen the tests, pick from these first, try to send each from its screen, and tell the user which ones you could not reach rather than write a test that sends the request to the API directly. A call leaves this list once a trace kept from a test run or a visit record sent it and `duru rebuild` ran, or once a reviewer marks the whole call `fine`.';
 
 const wholeFine = (m: MarkEntry) => m.current?.status === 'fine' && !m.target.option && !m.target.depth && m.target.case === undefined && !m.target.part;
 
