@@ -1526,6 +1526,17 @@ any wait, and with no open marks the list says the case kinds below still have w
 With `baselineMap`, the section's intro also says when to run `undecided --new` instead. Without `caseKinds` the
 list has no such section.
 
+**Write calls no trace or visit record sent.** While a call carries `unrecorded` (see **Calls**), the list ends with
+`# Write calls no trace or visit record sent` and the line `N write calls (POST, PUT, PATCH or DELETE) on M screens
+were sent by no trace or visit record`: the code of those screens reaches them and no test run or visit has sent them
+yet, and some may not be sendable from the screen at all, for example when data switches their control off.
+A call a reviewer marked `fine` as a whole is left out, and the line then adds `, not counting K a reviewer
+marked fine`. `tasks <config> --unrecorded` also lists them: a `## <screen ID>` for each screen that reaches one, and
+under it `- <call ID> — <API function> at <file>:<line>`, where that screen calls it, with `in the layout around the
+screen` after a place in the layout around it. With no open marks the list says these calls are counted below
+(listed, with `--unrecorded`) instead of `No open marks.`, after what the case kinds still have. With no such call the
+section is left out.
+
 `case <config> <kind> <screen or call ID> needed|not-needed [--note "<why>"] [--author <name> | --server <review page address>]`
 writes a case mark of that kind for that screen or call, as the review page would, directly into `marksDir`: the
 author is `agent` unless `--author` names one, and the file also carries `"via": "duru case"`. Written this way, an

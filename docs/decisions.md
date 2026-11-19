@@ -5926,6 +5926,28 @@ Compared:
 - By pipeline stage, with calls, links and the facts of one file in one module: fewer names cross a boundary, but that
   one stage overlaps 36 of the 60 commits.
 
+**The task list always ends with a count of the write calls marked `unrecorded`, and lists them under each screen only
+with `tasks --unrecorded`.**
+Chosen for #646 (2026-11-19). Counted on main `11f1f8d`, in calls, screens and the lines a list by screen would print
+(a call reached from several screens is a line under each, and calls of the layout around a screen repeat under every
+screen it draws). The reference apps' configs name no tests, so every write call a screen reaches is unrecorded there:
+signoz, with the config that runs its API modules, 166 calls on 65 screens, 2,052 lines, up to 55 under one screen
+and 30 under the middle one; outline 5 calls on 3 screens, 13 lines; appsmith 1 call on 2 screens; mattermost and
+signoz's other config none. On
+the client that raised the issue, with its traces read, 20 calls on 24 screens, 65 lines; on its map from before
+those traces, 87 calls on 43 screens, 227 lines. So a client that has started on browser tests prints tens of lines and
+one that has not prints hundreds or thousands, after every open mark, in a list the agent reads again after each
+rebuild. The count is enough to keep `No open marks.` from reading as nothing left, and the agent asks for the list
+when no mark gives it work. A reviewer's `fine` on the whole call takes a call off: 「충분」 is already the mark put on
+a call with no tests for one that needs none. A case kind's `not-needed` is not used for it, since it says one kind of
+case cannot happen on that call, not that the call needs no test.
+Compared:
+- Always printing the list: 2,052 lines on signoz and 227 on the client before its traces, after the marks.
+- Printing the list only while it is short: the same command would change shape as tests are added, and the skill
+  could not say which form an agent gets.
+- A command of its own: another command for a list that belongs with what is left to test, while the agent already
+  reads `tasks` for that.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

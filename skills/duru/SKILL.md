@@ -583,6 +583,20 @@ A pair the reviewer hands over for tagging appears in the task list under `# Tag
    appears as a tagged test of that screen or call and `rebuild`'s "handed over but no longer found" count did not
    go up: a test whose file or title no longer matches the result also leaves the list, as a detached pair. So
    change nothing in the title except appending the tag, and do not move the file.
+   The list ends with `# Write calls no trace or visit record sent` while a screen reaches a write call that no
+   trace from a test run and no visit record has sent; its line counts those calls and the screens that reach them,
+   and with no open mark the list says they are counted below instead of `No open marks.`, so do not stop there.
+   They ask for nothing while a mark is open. When no reviewer mark asks for anything and you look for defects or
+   widen the tests, start from them, not from variations you think of: run `duru tasks <config> --unrecorded`, which
+   lists each such call under each screen that reaches it as `<call ID> — <API function> at <file>:<line>`, read
+   that line to see what the screen does before it sends the call, and pick the calls to drive from that list. These
+   are calls the code of a screen reaches, not calls known to lack a test: some cannot be sent from the screen at
+   all, for example when data such as a table's column settings switches the control off. Try to send each one from
+   its screen; when you cannot, tell the user which call and what kept it shut, and do not write a test that sends
+   the request to the API directly instead. Run
+   those tests with Playwright's `trace` on, or keep a visit record of what you did, so the requests are read; after
+   `duru rebuild <config>`, a call that a trace or a record sent leaves the list. A call a reviewer marked `fine` as a
+   whole is left out and counted after `not counting`. Tell the user which calls you drove and how many are left.
    Its story tests and the tests already on each screen show what is covered. A story whose `reach` is
    `unreachable` or `not judged` (a step with `no link`, a screen `not on the map`) may not be walkable as
    written: when a step cannot be taken, tell the user which one instead of writing a test that skips it. Do not
