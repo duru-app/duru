@@ -413,7 +413,8 @@ A pair the reviewer hands over for tagging appears in the task list under `# Tag
    candidate naming both in `replaces`; if they typed different values into one box, give the value to keep in that
    step's `inputs`. You may post several candidates for one such comment. The candidates it replaces leave the list.
    To split one candidate into several, post each part naming that same original in `replaces`: an original that a
-   candidate for the same comment replaced may be named again, one replaced for another comment may not.
+   candidate for the same comment replaced may be named again, one replaced for another comment may not. Post every
+   part before you reply: once the reviewer accepts one part as a story, another part for that comment is refused.
    When the reviewer reverts a candidate of yours, it and every other part split from the same original for that
    comment are taken down, the candidates it replaced are listed again and its order stays
    refused, so a new attempt posts another order. A comment on a screen order takes no `replaces`.
