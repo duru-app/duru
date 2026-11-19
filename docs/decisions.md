@@ -5872,6 +5872,31 @@ Compared:
 - Leaving the catch-all-only traces out only while the line is printed: the not-found-page test keeps its candidate on
   a fit map, but two rules depend on each other and are harder to explain.
 
+**`rebuild` names a folder whose other result files of the same format no entry reads, and a file counts as a result
+when the reader of that format gets a test out of it.** Chosen for #647 (2026-11-19). In one private client's QA, the
+config's `tests` named 3 Playwright reports in a folder holding 51, and two rounds of defect hunting ran on a map
+that showed the tests of 3 files without any line saying so. Counted before building: the reference apps' configs
+under `~/duru-target-apps` name no `tests`; the 54 private configs that do name 165 files and 45 folders (one path
+missing), and 9 of them, over two folders, leave results beside a named file unread: the folder of the case above
+(seven configs reading 1, 3, 12 or 48 of its 51 reports) and one other client's folder, where 7 of 8 reports are named.
+The line groups by folder and format, counts the `tests` entries naming a file there, and leaves out every file that
+an entry of `tests` or `baselineTests` of the same format reads, whether it names the file or a folder holding it, so
+a folder entry anywhere above prints nothing and results kept from an earlier release that `baselineTests` reads are
+not taken for forgotten ones. A file beside counts when its extension is one the format's folder entry looks for and
+the same reader `tests` uses gets at least one test out of it without failing, the rule `baselineTests` already uses
+to call a file a result. Only the folder itself is looked at, not the folders inside it: a result folder of Playwright
+keeps its traces in folders under it, and the issue is about the files beside the one named.
+Opening the files costs little: on the largest such folder, 51 reports of 433 KB in all next to 905 MB of traces in
+the folders under it, the check takes 2 to 6 ms.
+Compared:
+- The extension alone: the same folder can hold Vitest and Playwright reports, both `.json`, and a `.log` beside
+  verdict logs may be a console log with no verdict; such files would be counted though a folder entry gives no test
+  from them, and the line would then ask for a change that reads nothing more.
+- Also looking into the folders under it, as a folder entry does: in a Playwright folder that only finds trace folders,
+  and older runs moved into a folder of their own were set aside by that move.
+- An error or a non-zero exit: naming some files of a folder is a valid config, such as a run kept beside the current
+  one on purpose, so it stays a line that asks nothing of the run.
+
 **`extractClient` in `src/client.ts` is taken apart by what each part reads, one boundary per pull request, and
 `fileFacts` and the assembly at its end stay in it through the five moves below.** The function reads every source shape duru knows, so each fix
 for a shape a new app writes changed the same place. Its parts move out into modules shaped like the ones the file

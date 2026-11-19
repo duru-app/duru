@@ -609,6 +609,13 @@ test('rebuild prints no line about unread results when a tests entry names the f
   }), UNREAD_RESULTS);
 });
 
+test('the README, the agent skill and the decision record say what the line about unread results beside a tests file means, to tell the user, and how a result file is told', () => {
+  const read = (rel: string) => fs.readFileSync(path.join(import.meta.dirname, rel), 'utf8').replace(/\s+/g, ' ');
+  assert.match(read('../README.md'), /` tests reads N <format> result files in <folder>, not the other M there` — printed by `rebuild` when an entry of `tests` names a file[^`]*no entry of `tests` or `baselineTests` reads[\s\S]*No line is printed when an entry of `tests` names the folder itself/);
+  assert.match(read('../skills/duru/SKILL.md'), /A line `tests reads N <format> result files in <folder>, not the other M there` means [^.]*\. Tell the user the line as printed/);
+  assert.match(read('../docs/decisions.md'), /\*\*`rebuild` names a folder whose other result files of the same format no entry reads[\s\S]*Chosen for #647 \(2026-11-19\)[\s\S]*Compared: - The extension alone/);
+});
+
 test('rebuild with no server API list counts the unchecked calls and says the comparison was not made', () => {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
