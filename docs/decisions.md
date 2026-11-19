@@ -5921,6 +5921,14 @@ table keys, the address reader, the config's link components, link functions and
 maps and sets that `fileFacts` and the assembly fill (`linkAddressRefs`, `movedTo`, `usedListed` and the like), is
 handed `factCache`, which stays with `fileFacts`, and reads the route constant's values through a function, since the
 assembly works them out after this call.
+The fifth is `clientRouteReader` in `src/client-routes.ts`, which returns at once and is called once, after
+`clientLinkReader` and before the API modules are read. The call only makes the readers and their state: the route
+files are still walked from the assembly, which calls `extractScreens`, `fillOuterAddresses` and `routeTree` in the
+order it did, so a config error about a route file or a route table is thrown from where it was. `testSide`, which
+`clientLinkReader` is handed before this call, and the set of screen component files, which the assembly makes after
+it, cross as functions called later.
+After the five moves `extractClient` holds the five calls, the name follower, `fileFacts`, `closureOf` and the
+assembly, in 867 lines.
 Compared:
 - All at once: about 2,350 lines move in one pull request, which overlaps all 60 of those commits.
 - By pipeline stage, with calls, links and the facts of one file in one module: fewer names cross a boundary, but that
