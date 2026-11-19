@@ -5981,6 +5981,24 @@ Compared:
 - A command of its own: another command for a list that belongs with what is left to test, while the agent already
   reads `tasks` for that.
 
+**The task list ends with a count of the open story candidates and of the option values no test sent, each listed
+only with its own flag (`--open-candidates`, `--unsent-options`), and options are counted by value row, with a value
+a trace's request body sent counted as sent.**
+Chosen for #651 (2026-11-19). Same shape as the write calls above, since a list that is long is not printed after
+every open mark. Counted in the issue on main (2026-11-19), on the client that raised it and a second one: open candidates
+67 and 61, with no story accepted; option values no test sent 7 of 20 value rows and 49 of 76, which as keys would be
+0 and 12. The review page draws a row for each value, so the count is of rows: a key is "not sent" only when both
+its values are, and a value one test sent while the other is not would hide behind its key. A request body that
+carried a value counts as sent, the same as an `@option:` tag: no project tags its tests with `@option:`, so with tags
+alone every option of every project would be unsent, and the section would never change as tests are written. The
+rule that a row is unsent lives on the server (`unsent` on each option the review data sends) and the page reads it,
+so the count and the rows the reviewer sees cannot differ.
+Compared:
+- Counting options by key: 0 on the first client, 12 on the second, with the rows the page marks `테스트 없음` left out.
+- Counting only the tagged values as sent: every option on every client unsent.
+- Letting an agent accept the candidates it lists: a story is the reviewer's decision about what a path means, so the
+  section only points at the candidates.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

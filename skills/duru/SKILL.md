@@ -601,6 +601,15 @@ A pair the reviewer hands over for tagging appears in the task list under `# Tag
    those tests with Playwright's `trace` on, or keep a visit record of what you did, so the requests are read; after
    `duru rebuild <config>`, a call that a trace or a record sent leaves the list. A call a reviewer marked `fine` as a
    whole is left out and counted after `not counting`. Tell the user which calls you drove and how many are left.
+   Two more sections can end the list, and when no reviewer mark asks for anything they are starting points like the
+   write calls: `# Story candidates still open` (a path through the screens that someone walked or a test ran, which no
+   reviewer has accepted or discarded) and `# Option values no test sent`. For the first run
+   `duru tasks <config> --open-candidates` and write a test along a candidate's screens, in order; you do not accept
+   a candidate, a reviewer does. For the second run `duru tasks <config> --unsent-options`, which lists
+   `<call ID> — <key>=<true|false>` under each screen that shows it: send the call from that screen with the option set
+   that way, tag the test `@option:<key>=true|false` or keep the trace so its request body is read, and run
+   `duru rebuild`; the value leaves the list. When you cannot set an option that way from the screen, tell the user
+   which one instead of sending the request to the API directly.
    Its story tests and the tests already on each screen show what is covered. A story whose `reach` is
    `unreachable` or `not judged` (a step with `no link`, a screen `not on the map`) may not be walkable as
    written: when a step cannot be taken, tell the user which one instead of writing a test that skips it. Do not
