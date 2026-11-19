@@ -5907,6 +5907,10 @@ would force routes to move before links.
 The first move is `sourceValueReader` in `src/source-values.ts`. It waits for the constants files to load, so it
 returns a promise where its siblings return at once, and it reaches `follower`, which is built from `fileFacts`,
 through a `declaration` function it is handed, as `sagaReader` does.
+The second is `guardConditionReader` in `src/guard-conditions.ts`, which returns at once. It makes `guardInits` and
+`guardSettings`, the two maps its readers fill, and returns them, and it reads the settings defaults and the settings
+calls when it is called, not on first use, so a config error in them is thrown from that call; it also returns
+`tableLiteral`, which only the route tables call.
 Compared:
 - All at once: about 2,350 lines move in one pull request, which overlaps all 60 of those commits.
 - By pipeline stage, with calls, links and the facts of one file in one module: fewer names cross a boundary, but that
