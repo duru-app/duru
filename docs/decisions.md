@@ -5911,6 +5911,9 @@ The second is `guardConditionReader` in `src/guard-conditions.ts`, which returns
 `guardSettings`, the two maps its readers fill, and returns them, and it reads the settings defaults and the settings
 calls when it is called, not on first use, so a config error in them is thrown from that call; it also returns
 `tableLiteral`, which only the route tables call.
+The third is `clientCallReader` in `src/client-calls.ts`, which returns at once and is called where the saga and
+request readers were made, after `follower`, not beside the first two; `src/api-calls.ts` runs the API modules, this
+one only reads source. `called`, which the assembly fills after the API modules have run, stays in `extractClient`.
 Compared:
 - All at once: about 2,350 lines move in one pull request, which overlaps all 60 of those commits.
 - By pipeline stage, with calls, links and the facts of one file in one module: fewer names cross a boundary, but that
