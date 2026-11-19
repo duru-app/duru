@@ -29,6 +29,7 @@ import { DEPTHS } from './test-links.ts';
 
 const KIND_NAMES: Record<string, string> = { setting: 'a setting', role: 'a role' };
 const MIXED_KINDS = 'differs by link';
+const UNRECORDED_HEAD = '# Write calls no trace or visit record sent';
 const REGRESSION_ONLY = '- marks: none, listed for comments on regressed tests';
 
 const STORY_STATUS: Record<string, string> = {
@@ -742,7 +743,38 @@ function caseKindLines(map: any, caseKinds: Record<string, CaseKind>, targets: R
   return { lines, undecided, untested, review };
 }
 
-export function taskList(config: any) {
+const UNRECORDED_LISTED = 'Each follows under each screen whose code reaches it, with the API function and where that screen calls it. The code reaches each of them, but a screen may never let anyone send one, for example when data such as a setting turns its control off. No reviewer asked for tests of them: when no mark is open and you look for defects or widen the tests, pick from these first, try to send each from its screen, and tell the user which ones you could not reach rather than write a test that sends the request to the API directly. A call leaves this list once a trace kept from a test run or a visit record sent it and `duru rebuild` ran, or once a reviewer marks the whole call `fine`.';
+
+const wholeFine = (m: MarkEntry) => m.current?.status === 'fine' && !m.target.option && !m.target.depth && m.target.case === undefined && !m.target.part;
+
+function sitesText(screen: any, callId: string) {
+  const byFn = new Map<string, string[]>();
+  for (const c of screen.apiCalls) {
+    if (!c.endpoints?.some((e: any) => e.callId === callId)) continue;
+    byFn.set(c.fn, [...(byFn.get(c.fn) ?? []), `${c.file}:${c.line}${c.layout ? ' in the layout around the screen' : ''}`]);
+  }
+  return byFn.size ? [...byFn].map(([fn, at]) => `${fn} at ${at.join(', ')}`).join('; ') : 'where the screen calls it was not found';
+}
+
+function unrecordedLines(map: any, attached: MarkEntry[], listed: boolean) {
+  const fine = new Set(attached.filter(wholeFine).map((m) => m.target.node));
+  const marked = map.calls.filter((c: any) => c.unrecorded);
+  const calls = marked.filter((c: any) => !fine.has(c.id)).sort((a: any, b: any) => compare(a.id, b.id));
+  if (!calls.length) return [];
+  const screenIds = new Set<string>(calls.flatMap((c: any) => c.screens));
+  const left = marked.length - calls.length;
+  const counted = `${count(calls.length, 'write call')} (POST, PUT, PATCH or DELETE) on ${count(screenIds.size, 'screen')} ${calls.length === 1 ? 'was' : 'were'} sent by no trace or visit record${left ? `, not counting ${left} a reviewer marked fine` : ''}.`;
+  if (!listed) return ['', UNRECORDED_HEAD, '', `${counted} \`duru tasks <config> --unrecorded\` lists each under each screen that reaches it.`];
+  const screens = map.screens.filter((s: any) => screenIds.has(s.id)).sort((a: any, b: any) => a.id.localeCompare(b.id));
+  return ['', UNRECORDED_HEAD, '', `${counted} ${UNRECORDED_LISTED}`, ...screens.flatMap((s: any) => [
+    '',
+    `## ${s.id}`,
+    '',
+    ...calls.filter((c: any) => c.screens.includes(s.id)).map((c: any) => `- ${c.id} — ${sitesText(s, c.id)}`),
+  ])];
+}
+
+export function taskList(config: any, listUnrecorded = false) {
   const { map, tests, marks, appLinks, stories, needs, caseTargets } = reviewData(config, null);
   const appStart = appStartOf(map);
   const open = marks.attached.filter((m) => m.current?.status === 'needs-more');
@@ -824,8 +856,12 @@ export function taskList(config: any) {
     out.push('', '# Comments with no target', '', ...comments.flatMap((c: any) => [markLine(c, undefined, ''), ...repliesTo(general, c).map((reply: any) => markLine(reply, undefined, '  '))]));
   }
   if (map.serverNotCompared) out.push('', `${SERVER_NOT_COMPARED}, so no call below is written as missing on the server.`);
-  const caseLeft = caseWork && (caseWork.undecided + caseWork.untested ? 'No open marks, but the case kinds below still have undecided candidates or cases with no tests.' : 'No open marks, but the case kinds below still have candidates under review.');
-  if (!open.length && !passedIn.size) out.push('', caseLeft || 'No open marks.');
+  const unrecorded = unrecordedLines(map, marks.attached, listUnrecorded);
+  const left = [
+    caseWork && (caseWork.undecided + caseWork.untested ? 'the case kinds below still have undecided candidates or cases with no tests' : 'the case kinds below still have candidates under review'),
+    unrecorded.length && `write calls that no trace or visit record sent are ${listUnrecorded ? 'listed' : 'counted'} below`,
+  ].filter(Boolean);
+  if (!open.length && !passedIn.size) out.push('', left.length ? `No open marks, but ${left.join(', and ')}.` : 'No open marks.');
   for (const s of screens) {
     const marks = open.filter((m) => m.target.node === s.id);
     out.push(
@@ -878,6 +914,7 @@ export function taskList(config: any) {
   out.push(...codeChangedLines(marks.attached, tests));
   if (caseKinds) out.push(...caseKinds.lines);
   out.push(...taggingLines(tests.awaitingTag, new Set<string>(map.calls.map((c: any) => c.id))));
+  out.push(...unrecorded);
   return out.join('\n') + '\n';
 }
 

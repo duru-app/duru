@@ -44,6 +44,9 @@ const withCases = (tags: string, method: string, cases: string[]) => [[tags, met
 const REPORT_CASES = ['role:ADMIN', 'role:OWNER', 'role:other', 'setting:SYSTEM.MAIN_MENU.ADMIN=true', 'setting:SYSTEM.MAIN_MENU.ADMIN=false', 'setting:SYSTEM.MAIN_MENU.ADMIN.LIST:ADMIN_REPORT=true', 'setting:SYSTEM.MAIN_MENU.ADMIN.LIST:ADMIN_REPORT=false'];
 const AUDIT_CASES = ['role:ADMIN', 'role:AUDITOR', 'role:other'];
 
+const UNRECORDED_HEAD = '# Write calls no trace or visit record sent';
+const UNRECORDED_COUNTED = ['', UNRECORDED_HEAD, '', '6 write calls (POST, PUT, PATCH or DELETE) on 6 screens were sent by no trace or visit record. `duru tasks <config> --unrecorded` lists each under each screen that reaches it.', ''].join('\n');
+
 const EXPECTED = `# Test tasks — 4 screens, 1 call, 0 stories, 5 open marks
 
 A reviewer marked these screens, API calls and stories as needing tests (\`needs-more\`). Write the tests, put \`@screen:<screen ID>\` on each test, in its \`tag\` option for Playwright and in its title for the other formats (\`@call:<call ID>\` for a test of one API call, with \`@option:<key>=true|false\` for each on/off option the test sets, and for a screen that opens only under a role or a setting the tag of each case under \`cases\` it checks), add \`@depth:<ui|api|render|code|data|output>\` when the depth of the result source does not fit, then run \`duru rebuild\` and read this list again. For a story, write a test that goes through its screens in order and put \`@story:<story ID>\` on it as well. Under \`empty tests\`, a screen or call gets one set for each open mark, a screen one more for each case with no tests, and a story one set: an empty test for each test format in the config, with the tags already in place and held back from passing (\`test.fixme\`, \`test.todo\`, \`@Disabled\` with \`import org.junit.jupiter.api.Disabled;\`, or no verdict word). Copy the one for your runner, keep the tags, put what the test checks in place of \`<what it checks>\` (the Playwright ones of an item all carry that title), remove what holds it back and fill in the data setup and the checks. A screen, call or story stays here until a reviewer marks it \`fine\`.
@@ -144,7 +147,7 @@ ${emptyTests(
 - server: not on the server
 - tests: none
 ${emptyTests(['@call:POST:/api/v1/archive/document @depth:api', 'call_POST_api_v1_archive_document_depth_api'])}
-`;
+${UNRECORDED_COUNTED}`;
 
 test('the task list holds the needs-more and missing marks of the fake client, leaving out fine and detached ones', () => {
   withFixtureCopy(({ cli }) => {
@@ -279,8 +282,8 @@ test('the task list carries the stories whose current mark is needs-more or miss
     cli('rebuild');
     const tasks = cli('tasks');
     assert.match(tasks, /^# Test tasks — 4 screens, 1 call, 3 stories, 8 open marks\n/);
-    assert.equal(tasks.slice(0, tasks.indexOf('\n# Stories\n')), EXPECTED.replace('0 stories, 5 open marks', '3 stories, 8 open marks'));
-    assert.equal(tasks.slice(tasks.indexOf('\n# Stories\n')), EXPECTED_STORIES);
+    assert.equal(tasks.slice(0, tasks.indexOf('\n# Stories\n')), EXPECTED.replace('0 stories, 5 open marks', '3 stories, 8 open marks').replace(UNRECORDED_COUNTED, ''));
+    assert.equal(tasks.slice(tasks.indexOf('\n# Stories\n')), EXPECTED_STORIES + UNRECORDED_COUNTED);
   }, { storiesDir: 'example-stories' });
 });
 
@@ -565,7 +568,7 @@ test('a marked story whose file is still in the folder but cannot be read keeps 
       '  - needs-more — "The story test fails before the result page; add a UI test that walks it." (Kim Min, 2026-10-03)',
       '- story file: could not be read; `duru rebuild` prints why',
       '',
-    ].join('\n'));
+    ].join('\n') + UNRECORDED_COUNTED);
   }, { storiesDir: 'example-stories' });
 });
 
@@ -884,7 +887,7 @@ test('with case kinds configured but none picked, the task list differs from one
     const tasks = cli('tasks');
     const [listed, kinds] = tasks.split('\n# Case kinds\n');
     const [head, intro, ...rest] = listed.split('\n\n');
-    const [expectedHead, expectedIntro, ...expectedRest] = EXPECTED.split('\n\n');
+    const [expectedHead, expectedIntro, ...expectedRest] = EXPECTED.replace(UNRECORDED_COUNTED, '').split('\n\n');
     const candidates = 11 + 10;
     assert.equal(head, `${expectedHead}, ${candidates * 3} undecided case candidates, 0 cases with no tests`);
     assert.notEqual(intro, expectedIntro);
@@ -970,6 +973,7 @@ test('with no open marks but cases with no tests the task list says the case kin
   const pick = { screen: '/**' };
   withFixtureCopy(({ copy, configFile, cli }) => {
     fs.rmSync(path.join(copy, 'example-marks'), { recursive: true });
+    keepVisitRecord(copy, WRITES_SENT);
     cli('rebuild');
     const { marksDir, outDir } = loadConfig(configFile);
     assert.match(cli('tasks'), /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks, 0 undecided case candidates, 11 cases with no tests\n[\s\S]*\nNo open marks, but the case kinds below still have undecided candidates or cases with no tests\.\n\n# Case kinds\n/);
@@ -981,22 +985,124 @@ test('with no open marks but cases with no tests the task list says the case kin
   }, { caseKinds: { boundary: { text: CASE_KINDS.boundary, picks: [pick] } } });
 });
 
-test('with no open marks and only an agent\'s not-needed waiting on candidates no rule picks, the task list says the case kinds below still have candidates under review', () => {
+test('with no open marks and only an agent\'s not-needed waiting on candidates no rule picks, the task list says the case kinds below still have candidates under review, and that the write calls no trace or visit record sent are counted below', () => {
   withFixtureCopy(({ copy, configFile, cli }) => {
     fs.rmSync(path.join(copy, 'example-marks'), { recursive: true });
     cli('rebuild');
     const { marksDir, outDir } = loadConfig(configFile);
     const map: ScreenMap = JSON.parse(fs.readFileSync(path.join(outDir, 'map.json'), 'utf8'));
     for (const n of [...map.screens, ...map.calls]) addMark(marksDir, { target: { node: n.id, case: 'boundary' }, status: 'not-needed', note: '입력 칸이 없다', author: 'agent', via: 'duru case' });
-    assert.match(cli('tasks'), /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks, 0 undecided case candidates, 21 under review, 0 cases with no tests\n[\s\S]*\nNo open marks, but the case kinds below still have candidates under review\.\n\n# Case kinds\n/);
+    assert.match(cli('tasks'), /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks, 0 undecided case candidates, 21 under review, 0 cases with no tests\n[\s\S]*\nNo open marks, but the case kinds below still have candidates under review, and write calls that no trace or visit record sent are counted below\.\n\n# Case kinds\n/);
   }, { caseKinds: { boundary: CASE_KINDS.boundary } });
 });
 
-test('with no open marks the task list says so', () => {
-  withFixtureCopy(({ copy, cli }) => {
+const WRITES_SENT = [
+  { method: 'POST', url: '/api/v1/archive/document' },
+  { method: 'POST', url: '/api/v1/auth/sign-in' },
+  { method: 'POST', url: '/api/v1/report/archive' },
+  { method: 'POST', url: '/api/v1/report/export' },
+  { method: 'POST', url: '/api/v1/report/schedule' },
+  { method: 'PUT', url: '/api/v1/document/7/name' },
+];
+
+function keepVisitRecord(copy: string, requests: { method: string; url: string }[]) {
+  const records = path.join(copy, 'out', 'stories', 'records');
+  fs.mkdirSync(records, { recursive: true });
+  fs.writeFileSync(path.join(records, '2026-11-19-0a1b2c3d.json'), JSON.stringify({ steps: [{ url: '/home' }], requests }));
+}
+
+const listUnrecorded = (configFile: string) => execFileSync(process.execPath, [CLI, 'tasks', configFile, '--unrecorded'], { encoding: 'utf8' });
+
+const UNRECORDED_LISTED = 'Each follows under each screen whose code reaches it, with the API function and where that screen calls it. The code reaches each of them, but a screen may never let anyone send one, for example when data such as a setting turns its control off. No reviewer asked for tests of them: when no mark is open and you look for defects or widen the tests, pick from these first, try to send each from its screen, and tell the user which ones you could not reach rather than write a test that sends the request to the API directly. A call leaves this list once a trace kept from a test run or a visit record sent it and `duru rebuild` ran, or once a reviewer marks the whole call `fine`.';
+
+const UNRECORDED_ROWS = [
+  '## /admin/audit#AdminAudit',
+  '',
+  '- POST:/api/v1/report/archive — ajaxReportArchive at components/ExportDialog.js:20',
+  '- POST:/api/v1/report/export — ajaxReportExport at components/ExportDialog.js:18, components/ExportDialog.js:19',
+  '- POST:/api/v1/report/schedule — ajaxReportSchedule at components/ExportDialog.js:21',
+  '',
+  '## /admin/report#AdminReport',
+  '',
+  '- POST:/api/v1/report/archive — ajaxReportArchive at components/ExportDialog.js:20',
+  '- POST:/api/v1/report/export — ajaxReportExport at components/ExportDialog.js:18, components/ExportDialog.js:19',
+  '- POST:/api/v1/report/schedule — ajaxReportSchedule at components/ExportDialog.js:21',
+  '',
+  '## /document/:id#DocumentDetail',
+  '',
+  '- PUT:/api/v1/document/{documentId}/name — ajaxDocumentRename at components/DocumentDetail.js:15',
+  '',
+  '## /document/:tab#DocumentList',
+  '',
+  '- POST:/api/v1/archive/document — ajaxDocumentArchive at components/DocumentTable.js:17',
+  '',
+  '## /home#Home',
+  '',
+  '- POST:/api/v1/archive/document — ajaxDocumentArchive at components/DocumentTable.js:17',
+  '',
+  '## /signin#SignIn',
+  '',
+  '- POST:/api/v1/auth/sign-in — ajaxSignIn at components/SignIn.js:11',
+];
+
+test('with no open marks but write calls on screens that no trace or visit record sent, the task list says so and counts them at the end, and with --unrecorded lists each under each screen that reaches it with where that screen calls it', () => {
+  withFixtureCopy(({ copy, configFile, cli }) => {
     fs.rmSync(path.join(copy, 'example-marks'), { recursive: true });
     cli('rebuild');
+    const counted = '6 write calls (POST, PUT, PATCH or DELETE) on 6 screens were sent by no trace or visit record.';
+    assert.match(cli('tasks'), /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks\n/);
+    assert.ok(cli('tasks').endsWith(['', 'No open marks, but write calls that no trace or visit record sent are counted below.', '', UNRECORDED_HEAD, '', `${counted} \`duru tasks <config> --unrecorded\` lists each under each screen that reaches it.`, ''].join('\n')));
+    assert.ok(listUnrecorded(configFile).endsWith(['', 'No open marks, but write calls that no trace or visit record sent are listed below.', '', UNRECORDED_HEAD, '', `${counted} ${UNRECORDED_LISTED}`, '', ...UNRECORDED_ROWS, ''].join('\n')));
+  });
+});
+
+test('with no open marks and every write call on a screen sent by a visit record, the task list says only that no mark is open, with --unrecorded too', () => {
+  withFixtureCopy(({ copy, configFile, cli }) => {
+    fs.rmSync(path.join(copy, 'example-marks'), { recursive: true });
+    keepVisitRecord(copy, WRITES_SENT);
+    cli('rebuild');
     assert.match(cli('tasks'), /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks\n[\s\S]*\nNo open marks\.\n$/);
+    assert.match(listUnrecorded(configFile), /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks\n[\s\S]*\nNo open marks\.\n$/);
+  });
+});
+
+test('a write call leaves the list of write calls no trace or visit record sent once a visit record sent it and the map is rebuilt, from every screen that reaches it', () => {
+  withFixtureCopy(({ copy, configFile, cli }) => {
+    fs.rmSync(path.join(copy, 'example-marks'), { recursive: true });
+    keepVisitRecord(copy, [{ method: 'POST', url: '/api/v1/archive/document' }]);
+    cli('rebuild');
+    const tasks = listUnrecorded(configFile);
+    assert.ok(tasks.includes('\n5 write calls (POST, PUT, PATCH or DELETE) on 4 screens were sent by no trace or visit record.'));
+    assert.ok(!tasks.includes('POST:/api/v1/archive/document'));
+    assert.ok(!tasks.includes('## /home#Home'));
+    assert.ok(tasks.includes('\n## /signin#SignIn\n\n- POST:/api/v1/auth/sign-in — ajaxSignIn at components/SignIn.js:11\n'));
+  });
+});
+
+test('a write call a reviewer marked fine as a whole leaves the list of write calls no trace or visit record sent, while a fine mark on one depth of it does not', () => {
+  withFixtureCopy(({ copy, configFile, cli }) => {
+    fs.rmSync(path.join(copy, 'example-marks'), { recursive: true });
+    cli('rebuild');
+    const { marksDir } = loadConfig(configFile);
+    addMark(marksDir, { target: { node: 'POST:/api/v1/auth/sign-in' }, status: 'fine', note: '로그인은 다른 검사가 본다', author: '김민' });
+    addMark(marksDir, { target: { node: 'PUT:/api/v1/document/{documentId}/name', depth: 'api' }, status: 'fine', note: '', author: '김민' });
+    const tasks = listUnrecorded(configFile);
+    assert.ok(tasks.includes('\n5 write calls (POST, PUT, PATCH or DELETE) on 5 screens were sent by no trace or visit record, not counting 1 a reviewer marked fine.'));
+    assert.ok(!tasks.includes('## /signin#SignIn'));
+    assert.ok(tasks.includes('\n- PUT:/api/v1/document/{documentId}/name — ajaxDocumentRename at components/DocumentDetail.js:15\n'));
+  });
+});
+
+test('a write call the layout around a screen sends is listed under that screen with its place in the layout', () => {
+  withFixtureCopy(({ copy, configFile, cli }) => {
+    fs.rmSync(path.join(copy, 'example-marks'), { recursive: true });
+    cli('rebuild');
+    const { outDir } = loadConfig(configFile);
+    editJson(path.join(outDir, 'map.json'), (map: ScreenMap) => {
+      const signIn = map.screens.find((s) => s.id === '/signin#SignIn')!;
+      for (const call of signIn.apiCalls) Object.assign(call, { layout: true });
+    });
+    assert.ok(listUnrecorded(configFile).includes('\n## /signin#SignIn\n\n- POST:/api/v1/auth/sign-in — ajaxSignIn at components/SignIn.js:11 in the layout around the screen\n'));
   });
 });
 
@@ -1440,7 +1546,7 @@ test('a mark on an option value of a call is listed with the option key, value a
 
     const tasks = cli('tasks');
     assert.match(tasks, /^# Test tasks — 4 screens, 3 calls, 0 stories, 8 open marks$/m);
-    const section = (id: string) => tasks.split(`\n## ${id}\n`)[1].split('\n## ')[0];
+    const section = (id: string) => tasks.split(`\n## ${id}\n`)[1].split('\n## ')[0].split('\n# ')[0];
     assert.equal(
       section('POST:/api/v1/report/export'),
       [
@@ -1554,14 +1660,14 @@ test('an API call with an open mark is listed once under API calls with its scre
         '  - ui fail — rename is refused by the server @call:PUT:/api/v1/document/{documentId}/name — document.spec.ts:4 (chromium)',
         emptyTests(['@call:PUT:/api/v1/document/{documentId}/name', 'call_PUT_api_v1_document_documentId_name']),
         '',
-      ].join('\n'),
+      ].join('\n') + UNRECORDED_COUNTED,
     );
   });
 });
 
 const HELP_UNIT = { source: 'results/vitest/client-unit.json', file: 'components/Help.spec.js', title: 'renders the help text' };
 const TABLE_UNIT = { source: 'results/vitest/client-unit.json', file: 'components/DocumentTable.spec.js', title: 'DocumentTable › lists the documents it is given' };
-const tagging = (tasks: string) => (tasks.includes('\n# Tagging\n') ? tasks.slice(tasks.indexOf('\n# Tagging\n')) : null);
+const tagging = (tasks: string) => (tasks.includes('\n# Tagging\n') ? tasks.slice(tasks.indexOf('\n# Tagging\n')).split(`\n${UNRECORDED_HEAD}\n`)[0] : null);
 
 const TAGGING_INTRO = "A reviewer judged that each of these tests checks a screen or API call it carries no tag for. Add the tag where its format reads it (`where`), changing nothing else in the test, then run the test so its result file is written again and run `duru rebuild`, and read this list again: a test that carries the tag counts as a test of that screen or call, and its item leaves this list. The item also leaves, without being done, if the test's file changes or its title changes in any way other than the added tag. duru does not edit test files.";
 
@@ -1860,7 +1966,7 @@ test('a comment on a test that did not regress lists no screen, and under a scre
     comment(RECENT_JUNIT, '2026-10-12T02:00:00Z');
     const tasks = cli('tasks');
     assert.match(tasks, /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks\n/);
-    assert.match(tasks, /\nNo open marks\.\n/);
+    assert.match(tasks, /\nNo open marks, but write calls that no trace or visit record sent are counted below\.\n/);
     addMark(marksDir, { target: { node: '/home#Home' }, status: 'needs-more', author: 'a' }, new Date('2026-10-12T03:00:00Z'));
     const marked = cli('tasks');
     assert.match(marked, /^# Test tasks — 1 screen, 0 calls, 0 stories, 1 open mark\n/);
