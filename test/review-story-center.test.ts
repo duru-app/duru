@@ -567,6 +567,25 @@ test('a range over steps a story deleted by hand had taken is accepted again, an
   );
 });
 
+test('undoing through the page a story accepted from a range whose steps were edited afterwards keeps the edited order as a candidate beside the candidate that gets its steps back', async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      assert.equal((await postJson(base, '/api/candidates/accept', { key: HELP_KEY, id: 'inbox-help', name: '받은 편지함에서 도움말을 연다', steps: [3, 4] })).status, 201);
+      const file = path.join(config.storiesDir, 'inbox-help.json');
+      const steps = [{ step: 1, screen: '/beta/inbox' }, { screen: '/home#Home' }, { step: 2, screen: '/help#Help' }];
+      assert.equal((await postJson(base, '/api/stories/steps', { id: 'inbox-help', steps, contentHash: crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex') })).status, 200);
+      const res = await postJson(base, '/api/stories/unaccept', { id: 'inbox-help' });
+      assert.equal(res.status, 200, await res.clone().text());
+      assert.equal((await res.json()).key, HELP_KEY);
+      assert.equal('takenSteps' in helpFile(config), false);
+      const edited = await listedCandidate(base, '/beta/inbox > /home#Home > /help#Help');
+      assert.deepEqual([edited?.name, edited?.source], ['inbox-help', { record: HELP_RECORD, steps: [3, 5] }]);
+      const back = await listedCandidate(base, HELP_KEY);
+      assert.deepEqual([back?.takenSteps, back?.stepsLeft], [undefined, undefined]);
+    }),
+  );
+});
+
 test('a range is refused with why, writing neither a story nor the candidate file, when its order is already a story, when it overlaps a range already accepted, when its first or last step is outside the candidate or the first comes after the last, and when a step taken out with ✕ is inside it', async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', async (base) => {

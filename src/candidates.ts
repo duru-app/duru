@@ -596,8 +596,14 @@ export function unacceptStory(dir: string, id: unknown, rules: SkipRule[] = []) 
   const source = story.source;
   const stepFields = story.stepFields && ('comment' in source ? story.stepFields : inputFields(story.stepFields.map((f) => f.inputs ?? [])));
   const found = loadStored(dir).found;
+  const keepStoryOrder = () => {
+    const kept = storeCandidates(dir, [{ key: story.screens.join(' > '), name: story.id, screens: story.screens, source, ...carried({ stepFields }) }]);
+    if (kept.reason) throw new Error(kept.reason);
+  };
   const holder = found.find((c) => c.takenSteps?.some((t: TakenSteps) => t.story === story.id));
   if (holder) {
+    const [first, last] = holder.takenSteps.find((t: TakenSteps) => t.story === story.id).steps;
+    if (!isDeepStrictEqual(shownOrder(holder.screens, rulesFor(holder.source, rules)).slice(first - 1, last), story.screens)) keepStoryOrder();
     fs.rmSync(path.join(dir, story.file));
     writeTakenSteps(dir, holder.file, holder.takenSteps.filter((t: TakenSteps) => t.story !== story.id));
     return { id: story.id, screens: story.screens, file: story.file, key: shownOrder(holder.screens, rulesFor(holder.source, rules)).join(' > ') };
@@ -611,10 +617,7 @@ export function unacceptStory(dir: string, id: unknown, rules: SkipRule[] = []) 
     return JSON.stringify(orderLeft(shown, off)) === storyScreens;
   };
   const back = accepted.find(leavesStory);
-  if (!back) {
-    const kept = storeCandidates(dir, [{ key: story.screens.join(' > '), name: story.id, screens: story.screens, source, ...carried({ stepFields }) }]);
-    if (kept.reason) throw new Error(kept.reason);
-  }
+  if (!back) keepStoryOrder();
   fs.rmSync(path.join(dir, story.file));
   for (const c of accepted) writeAcceptedAs(dir, c.file);
   return { id: story.id, screens: story.screens, file: story.file, key: shownOrder(back?.screens ?? story.screens, rulesFor(source, rules)).join(' > ') };

@@ -2282,7 +2282,8 @@ story from the same candidate. Accepting with `steps: [first, last]` writes a st
 acceptance with steps taken out does, and adds `{ "steps": [first, last], "story": <ID> }` to `takenSteps` in the
 candidate file, ordered by first step; no `acceptedAs` is written. The candidate stays listed while a step is in no
 range, and leaves the list once every step is in one. Undoing such a story deletes it and takes its entry out, so its
-steps are free again. Only an entry whose story still exists counts, as with `acceptedAs`, so a story deleted by hand
+steps are free again; when its steps were edited after it was accepted, the edited order is also kept as a candidate,
+as for any story undone after an edit, since dropping it would lose what the reviewer wrote. Only an entry whose story still exists counts, as with `acceptedAs`, so a story deleted by hand
 frees its steps too. A story from a range does not hide its candidate by having the same source, which hid a visit
 record or comment candidate as soon as one of its stories was accepted; a record candidate's story names in its source
 the record steps behind the range, which a visit record story already carried.
