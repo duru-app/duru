@@ -552,6 +552,21 @@ test('undoing a story accepted from a range through the page deletes its story f
   );
 });
 
+test('a range over steps a story deleted by hand had taken is accepted again, and the candidate file keeps only the ranges whose stories exist', async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      assert.equal((await postJson(base, '/api/candidates/accept', { key: HELP_KEY, id: 'inbox-help', name: 'x', steps: [3, 4] })).status, 201);
+      fs.rmSync(path.join(config.storiesDir, 'inbox-help.json'));
+      assert.equal((await postJson(base, '/api/candidates/accept', { key: HELP_KEY, id: 'home-inbox-help', name: 'y', steps: [2, 4] })).status, 201);
+      assert.deepEqual(helpFile(config).takenSteps, [{ steps: [2, 4], story: 'home-inbox-help' }]);
+      const data = await (await fetch(`${base}/api/data`)).json();
+      assert.deepEqual(data.candidates.notices.filter((n: { file: string }) => n.file.includes('candidates/')), []);
+      const listed = await listedCandidate(base, HELP_KEY);
+      assert.deepEqual([listed?.takenSteps, listed?.stepsLeft], [[{ steps: [2, 4], story: 'home-inbox-help' }], 1]);
+    }),
+  );
+});
+
 test('a range is refused with why, writing neither a story nor the candidate file, when its order is already a story, when it overlaps a range already accepted, when its first or last step is outside the candidate or the first comes after the last, and when a step taken out with ✕ is inside it', async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', async (base) => {

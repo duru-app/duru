@@ -489,7 +489,7 @@ function acceptRange(dir: string, candidate: Candidate, naming: Naming, steps: u
   const recordSteps = 'record' in source && stepRanges && { ...source, steps: [stepRanges[first - 1][0], stepRanges[last - 1][1]] };
   const story = addStepsLeft(dir, { ...candidate, ...(recordSteps && { source: recordSteps }) }, outside, naming, now);
   const file = candidateFile(dir, candidate);
-  const taken = [...(readCandidateFile(dir, file).takenSteps ?? []), { steps: [first, last], story: story.id }].sort((a, b) => a.steps[0] - b.steps[0]);
+  const taken: TakenSteps[] = [...(candidate.takenSteps ?? []), { steps: [first, last] as [number, number], story: story.id }].sort((a, b) => a.steps[0] - b.steps[0]);
   writeTakenSteps(dir, file, taken);
   return story;
 }
