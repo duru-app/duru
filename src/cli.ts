@@ -9,7 +9,7 @@ import { recordedAddresses, recordedRequests, storeCandidates, storyCandidates }
 import { casesWithoutTests, picksCalls, rulePicks } from './case-targets.ts';
 import { isPlainObject, loadConfig } from './config.ts';
 import type { CaseKind } from './config.ts';
-import { MOST_ADDRESSES } from './address-functions.ts';
+import { MOST_ADDRESSES, MOST_BRANCHES } from './address-functions.ts';
 import { UNKNOWN } from './client.ts';
 import { buildMap, readsAnAddress, sendingParts, sentAtAppStart, unreadSites } from './map.ts';
 import { mapFitnessLine } from './map-fitness.ts';
@@ -401,6 +401,7 @@ if (command === 'tasks') {
   for (const g of map.unknownRoleGuards ?? []) console.log(`  roleGuards ${g} matches no role guard`);
   for (const l of map.unknownCallLinks) for (const id of l.missing) console.log(`  callLinks ${l.from} → ${l.to}: ${id} matches no call`);
   for (const n of map.settingsCallNotices ?? []) console.log(`  settingsFunctions ${n.file ? `${n.file}:${n.line} ` : ''}${n.reason}`);
+  for (const { file, line } of map.manyLinkBranches ?? []) console.log(`  link address not read ← ${file}:${line}: its values give more than ${MOST_BRANCHES} combinations`);
   for (const n of map.routeTabNotices ?? []) console.log(`  routeTabs ${n.file ? `${n.file}:${n.line} ` : ''}${n.reason}`);
   for (const { spec, files } of map.unresolvedAliasImports ?? []) console.log(`  tsconfig import ${spec} matches an alias but no file, imported in ${files} file${files === 1 ? '' : 's'}`);
   for (const file of map.emptyRouteFiles ?? []) console.log(`  routesFile ${file} has no ${config.routeElements.join(' or ')} element, so it gives no screens`);

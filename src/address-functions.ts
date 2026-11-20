@@ -6,7 +6,7 @@ import type { Side } from './access.ts';
 
 export const UNREADABLE_PIECE = '\0';
 export const MOST_ADDRESSES = 8;
-const MOST_BRANCHES = 64;
+export const MOST_BRANCHES = 64;
 
 export type AddressFunction = NodePath<ArrowFunctionExpression | FunctionExpression | FunctionDeclaration>;
 type Followable = AddressFunction | NodePath<ClassMethod>;

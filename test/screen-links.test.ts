@@ -4907,7 +4907,7 @@ export default function Home({ flag }) {
   ]);
 });
 
-test('a link component used with so many attributes of two values each that their combinations pass the limit gives one {?} link there, without building the combinations', async () => {
+test('a link component used with so many attributes of two values each that their combinations pass the limit gives one {?} link there and a line for the summary, without building the combinations', async () => {
   const links = `import { Link } from 'react-router-dom';
 
 export function Item({ to }) {
@@ -4932,6 +4932,7 @@ export default function Home({ flag }) {
     ['{?}', at('to="/login"')],
     ['/start', at('to="/start"')],
   ]);
+  assert.deepEqual(map.manyLinkBranches, [{ file: 'Home.js', line: at('to="/login"') }]);
 });
 
 test('a link component whose to at the use holds a route constant, or whose own link holds one, gives only the route constant link where the constant is written', async () => {
