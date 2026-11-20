@@ -5274,6 +5274,30 @@ ID is gone or changed; the 266 hooks gain the requests of the functions they cal
 among their API functions. The maps and the output of into-sign 1.5.0 and 2.0.0, mattermost, outline, appsmith and
 SigNoz without its API code are the same apart from `meta`.
 
+**A call or a link written in a row of a table that one value picks from carries that value being the row's key as
+its condition.**
+Driver's decision in #618 (2026-11-20). A shared dialog keeps the request of each role in a constant object and
+picks one with a prop (`const send = SEND_BY_KIND[kind]`), so every row's request showed on every screen that draws
+the dialog with no condition, as if a plain member's screen sent the administrator's request. A const object the
+file only reads as `T[k]` or `T.name` is such a table. When the reads that are not a written key all use one
+expression, what is written in a row gets `k === <the row's key>` in its `guards`, as an `if` around it would give,
+at any depth inside the row (a function that makes the request, the request function's name, an object of them).
+What is written after `T[k] ||` or `T[k] ??` gets `!(T[k])`. A row some read names by its key (`T.draft`,
+`T[KIND.OWNER]`, the usual default after `||`) gets none, since it is also reached without the value; so does every
+row when two values pick from the table, when the object is spread into, passed on, exported or assigned to.
+On one private app this takes the requests with a condition from 139 of 1515 to 886 (709 row conditions, 38 after
+`||`), and on the member's detail screen the issue named, from 6 of the 39 administrator and department-head
+requests to 35; screens, links and access stay as they were. SigNoz writes the shape for links, a table of route
+constants picked by a menu key (`container/QueryTable/Drilldown/useBaseDrilldownNavigate.ts:14`), and its three
+links gain the condition on 25 screens (75 links); appsmith, mattermost and outline have none and their maps are
+the same.
+Compared:
+- Also taking a row off a screen that passes a constant other than the row's key. Not done: it needs the value
+  followed from each screen through the props, and a wrong reading drops a request the screen does send, where a
+  wrong condition only says too much. It waits for a second app whose screens need it.
+- Leaving it as a known limit. The documents made from the map would mark these requests as not confirmed on each
+  screen by hand.
+
 **The `enabled` a screen gives a react-query query is a condition of the requests that query sends, written
 where the `if`, `&&` and `? :` conditions around a request are written; screen access is still decided by routes and
 links only.**
