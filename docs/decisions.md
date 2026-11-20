@@ -4783,6 +4783,24 @@ Known limits:
   (`(options || {}).team`) is not decided, so both branches give links even where the arguments settle it, and a
   branch the call never takes can go to a catch-all route.
 
+**A text method called on a value duru has read whole, with literal arguments, is worked out.**
+#655. One private app keeps its route paths as constants with a leading `/` and nests them under a route with a path
+variable through a one-line function (`const rel = (path) => path.replace(/^\//, '')`), so the function reading
+above stopped at the method call: 25 of 47 route paths were not read, the map was not fit for story candidates, and
+one component drawn at four addresses gave a duplicate screen ID. `replace`, `replaceAll`, `slice`, `substring`,
+`trim`, `trimStart` and `trimEnd` are now run on the text when the value they are called on is read with no piece
+left unread and every argument is a text, a number or a regular expression written in place; the result depends on
+nothing else. Anything else stays as it was and stops at the call: a method on a value with an unread piece, an
+argument that is a name or a function (`path.replace(/x/, (m) => …)`), and any other method. It is in the call
+reading of `src/address-functions.ts`. After it, that app's map reads all 47
+paths. The reference apps write no route `path=` with these methods (counted with a search over appsmith,
+mattermost, metabase, outline, redash, signoz and superset on 2026-11-20); it is an extension of the function
+reading for one app, not a reader of its own.
+Compared:
+- Naming the wrapper in config as a function that strips a leading `/`: the body already says what it does, and a
+  key would have to be written again for each such helper.
+- Reading only `replace(/^\//, '')`: `slice(1)` and `substring(1)` are the same intent written another way.
+
 **A member an address function reads from a parameter typed with a class is read through that class's own
 getter, and a class imported only as a type is found from the import as written.**
 When a parameter of an address function has a type written as one class name (`doc: Document`, `doc?: Document`,

@@ -111,6 +111,16 @@ function product<T>(lists: T[][]): T[][] {
   return lists.reduce<T[][]>((acc, list) => acc.flatMap((a) => list.map((x) => [...a, x])), [[]]);
 }
 
+// 받은 텍스트와 인자만으로 결과가 정해지는 문자열 메서드
+const TEXT_METHODS = new Set(['replace', 'replaceAll', 'slice', 'substring', 'trim', 'trimStart', 'trimEnd']);
+
+function literalArgument(p: NodePath<any>): unknown {
+  if (p.isStringLiteral() || p.isNumericLiteral()) return p.node.value;
+  if (p.isRegExpLiteral()) return new RegExp(p.node.pattern, p.node.flags);
+  if (p.isUnaryExpression({ operator: '-' }) && p.get('argument').isNumericLiteral()) return -(p.node.argument as NumericLiteral).value;
+  return NOT_KNOWN;
+}
+
 // 다 읽은 값이면 그 값, 아니면 NOT_KNOWN
 function plain({ val }: Out): unknown {
   if ('pieces' in val) return val.pieces.some((x) => 'stop' in x) ? NOT_KNOWN : val.pieces.map((x) => ('text' in x ? x.text : '')).join('');
@@ -350,6 +360,16 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
       return product([values(callee.get('object'), at), separators]).map(([list, separator]) => joinedItems(list, separator, p));
     }
     if (callee.isIdentifier() && passThrough(callee.node.name)) return args[0] ? values(args[0], at) : [leafOut(p)];
+    const method = callee.isMemberExpression() && !callee.node.computed ? (callee.node.property as Identifier).name : null;
+    if (method && TEXT_METHODS.has(method)) {
+      const given = args.map(literalArgument);
+      if (!given.includes(NOT_KNOWN)) {
+        return values(callee.get('object') as NodePath<any>, at).map((text) => {
+          const value = plain(text);
+          return typeof value === 'string' ? known((value as any)[method](...given)) : leafOut(p);
+        });
+      }
+    }
     const fn = calledFunction(p, at);
     if (fn && (reading.has(fn.node) || at.depth >= FOLLOWED)) return [unknownAt(p)];
     if (!fn || fn.node.async || fn.node.generator) return [leafOut(p)];
