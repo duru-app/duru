@@ -1734,7 +1734,7 @@ const postSplit = (comment: (target?: object) => string, post: (comment: string,
 
 test('one comment on a candidate may split it into several candidates that each name it in replaces, each showing the original with the steps the others took, while a candidate for another comment still cannot name it', () => {
   withReplaceable(HELP_VISITS, ({ cfg, comment, post, listed, files }) => {
-    const { a } = postSplit(comment, post);
+    const { a, id } = postSplit(comment, post);
     const at = (name: string) => listed().list.find((c) => c.name === name)!;
     assert.deepEqual(listed().list.map((c) => c.name).sort(), ['b', '도움말', '홈']);
     assert.deepEqual(at('홈').originals!.map((r) => [r.screens, r.elsewhere]), [[a, [[], [], ['도움말']]]]);
@@ -1747,6 +1747,8 @@ test('one comment on a candidate may split it into several candidates that each 
 
     acceptCandidate(cfg.storiesDir, at('홈'), { id: 'home', name: '홈', author: 'hit' });
     assert.deepEqual(listed().list.map((c) => [c.name, c.originals]), [['b', undefined], ['도움말', undefined]]);
+    assert.throws(() => post(id, { name: '로그인', screens: [SIGNIN], replaces: [{ screens: a, dropped: [{ step: 2, reason: 'x' }, { step: 3, reason: 'x' }] }] }),
+      { message: `replaces 의 1 번째 원래 후보 ${a.join(' > ')} 는 지금 후보 목록에 없습니다` });
   });
 });
 

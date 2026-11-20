@@ -725,7 +725,7 @@ function replacedNow(stored: { screens: string[]; source?: unknown }[], stories:
     return replacer && backs.some((b) => compare(b.date, d.date) >= 0 && replacerOf(b) && sameSplit(replacerOf(b)!, replacer));
   };
   const back = new Set([...backs, ...current.filter((d) => !d.backToOriginal && wentBack(d))].map((d) => JSON.stringify(d.screens)));
-  return replacedIn([...stored.filter((s) => !back.has(JSON.stringify(s.screens))), ...stories, ...current.filter((d) => !back.has(JSON.stringify(d.screens)))], freeOf);
+  return [...replacedIn([...stored.filter((s) => !back.has(JSON.stringify(s.screens))), ...current.filter((d) => !back.has(JSON.stringify(d.screens)))], freeOf), ...replacedIn(stories)];
 }
 
 function sameSource(a: Candidate['source'], b: Candidate['source']) {
