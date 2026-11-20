@@ -122,6 +122,7 @@ export type ScreenMap = {
   sagas?: NonNullable<Client['sagaRuns']>;
   bodyTypeNotices?: NonNullable<Client['bodyTypeNotices']>;
   routeTabNotices?: NonNullable<Client['routeTabNotices']>;
+  manyLinkBranches?: Client['manyLinkBranches'];
   deadCalls: { screen: string; fn: string; method: string | null; url: string | null; callSite: string }[];
   // file·line 은 호출 위치를, at 은 키를 문자열로 적은 위치를 가리킨다.
   inputsToCheck?: { screen: string; fn: string; key: string; file: string; line: number; at: string }[];
@@ -343,7 +344,7 @@ function checkInputs(screens: { id: string; apiCalls: (ClientScreen['apiCalls'][
 }
 
 export async function buildMap(config: MapConfig): Promise<ScreenMap> {
-  const { screens, appWide, apiFunctions, unreferencedApiFunctions, sagaRuns, unrunApiModules, outsideStandIns, silentApiModules, requestFileError, bodyTypeNotices, redirects, unreadRoutePaths, unreadRoutes, routeTabNotices, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports, unusedListed, madeHistories, emptyRouteFiles, takingAddressesUnder, framesPickingByAddress } = await extractClient(config);
+  const { screens, appWide, apiFunctions, unreferencedApiFunctions, sagaRuns, unrunApiModules, outsideStandIns, silentApiModules, requestFileError, bodyTypeNotices, redirects, unreadRoutePaths, unreadRoutes, routeTabNotices, manyLinkBranches, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports, unusedListed, madeHistories, emptyRouteFiles, takingAddressesUnder, framesPickingByAddress } = await extractClient(config);
   const server = config.serverEndpoints.flatMap(loadServerEndpoints);
   const apiPathPrefix = config.apiPathPrefix ?? '/';
 
@@ -423,6 +424,7 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
     ...(unreadRoutePaths.length && { unreadRoutePaths }),
     ...(unreadRoutes.length && { unreadRoutes }),
     ...(routeTabNotices && { routeTabNotices }),
+    ...(manyLinkBranches.length && { manyLinkBranches }),
     ...(sagaRuns && { sagas: sagaRuns }),
     ...(bodyTypeNotices && { bodyTypeNotices }),
     deadCalls,
