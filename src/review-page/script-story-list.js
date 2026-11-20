@@ -186,7 +186,7 @@ function storyList() {
       ? [h('p', { class: 'error' }, stale)]
       : list.length
       ? storyItems()
-      : [h('p', { class: 'muted' }, '스토리 파일이 없습니다. 스토리 하나를 파일 하나로 ', h('code', {}, state.data.storiesDir), ' 에 둡니다.')]),
+      : [h('p', { class: 'muted empty-stories' }, '스토리가 없습니다.')]),
     ...candidateGroup(),
     ...markList('떨어져 나감', 'detached', state.data.marks.detached.filter((m) => m.target.story !== undefined || m.target.candidate !== undefined), (m) => (m.target.candidate !== undefined ? `후보 ${candidateName(m.target.candidate)}` : storyMarkLabel(m)),
       h('p', { class: 'muted', title: '스토리 파일이 사라진 스토리와, 받거나 버려 목록에서 빠진 후보에 남긴 코멘트' }, '없음')),
