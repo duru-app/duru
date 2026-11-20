@@ -649,7 +649,7 @@ test('every untagged test of the fixture is listed once, ordered by test file, l
   ]);
 });
 
-test('an untagged list entry carries its result source, status and, for a Vitest test found under srcRoot, the test file', () => {
+test('an untagged list entry carries its result source, depth, status and, for a Vitest test found under srcRoot, the test file', () => {
   const byTitle = (title: string) => links.untagged.find((t) => t.title === title);
   assert.deepEqual(byTitle('DocumentTable › lists the documents it is given'), {
     title: 'DocumentTable › lists the documents it is given',
@@ -658,6 +658,7 @@ test('an untagged list entry carries its result source, status and, for a Vitest
     line: 6,
     source: 'results/vitest/client-unit.json',
     format: 'vitest',
+    depth: 'code',
     status: 'fail',
     testFile: 'components/DocumentTable.spec.js',
   });
@@ -751,6 +752,13 @@ test('a passed test carries its place, its result file, its project, its depth a
   const [t] = tracedLinks.passed['/document/:id#DocumentDetail'];
   assert.deepEqual(t, { title: 'checks the path of a document', tags: [], file: 'visits.spec.ts', line: t.line, project: 'chromium', source: 'results/playwright-traced/visits.json', format: 'playwright', depth: 'ui', status: 'pass', level: 'assert', steps: JSON.stringify(['results/playwright-traced/visits.json', 'visits.spec.ts', t.line, 'checks the path of a document']) });
   assert.equal(typeof t.line, 'number');
+});
+
+test('an untagged browser test that opened only addresses off the map carries its depth and names its walk as steps', () => {
+  const t = tracedLinks.untagged.find((u) => u.title === 'wanders off the map')!;
+  assert.equal(t.depth, 'ui');
+  assert.equal(t.steps, JSON.stringify(['results/playwright-traced/visits.json', 'visits.spec.ts', t.line, 'wanders off the map']));
+  assert.ok(tracedLinks.walks[t.steps!]);
 });
 
 test('a test already tagged with a screen is not among the tests that passed through it, and an address off the map is linked to nothing', () => {

@@ -237,9 +237,10 @@ export function linkTests(config: any, map: any) {
         }
         if (nodeTags.length === 0 && storyTags.length === 0) {
           const seen = untagged.get(testKey);
-          if (!seen) untagged.set(testKey, { title: t.title, tags: t.tags, file: t.file, line: t.line, source: resultPath, format: source.format, status: t.status, ...(link?.file && { testFile: link.file }), ...(trace?.unmatched && { unmatched: trace.unmatched }), ...(t.project != null && { projects: withProjectRun(undefined, t.project, t.status) }) });
+          if (!seen) untagged.set(testKey, { title: t.title, tags: t.tags, file: t.file, line: t.line, source: resultPath, format: source.format, depth, status: t.status, ...(link?.file && { testFile: link.file }), ...steps, ...(trace?.unmatched && { unmatched: trace.unmatched }), ...(t.project != null && { projects: withProjectRun(undefined, t.project, t.status) }) });
           else {
             if (STATUS_RANK[t.status] > STATUS_RANK[seen.status]) seen.status = t.status;
+            if (stepsKey) seen.steps = stepsKey;
             if (trace?.unmatched) seen.unmatched = [...new Set([...(seen.unmatched ?? []), ...trace.unmatched])];
             if (t.project != null) seen.projects = withProjectRun(seen.projects, t.project, t.status);
           }
