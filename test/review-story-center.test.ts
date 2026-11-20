@@ -616,6 +616,22 @@ test('a range is refused with why, writing neither a story nor the candidate fil
   );
 });
 
+test('a step taken out with ✕ is not counted among the steps left of a candidate with accepted ranges, a candidate whose only steps left are taken out leaves the list, and undoing one of its stories lists it again', async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      assert.equal((await postJson(base, '/api/candidates/steps', { key: HELP_KEY, step: 1, on: false })).status, 200);
+      assert.equal((await postJson(base, '/api/candidates/accept', { key: HELP_KEY, id: 'inbox-help', name: 'x', steps: [3, 4] })).status, 201);
+      assert.equal((await listedCandidate(base, HELP_KEY))?.stepsLeft, 1);
+
+      assert.equal((await postJson(base, '/api/candidates/accept', { key: HELP_KEY, id: 'home-only', name: 'y', steps: [2, 2] })).status, 201);
+      assert.equal(await listedCandidate(base, HELP_KEY), undefined);
+
+      assert.equal((await postJson(base, '/api/stories/unaccept', { id: 'home-only' })).status, 200);
+      assert.equal((await listedCandidate(base, HELP_KEY))?.stepsLeft, 1);
+    }),
+  );
+});
+
 test('a story name and memo edited through the page are written into its file', async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', async (base) => {

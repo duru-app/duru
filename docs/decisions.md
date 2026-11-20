@@ -2281,7 +2281,9 @@ candidate is not finished by it.**
 story from the same candidate. Accepting with `steps: [first, last]` writes a story of only those steps, the way an
 acceptance with steps taken out does, and adds `{ "steps": [first, last], "story": <ID> }` to `takenSteps` in the
 candidate file, ordered by first step; no `acceptedAs` is written. The candidate stays listed while a step is in no
-range, and leaves the list once every step is in one. Undoing such a story deletes it and takes its entry out, so its
+range and not taken out with ✕, and leaves the list once no such step is left: a step taken out is one the reviewer
+said is not part of the flow, so nothing is left to take from it (driver's decision on 2026-11-20; `stepsLeft` counts
+the same way). Undoing such a story deletes it and takes its entry out, so its
 steps are free again; when its steps were edited after it was accepted, the edited order is also kept as a candidate,
 as for any story undone after an edit, since dropping it would lose what the reviewer wrote. Only an entry whose story still exists counts, as with `acceptedAs`, so a story deleted by hand
 frees its steps too. A story from a range does not hide its candidate by having the same source, which hid a visit

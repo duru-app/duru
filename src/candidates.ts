@@ -842,7 +842,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   const onMap = new Set(map.screens.map((s: any) => s.id));
   const missedRules = [...new Set(rules.map((r) => r.screen))].filter((s) => !onMap.has(s) && !found.has(s));
   const replacers = new Map(stored.filter((s) => 'comment' in s.source && s.source.replaces?.length && !taken(s.source)).map((s) => [JSON.stringify(s.screens), s.source.replaces]));
-  const unused = (c: Candidate) => c.screens.filter((_, i) => !c.takenSteps!.some(({ steps: [a, b] }) => a <= i + 1 && i + 1 <= b)).length;
+  const unused = (c: Candidate) => c.screens.filter((_, i) => !c.offSteps?.includes(i + 1) && !c.takenSteps!.some(({ steps: [a, b] }) => a <= i + 1 && i + 1 <= b)).length;
   const checked = list.flatMap((c): Candidate[] => {
     const left = c.takenSteps && unused(c);
     if (left === 0) {
