@@ -13,7 +13,7 @@ import { baselineLabel, compareMaps, readBaseline } from './baseline.ts';
 import { compareTests, isRegressedStatus, nodeIds, passedInFolder, readBaselineTests, wholeFines } from './baseline-tests.ts';
 import type { BaselineTests, TestComparison } from './baseline-tests.ts';
 import { screenRoutes } from './address-match.ts';
-import { acceptCandidate, addCommentCandidate, backToOriginal, candidatePlace, discardCandidate, checkVisitSteps, nameCandidate, pickCandidateLine, pickCandidateStep, saveVisitRecord, storyCandidates, unacceptStory, undiscardCandidate } from './candidates.ts';
+import { acceptCandidate, addCommentCandidate, backToOriginal, candidatePlace, discardCandidate, checkVisitSteps, nameCandidate, pickCandidateLine, pickCandidateStep, proposeStoryIds, saveVisitRecord, storyCandidates, unacceptStory, undiscardCandidate } from './candidates.ts';
 import { answerProposal, casesWithoutTests, caseTargets, commandCaseRule, exclusionOf, pickedKinds, ProposalChanged } from './case-targets.ts';
 import { compare, isPlainObject } from './config.ts';
 import type { CaseKind } from './config.ts';
@@ -227,7 +227,8 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
   const { ids: storyIds, ...stories } = checkStoryFiles(map, config.storiesDir, mapFile, { ...tests, traced });
   const caseKinds: Record<string, CaseKind> = config.caseKinds;
   const kinds = Object.keys(caseKinds);
-  const candidates = storyCandidates(config, map, mapFile, traced);
+  const listed = storyCandidates(config, map, mapFile, traced);
+  const candidates = { ...listed, list: proposeStoryIds(listed.list, storyIds, tests.stories ?? {}, map) };
   const marks = classifyMarks(loadMarks(config.marksDir).map(mergedStatus), map, storyIds, kinds, linked, config.roleGuards, candidates.list.map((c) => c.key), stories.list as StoryPath[]);
   const targets = caseTargets(map, caseKinds, marks.attached);
   const pickedCases = (id: string) => pickedKinds(targets, id);

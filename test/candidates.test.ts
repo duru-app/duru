@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { acceptCandidate, addCommentCandidate, backToOriginal, discardCandidate, loadDiscarded, nameCandidate, pickCandidateLine, pickCandidateStep, recordedRequests, saveVisitRecord, storeCandidates, storyCandidates, unacceptStory, undiscardCandidate } from '../src/candidates.ts';
+import { acceptCandidate, addCommentCandidate, backToOriginal, discardCandidate, loadDiscarded, nameCandidate, pickCandidateLine, pickCandidateStep, proposeStoryIds, recordedRequests, saveVisitRecord, storeCandidates, storyCandidates, unacceptStory, undiscardCandidate } from '../src/candidates.ts';
 import type { SkipRule } from '../src/candidates.ts';
 import { compare, loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
@@ -2021,6 +2021,75 @@ test('a stored candidate whose storyId breaks the story ID rule is noted with th
       assert.deepEqual([list, notices.map((n) => n.reason)], [[], ['storyId 는 받을 때 쓸 스토리 ID 로, 영문 소문자 · 숫자 · - · _ 로만 씁니다']], JSON.stringify(storyId));
     });
   }
+});
+
+const E2E = 'results/playwright/e2e.json';
+const ADMIN_MEMBER = '/admin/member#AdminMember';
+const madeUp = (name: string, screens: string[], patch: Partial<Candidate> = {}): Candidate => ({ key: screens.join(' > '), name, screens, source: { record: 'visits/a.json', steps: [1, screens.length] }, ...patch });
+const fromTests = (name: string, screens: string[], tests: string[], patch: Partial<Candidate> = {}) => madeUp(name, screens, { source: { report: E2E, tests }, ...patch });
+const taggedIn = (report: string, ids: Record<string, string[]>) => Object.fromEntries(Object.entries(ids).map(([id, titles]) => [id, titles.map((title) => ({ title, source: report }))]));
+const proposedIds = (list: Candidate[], { storyIds = [] as string[], storyTests = {} } = {}) => proposeStoryIds(list, storyIds, storyTests, map).map((c) => c.proposedId);
+
+test('a candidate is proposed the story ID saved for it with ✎ ahead of the story tag of the tests it came from', () => {
+  const storyTests = taggedIn(E2E, { help: ['opens help'] });
+  assert.deepEqual(proposedIds([fromTests('도움말을 연다', HOME_HELP, ['opens help'], { storyId: 'help-path' })], { storyTests }), ['help-path']);
+});
+
+test('a candidate from tests is proposed the story ID their story tags agree on, a test without one not counting, and gets none from the tags when they name two IDs or the tag is on a test of the same title in another report', () => {
+  const storyTests = { ...taggedIn(E2E, { 'help-first': ['opens help', 'opens help again'], 'help-keys': ['uses keys on help'] }), ...taggedIn('results/other.json', { 'other-help': ['opens help from home'] }) };
+  const list = [
+    fromTests('도움말을 연다', [HOME, ADMIN_MEMBER], ['opens help', 'opens help again', 'opens help without a tag']),
+    fromTests('도움말을 연다', [HOME, ADMIN_MEMBER], ['opens help', 'uses keys on help']),
+    fromTests('도움말을 연다', [HOME, ADMIN_MEMBER], ['opens help from home']),
+  ];
+  assert.deepEqual(proposedIds(list, { storyTests }), ['help-first', 'member', 'member']);
+});
+
+test('a candidate an agent posts with a storyId keeps it in its candidate file and is proposed it, and one whose storyId breaks the story ID rule is refused with why, writing nothing', () => {
+  withOrderComment({ screens: LAB_ORDER, steps: ASKED_STEPS }, ({ cfg, post, files }) => {
+    for (const storyId of ['Lab Path', '', 3]) assert.throws(() => post({ storyId }), { message: 'storyId 는 받을 때 쓸 스토리 ID 로, 영문 소문자 · 숫자 · - · _ 로만 씁니다' }, JSON.stringify(storyId));
+    assert.deepEqual(files(), []);
+    const posted = post({ storyId: 'lab-path' });
+    assert.equal(JSON.parse(fs.readFileSync(path.join(cfg.configDir, posted.file), 'utf8')).storyId, 'lab-path');
+    const { list } = storyCandidates(cfg, map, MAP_FILE);
+    assert.deepEqual(proposedIds(list), ['lab-path']);
+  });
+});
+
+test('a candidate with no ID written is proposed one made from its name when the name has Latin letters', () => {
+  assert.deepEqual(proposedIds([madeUp('Open Help 화면 2', HOME_HELP), madeUp('publish-document', [HOME, DETAIL])]), ['open-help-2', 'publish-document']);
+});
+
+test('a candidate whose name has no Latin letters is proposed the path name of its last step left, path variables and an address off the map read the same way, and none when that path has no name', () => {
+  const list = [
+    madeUp('관리자 회원 목록', [HOME, ADMIN_MEMBER]),
+    madeUp('2단계 문서', [HOME, DETAIL]),
+    madeUp('초안 목록', [HOME, '/document/:tab#DocumentList']),
+    madeUp('받은 편지함', [HOME, '/beta/inbox']),
+    madeUp('도움말 뒤 회원', [HELP, ADMIN_MEMBER], { offSteps: [2] }),
+    madeUp('첫 화면', [HOME, '/']),
+  ];
+  assert.deepEqual(proposedIds(list), ['member', 'document', 'document', 'inbox', 'help', undefined]);
+});
+
+test('an ID duru makes from the name or the last screen that a story already has gets the first number after it that no story has', () => {
+  const storyIds = ['member', 'member-2', 'open-help'];
+  assert.deepEqual(proposedIds([madeUp('관리자 회원 목록', [HOME, ADMIN_MEMBER]), madeUp('Open help', HOME_HELP)], { storyIds }), ['member-3', 'open-help-2']);
+});
+
+test('an ID saved with ✎, written by the agent or agreed on by story tags that a story already has is proposed as it is', () => {
+  const storyIds = ['help-path', 'help-first'];
+  const storyTests = taggedIn(E2E, { 'help-first': ['opens help'] });
+  assert.deepEqual(proposedIds([madeUp('도움말', HOME_HELP, { storyId: 'help-path' }), fromTests('도움말', HOME_HELP, ['opens help'])], { storyIds, storyTests }), ['help-path', 'help-first']);
+});
+
+test('the usage guide and the agent skill give duru candidate a storyId, and the decision record keeps the order a candidate\'s story ID is found in and what an ID a story already has gets', () => {
+  const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, '..', file), 'utf8');
+  const readme = read('README.md');
+  const input = readme.slice(readme.indexOf('**Candidates from a comment.**'), readme.indexOf('```json', readme.indexOf('**Candidates from a comment.**')));
+  assert.match(input, /may carry\s+`storyId`/);
+  assert.match(read('skills/duru/SKILL.md'), /Also give `storyId`/);
+  assert.match(read('docs/decisions.md'), /Driver's decision in #605[^]*✎[^]*`@story:<ID>`[^]*`storyId`[^]*Latin letters[^]*`order-log`[^]*first free number[^]*Always asking[^]*from the name alone/);
 });
 
 test('a stored candidate whose offSteps are not step numbers of its screens from the smallest, each once, leaving one step or more, is noted with the candidates, and one that fits is listed with them', () => {

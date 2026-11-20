@@ -390,7 +390,8 @@ A pair the reviewer hands over for tagging appears in the task list under `# Tag
    gaps and keep the other neighbours as they are, and with none, fill every gap. Keep what the reviewer typed in
    `steps` as it is and fill in only the fields left empty. When you find a way, post it as a story candidate with
    `duru candidate <config> <the comment's id> - --server <the review page address>`, the candidate JSON on standard
-   input: `name`, a short name for the story, and `screens`, every step in order as in a story file. The reviewer's
+   input: `name`, a short name for the story, and `screens`, every step in order as in a story file. Also give `storyId`,
+   the story ID to accept it under in lowercase letters, digits, `-` and `_`. The reviewer's
    screens keep what they typed, copied unchanged, beside the fields you filled; each screen you put in carries
    `reason`, one line on why it is needed, citing the source file and line that show it, as `{ "screen":
    "/home#Home", "reason": "…", "expects": [ … ] }`. Once the review has ended, run it without `--server`; the

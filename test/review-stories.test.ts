@@ -261,11 +261,27 @@ test('in a browser, a candidate an agent sends with duru candidate --server show
 
         await p.click('#candidate-list li:has-text("로그인해 실험을 연다")');
         await p.click('#center button.accept');
-        await p.fill('#accept-id', 'lab');
-        await p.keyboard.press('Enter');
         await p.waitForSelector('#story-list li.selected:has-text("로그인해 실험을 연다")');
         assert.match((await p.textContent('#center .source'))!, /^「로그인한 뒤 실험으로 가는 길을 채워 줘」 · reviewer · /);
         assert.equal(await p.locator('#center .chip.agent').count(), 0);
+      }),
+    ),
+  );
+});
+
+test('in a browser, a candidate whose name has no Latin letters shows the path name of its last screen beside its name as its ID and is accepted under it without a window', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await postAgentCandidate(base);
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#candidate-list li:has-text("로그인해 실험을 연다")');
+        assert.equal(await p.textContent('#center .title-row .story-id'), 'lab');
+        await p.click('#center button.accept');
+        await p.waitForSelector('#story-list li.selected:has-text("로그인해 실험을 연다")');
+        assert.equal(await p.isVisible('#accept-ask'), false);
+        assert.equal(JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'lab.json'), 'utf8')).name, '로그인해 실험을 연다');
       }),
     ),
   );
@@ -352,7 +368,7 @@ test('in a browser, 「스토리로 받기」, also under an ID saved with ✎, 
             await p.click(`#center ${button}`);
             await p.fill('#accept-id', id);
             await p.keyboard.press('Enter');
-            await p.waitForSelector('#center .story-id');
+            await p.waitForFunction((shown) => document.querySelector('#center .story-id')?.textContent === shown, id);
           }
           await p.click('#center button.accept');
           await p.waitForSelector('#story-list li.selected:has-text("lab-path")');
@@ -767,10 +783,13 @@ test('in a browser, ✎ and the ID tag stay on the line of the last character of
         await p.waitForSelector('#screen-list li');
         await p.click(storiesTab);
         await p.click('#candidate-list li:has-text("publish-document")');
-        assert.equal(await p.locator('#center .story-id').count(), 0);
+        assert.equal(await p.textContent('#center .title-row .story-id'), 'publish-document');
         for (const length of [35, 38, 43, 49, 53, 60, 63, 75, 79, 87]) {
           const name = LONG_SENTENCE.slice(0, length).trim();
           await p.evaluate((n) => {
+            const id = document.querySelector('#center .title-row .story-id');
+            id?.nextSibling?.remove();
+            id?.remove();
             const h3 = document.querySelector('#center .title-row h3')!;
             const tail = h3.querySelector('.name-tail');
             if (!tail) { h3.textContent = n; return; }
@@ -811,7 +830,7 @@ test('in a browser, ✎ right after a candidate\'s name opens a window for the I
           ['✎', 'ID와 이름 고치기', 'ID와 이름 고치기', 'H3', false]);
         assert.equal(await p.locator('#center .candidate-acts button.edit-name').count(), 0);
         assert.deepEqual(await p.locator('#center .candidate-acts button').allTextContents(), ['스토리로 받기', '버리기']);
-        assert.equal(await p.locator('#center .story-id').count(), 0);
+        assert.equal(await p.textContent('#center .title-row .story-id'), 'publish-document');
 
         await p.click(edit);
         await p.waitForSelector(`${ask}[open]`);

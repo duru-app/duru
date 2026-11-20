@@ -961,7 +961,8 @@ a rule screen that is neither on the map nor an address a candidate went through
 **Candidates from a comment.** A coding agent that answers a comment on a screen order (see **Comments on a screen
 order**) posts the story it found with `candidate <config> <comment ID> <candidate.json>`, or `-` in place of the
 file to read it from standard input. The candidate is a JSON object with `name` and `screens`, each step a screen ID
-or an object with `screen` and any of `needs`, `linkNeeds`, `inputs` and `expects`, as in a story file. A screen the
+or an object with `screen` and any of `needs`, `linkNeeds`, `inputs` and `expects`, as in a story file, and may carry
+`storyId`, the story ID to accept it under, kept in the candidate file as `storyId`. A screen the
 agent put in carries `reason`, one line saying why it is there:
 
 ```json
@@ -1248,8 +1249,8 @@ wrote, an input, a condition of the link into a step, a condition or an expected
 the number of lines on shows above 「스토리로 받기」, as 「3 / 4」. Each press is saved into the candidate file, and
 「스토리로 받기」 writes into the story file only the lines on, together with the reviewer's lines, which have no box. ✎
 sets the story ID and the name the candidate is accepted under; 「저장」 there writes no story file but keeps both in
-the candidate file, as `storyId` and `name`. 「스토리로 받기」 accepts under them; without them it takes the ID from the
-name. When that ID breaks the story ID rule or a story already has it, it asks for another, and an ID kept with ✎
+the candidate file, as `storyId` and `name`. 「스토리로 받기」 accepts under them; without them it takes the ID shown
+beside the name. When that ID breaks the story ID rule or a story already has it, it asks for another, and an ID kept with ✎
 that a story takes later is marked as taken beside the name. A screen the agent put in is taken out after accepting,
 with 「순서 고치기」. A story accepted from it shows the same comment line under its name. 「버리기」 asks for a reason,
 naming the candidate and its screen order; the candidate is discarded only once a reason is written, and the page

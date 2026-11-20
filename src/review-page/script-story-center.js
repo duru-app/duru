@@ -356,7 +356,6 @@ function reachBlock(st, key) {
 }
 
 const STORY_ID = /^[a-z0-9_-]+$/;
-const slugOf = (name) => name.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
 const syncButton = (e, ready) => { e.target.closest('.story-form').querySelector('button').disabled = !ready(); };
 const storyForm = (...children) => h('fieldset', { class: 'story-form', disabled: state.storyWriting }, ...children);
 const field = (name, control, ...rest) => h('label', { class: 'field' }, h('span', {}, name), control, ...rest);
@@ -390,7 +389,7 @@ function nameLine(c) {
   const last = letters.pop() ?? '';
   return h('div', { class: 'name-line' },
     h('h3', {}, letters.join(''), h('span', { class: 'name-tail' }, last)),
-    h('span', { class: 'name-end' }, WORD_JOINER, c.storyId ? storyIdTag(c.storyId) : null, c.storyId ? WORD_JOINER : null, nameButton(c)));
+    h('span', { class: 'name-end' }, WORD_JOINER, c.proposedId ? storyIdTag(c.proposedId) : null, c.proposedId ? WORD_JOINER : null, nameButton(c)));
 }
 
 const candidateActions = (c) => h('fieldset', { class: 'story-form candidate-acts' },
@@ -492,7 +491,7 @@ async function nameAs(c, id, name) {
   return true;
 }
 
-const idOf = (c) => c.storyId ?? slugOf(c.name);
+const idOf = (c) => c.proposedId ?? '';
 
 async function acceptChosen(key = state.candidate) {
   const c = state.data.candidates.list.find((x) => x.key === key);
