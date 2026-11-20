@@ -846,13 +846,13 @@ test('in a browser, a candidate whose ID made from its name a story already has 
         assert.equal(await p.isDisabled(`${ask} button.accept`), true);
         await p.fill('#accept-id', 'publish-again');
         assert.equal(await p.isVisible(`${ask} .invalid`), false);
+        await p.waitForFunction(() => document.querySelector('#center .story-id')?.textContent === 'publish-document-3');
         await p.focus(`${ask} button.cancel`);
         await p.keyboard.press('Enter');
         assert.equal(await p.isVisible(ask), false);
         assert.equal(await p.evaluate(() => document.activeElement!.className), 'accept');
         assert.ok(!fs.existsSync(path.join(config.storiesDir, 'publish-again.json')));
 
-        await p.waitForFunction(() => document.querySelector('#center .story-id')?.textContent === 'publish-document-3');
         await p.click('#center button.accept');
         await p.waitForSelector('#story-list li.selected:has-text("publish-document")');
         assert.equal(await p.isVisible(ask), false);
