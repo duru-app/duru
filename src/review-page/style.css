@@ -32,6 +32,11 @@
   header .meta .state.plain { margin: 0; padding: 0; border: 0; color: inherit; line-height: inherit; }
   .list-absent { font-weight: normal; margin-left: 2px; }
   header .author { margin-left: auto; font-size: 13px; }
+  header .session { flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 999px; color: var(--text); border-color: var(--accent); }
+  header .session[hidden] { display: none; }
+  header .session::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  header .session.off { color: var(--fail); border-color: var(--fail); }
+  header .session.off::before { background: var(--fail); }
   #end-review { padding: 4px 12px; border-radius: 6px; border: 1px solid var(--accent); background: var(--panel); color: var(--accent-text); font: inherit; font-weight: 600; cursor: pointer; }
   #end-review:disabled { opacity: .5; cursor: default; }
   #ended, #failed { padding: 16px; }

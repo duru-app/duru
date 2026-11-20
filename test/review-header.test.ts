@@ -1,10 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import type { Locator, Page } from 'playwright-core';
 import { addJudgment } from '../src/judgments.ts';
 import { loadMarks } from '../src/marks.ts';
+import { startReviewServer } from '../src/review.ts';
 import { withRebuiltFixture, signer, withServer, postMark, initGitRepoNamed, rebuild, browserMissing, toList, withPage, openScreenInfo, openLinkGroups, screenBox, tipLines, needTag, DOCUMENT_TABLE, HOME_NODE, CASE_KINDS } from './review-helpers.ts';
 import type { Config, PageData, Kept } from './review-helpers.ts';
 
@@ -649,5 +651,64 @@ test('in a browser, a 「죽은 화면」 filter left checked does not hide ever
         assert.equal(await p.locator('input[name=dead]').count(), 0);
         assert.equal(await p.locator('#screen-list li').count(), 11);
       }));
+  });
+});
+
+const SESSION_OFF_TIP = '코멘트를 받을 세션이 없습니다. 지금 남긴 코멘트는 다음 세션이 duru wait 를 걸 때 전달됩니다';
+
+test('in a browser, the header chip is a pill with a dot that reads 세션 끊김 in the fail color with a title saying comments reach the next duru wait until one connects, then 세션 연결됨 with the seconds since the last check counting up, 세션 끊김 again once the wait has ended and the grace time passed, and 세션 끊김 with a title of its own as soon as the review server is gone while a wait is still counted, all without a reload', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, async (config) => {
+    const server = await startReviewServer(config, { author: signer('reviewer'), sessionGraceMs: 1500 });
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    try {
+      await withPage(base, async (p, errors) => {
+        await p.waitForSelector('#screen-list li');
+        const chip = p.locator('header #session');
+        const shown = (text: string) => p.waitForFunction((t) => document.getElementById('session')?.textContent === t, text);
+        await shown('세션 끊김');
+        assert.equal(await chip.getAttribute('role'), 'status');
+        assert.equal(await chip.getAttribute('title'), SESSION_OFF_TIP);
+        assert.equal(await chip.getAttribute('aria-label'), SESSION_OFF_TIP);
+        assert.equal(await chip.evaluate((el) => el.classList.contains('off')), true);
+        const offColor = await chip.evaluate((el) => getComputedStyle(el).color);
+        const look = () => chip.evaluate((el) => ({ border: getComputedStyle(el).borderTopColor, dot: getComputedStyle(el, '::before').backgroundColor, dotWidth: getComputedStyle(el, '::before').width, radius: getComputedStyle(el).borderTopLeftRadius }));
+        const off = await look();
+        assert.deepEqual([off.border, off.dot, off.dotWidth, off.radius], [offColor, offColor, '6px', '999px']);
+        await p.evaluate(() => { (window as unknown as { kept: boolean }).kept = true; });
+
+        const closing = new AbortController();
+        const wait = await fetch(`${base}/api/events?unanswered`, { signal: closing.signal });
+        await shown('세션 연결됨');
+        const seconds = async () => Number((await chip.getAttribute('title'))!.match(/^코멘트를 받을 세션이 연결돼 있습니다 · 마지막 확인 (\d+)초 전$/)![1]);
+        const first = await seconds();
+        await p.waitForFunction((n) => Number(document.getElementById('session')!.title.match(/(\d+)초 전$/)![1]) > n, first);
+        assert.equal(await chip.getAttribute('aria-label'), await chip.getAttribute('title'));
+        assert.equal(await chip.evaluate((el) => el.classList.contains('off')), false);
+        assert.notEqual(await chip.evaluate((el) => getComputedStyle(el).color), offColor);
+        const on = await look();
+        assert.equal(on.border, on.dot);
+        assert.notEqual(on.border, offColor);
+
+        closing.abort();
+        await wait.body!.cancel().catch(() => {});
+        await shown('세션 끊김');
+        assert.equal(await chip.getAttribute('title'), SESSION_OFF_TIP);
+        assert.equal(await p.evaluate(() => (window as unknown as { kept?: boolean }).kept), true);
+
+        const again = new AbortController();
+        const held = await fetch(`${base}/api/events?unanswered`, { signal: again.signal });
+        await shown('세션 연결됨');
+        again.abort();
+        await held.body!.cancel().catch(() => {});
+        server.closeAllConnections();
+        server.close();
+        await shown('세션 끊김');
+        assert.equal(await chip.getAttribute('title'), '검토 서버에 닿지 않습니다. duru review 를 다시 띄워야 코멘트가 전달됩니다');
+        assert.ok(errors.every((e) => /^Failed to load resource: net::ERR_/.test(e)), errors.join('\n'));
+        errors.length = 0;
+      });
+    } finally {
+      server.close();
+    }
   });
 });

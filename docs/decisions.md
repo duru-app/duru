@@ -1635,6 +1635,20 @@ Alternatives compared:
   comment silently.
 - Asking for the shape to be documented before using it: the driver chose to measure what works and use it.
 
+**The review page's header says a session is connected while a `duru wait` is held open, and for two minutes after
+the last one ends; the message socket does not count.**
+`wait` ends each time it hands over comments and the agent starts it again after answering, so judging by the held
+connection alone would show the session as gone during every answer. Two minutes, and the chip words 「세션 연결됨」
+and 「세션 끊김」, are what difit (duru-app/difit#321) shipped for its own `comment wait`, so the three review tools
+read alike. The server writes a `ping` event to each held `wait` every 30 seconds and counts the last check from that,
+from a `wait` connecting, or from one ending. The socket answers nothing, so reaching it says only that a process
+listens; a session that is alive but runs no `wait` reads as disconnected, though a comment may still reach it there.
+Alternatives compared:
+- No grace time, as the PR check page (Inte-H/pr-check-page#55) shipped: the chip would turn to 「세션 끊김」 while
+  the agent answers each comment.
+- Counting the session's message socket as connected, as the PR check page also does: it would say a session runs,
+  not that anything reads the comments.
+
 **The review page keeps drawing itself with its own code; a UI library is weighed again when the shared-server mode
 of #42 is started.** Since records arrive on their own, the page redraws while a reviewer may be typing, and a
 redraw replaces the fields: the page puts the focus and caret back in the field at the same place and holds the
