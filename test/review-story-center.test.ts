@@ -686,7 +686,7 @@ test('in a browser, accepting a candidate asks for an ID in a window only when t
         await p.click('#candidate-list li:has-text("publish-document")');
         const writes = holdRequests(p, '**/api/candidates/accept');
         await p.click('#center button.accept');
-        await p.waitForFunction(() => document.querySelector<HTMLFieldSetElement>('#center .story-form')!.disabled);
+        await p.waitForFunction(() => document.querySelector<HTMLButtonElement>('#center button.accept')!.disabled);
         await p.click('#story-list li:has-text("실험실을 열어")');
         writes.release!();
         await p.waitForSelector('#center .story-error');
@@ -874,7 +874,7 @@ test('in a browser, a candidate has 「스토리로 받기」 and 「버리기�
 
 const enabledControls = (p: Page) => p.locator('#center :is(.story-form, .candidate-acts) :is(input, textarea, button)').evaluateAll((els) => els.filter((e) => !e.matches(':disabled')).map((e) => e.id || e.className));
 
-test('in a browser, the whole 받기, 버리기 and 이름 · 메모 form stays disabled while its write and the reload after it are on their way', { skip: browserMissing }, async () => {
+test('in a browser, the accept, discard, back and name buttons and the name and memo fields are all disabled while their write and the reload after it are on their way', { skip: browserMissing }, async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { Page } from 'playwright-core';
+import type { Page, Route } from 'playwright-core';
 import { addMark } from '../src/marks.ts';
 import { addStory } from '../src/stories.ts';
 import { taskList } from '../src/tasks.ts';
@@ -489,6 +489,70 @@ test('in a browser, each step of a candidate has a ✕ that strikes the step thr
         await p.click('#center button.unaccept');
         await p.waitForSelector('#candidate-list li.selected:has-text("open-help")');
         assert.equal(await p.textContent('#center h3'), 'open-help');
+        assert.deepEqual(errors, []);
+      }),
+    ),
+  );
+});
+
+test('in a browser, accept pressed while ✕ saves are still running accepts the candidate once they finish, without a second press', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await openHelpCandidate(p);
+        const steps = await p.locator('#center .story-path .step').count();
+        const accept = await p.evaluate(() => {
+          for (let i = 0; i < 10; i++) (document.querySelector('#center button[name="step-off-2"]') as HTMLButtonElement).click();
+          const box = document.querySelector('#center button.accept')!.getBoundingClientRect();
+          return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+        });
+        await p.mouse.click(accept.x, accept.y);
+        await p.waitForSelector('#story-list li.selected:has-text("open-help")');
+        const saved = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'open-help.json'), 'utf8'));
+        assert.equal(saved.screens.length, steps);
+        assert.deepEqual(errors, []);
+      }),
+    ),
+  );
+});
+
+test('in a browser, accept pressed while ✕ saves are running accepts the candidate it was pressed on, not the one chosen afterwards, and leaves the reviewer on the one chosen', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await openHelpCandidate(p);
+        const accept = await p.evaluate(() => {
+          for (let i = 0; i < 10; i++) (document.querySelector('#center button[name="step-off-2"]') as HTMLButtonElement).click();
+          const box = document.querySelector('#center button.accept')!.getBoundingClientRect();
+          return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+        });
+        await p.mouse.click(accept.x, accept.y);
+        await p.click('#candidate-list li:has-text("publish-document")');
+        await untilSet(() => fs.existsSync(path.join(config.storiesDir, 'open-help.json')), 'the story of the candidate pressed');
+        assert.equal(fs.existsSync(path.join(config.storiesDir, 'publish-document.json')), false);
+        await p.waitForSelector('#candidate-list li.selected:has-text("publish-document")');
+        assert.deepEqual(errors, []);
+      }),
+    ),
+  );
+});
+
+test('in a browser, a ✕ pressed while the accept request is on its way does not enable the accept button, so the candidate is accepted once', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await openHelpCandidate(p);
+        let held: Route | null = null;
+        let sent = 0;
+        await p.route('**/api/candidates/accept', (route) => { sent++; held = route; });
+        await p.click('#center button.accept');
+        const accept = (await untilSet(() => held, 'the accept request held'))!;
+        await p.evaluate(() => (document.querySelector('#center button[name="step-off-2"]') as HTMLButtonElement).click());
+        await p.waitForFunction(() => document.querySelector('#center button[name="step-off-2"]')!.getAttribute('aria-pressed') === 'true');
+        assert.equal(await p.isDisabled('#center button.accept'), true);
+        await accept.continue();
+        await p.waitForSelector('#story-list li.selected:has-text("open-help")');
+        assert.equal(sent, 1);
         assert.deepEqual(errors, []);
       }),
     ),
