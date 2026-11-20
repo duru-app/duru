@@ -1483,3 +1483,53 @@ test('in a browser, a candidate an agent posted in place of another shows under 
     }),
   );
 });
+
+test('in a browser, each candidate an agent split one original into shows that original folded, dims without striking the steps another candidate of the split took and names them on hover, and going back to the original from one takes down both and opens it', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const comment = await (await postMark(base, { target: { candidate: HELP_KEY }, note: '둘로 나눠 줘' })).json();
+      const original = HELP_KEY.split(' > ');
+      const split = [
+        { name: '로그인과 홈', screens: original.slice(0, 2), dropped: [3, 4] },
+        { name: '도움말 열기', screens: original.slice(3), dropped: [1, 2, 3] },
+      ];
+      for (const { name, screens, dropped } of split) {
+        const res = await postJson(base, '/api/candidates/add', { comment: comment.id, name, screens, replaces: [{ screens: original, dropped: dropped.map((step) => ({ step, reason: '나눈 다른 후보에 둡니다' })) }] });
+        assert.equal(res.status, 201, await res.clone().text());
+      }
+      await withPage(base, async (p, errors) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        const rowsOf = async (name: string) => {
+          await p.click(`#candidate-list li:has-text("${name}")`);
+          await p.waitForFunction((n) => document.querySelector('#center h3')?.textContent === n, name);
+          await p.click('#center details.replaced-order > summary');
+          return p.evaluate(() => [...document.querySelectorAll('#center details.replaced-order li')].map((li) => {
+            const screen = li.querySelector('.found-screen')!;
+            const label = screen.getAttribute('aria-label');
+            return [screen.textContent, getComputedStyle(screen).textDecorationLine.includes('line-through'), screen.classList.contains('muted'), screen.getAttribute('title') === label ? label : 'title differs'];
+          }));
+        };
+        const mine = '이 후보';
+        const none = '남은 단계';
+        assert.deepEqual(await rowsOf('로그인과 홈'), [
+          [original[0], false, false, mine],
+          [original[1], false, false, mine],
+          [original[2], true, false, none],
+          [original[3], false, true, '→ 「도움말 열기」'],
+        ]);
+        assert.deepEqual(await rowsOf('도움말 열기'), [
+          [original[0], false, true, '→ 「로그인과 홈」'],
+          [original[1], false, true, '→ 「로그인과 홈」'],
+          [original[2], true, false, none],
+          [original[3], false, false, mine],
+        ]);
+
+        await p.click('#center button.back-to-original');
+        await p.waitForFunction(() => document.querySelector('#center h3')?.textContent === 'open-help');
+        for (const { name } of split) assert.equal(await p.locator(`#candidate-list li:has-text("${name}")`).count(), 0);
+        assert.deepEqual(errors, []);
+      });
+    }),
+  );
+});
