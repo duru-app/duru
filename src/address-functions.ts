@@ -366,7 +366,12 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
       if (!given.includes(NOT_KNOWN)) {
         return values(callee.get('object') as NodePath<any>, at).map((text) => {
           const value = plain(text);
-          return typeof value === 'string' ? known((value as any)[method](...given)) : leafOut(p);
+          if (typeof value !== 'string') return leafOut(p);
+          try {
+            return known((value as any)[method](...given));
+          } catch {
+            return leafOut(p);
+          }
         });
       }
     }

@@ -246,7 +246,7 @@ export default function AppRoutes() {
   assert.deepEqual(ids(map), ['/:team#Frame', '/:team/home#Home']);
 });
 
-test('a path a function makes from a value it is given with replace, slice, substring or trim on text and regular expression literals is worked out, also inside a template, and a replace with a function is not read', async () => {
+test('a path a function makes from a value it is given with replace, slice, substring or trim on text and regular expression literals is worked out, also inside a template and written straight in the path, and a replace with a function or a call that throws is not read', async () => {
   const routes = `import { Route, Routes } from 'react-router-dom';
 import Frame from './Frame';
 import Home from './Home';
@@ -255,13 +255,16 @@ import List from './List';
 import Item from './Item';
 import Panel from './Panel';
 import Settings from './Settings';
+import Team from './Team';
+import Account from './Account';
 
-const PATHS = { HOME: '/home', SHELF: '/shelf', LIST: '/list', ITEM: '/item', PANEL: ' panel ', SETTINGS: '/settings' };
+const PATHS = { HOME: '/home', SHELF: '/shelf', LIST: '/list', ITEM: '/item', PANEL: ' panel ', SETTINGS: '/settings', TEAM: '/team', ACCOUNT: '/account-mine/ ' };
 const under = (path) => path.replace(/^\\//, '');
 const cut = (path) => path.slice(1);
 const from = (path) => path.substring(1);
 const bare = (path) => path.trim();
 const turned = (path) => path.replace(/^\\//, (found) => found.toUpperCase());
+const broken = (path) => path.replaceAll(/^\\//, '');
 
 export default function AppRoutes() {
   return (
@@ -273,14 +276,16 @@ export default function AppRoutes() {
         <Route path={\`\${under(PATHS.ITEM)}/:id\`} element={<Item />} />
         <Route path={bare(PATHS.PANEL)} element={<Panel />} />
         <Route path={turned(PATHS.SETTINGS)} element={<Settings />} />
+        <Route path={broken(PATHS.TEAM)} element={<Team />} />
+        <Route path={PATHS.ACCOUNT.replaceAll('-', '/').trimEnd().slice(1, -1)} element={<Account />} />
       </Route>
     </Routes>
   );
 }
 `;
   const map = await build(writeApp({ 'Routes.js': routes }));
-  assert.deepEqual(ids(map), ['/:team#Frame', '/:team/home#Home', '/:team/shelf#Shelf', '/:team/list#List', '/:team/item/:id#Item', '/:team/panel#Panel', '{?}#Settings']);
-  assert.deepEqual(map.unreadRoutePaths!.map((u) => [u.line, u.stoppedAt.text]), [[26, "path.replace(/^\\//, (found) => found.toUpperCase())"]]);
+  assert.deepEqual(ids(map), ['/:team#Frame', '/:team/home#Home', '/:team/shelf#Shelf', '/:team/list#List', '/:team/item/:id#Item', '/:team/panel#Panel', '{?}#Settings', '{?}#Team', '/:team/account/mine#Account']);
+  assert.deepEqual(map.unreadRoutePaths!.map((u) => [u.line, u.stoppedAt.text]), [[29, "path.replace(/^\\//, (found) => found.toUpperCase())"], [30, "path.replaceAll(/^\\//, '')"]]);
 });
 
 test('a child route under a parent whose path is not read is not read either, stopped where the parent\'s path stopped', async () => {

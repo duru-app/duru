@@ -4791,9 +4791,9 @@ one component drawn at four addresses gave a duplicate screen ID. `replace`, `re
 `trim`, `trimStart` and `trimEnd` are now run on the text when the value they are called on is read with no piece
 left unread and every argument is a text, a number or a regular expression written in place; the result depends on
 nothing else. Anything else stays as it was and stops at the call: a method on a value with an unread piece, an
-argument that is a name or a function (`path.replace(/x/, (m) => …)`), and any other method. It is in the call
-reading of `src/address-functions.ts`. After it, that app's map reads all 47
-paths. The reference apps write no route `path=` with these methods (counted with a search over appsmith,
+argument that is a name or a function (`path.replace(/x/, (m) => …)`), any other method, and a call that throws (`replaceAll` with a regular expression that has no `g`). It is in the call
+reading of `src/address-functions.ts`. After it, that app's map reads all its
+route paths. The reference apps write no route `path=` with these methods (counted with a search over appsmith,
 mattermost, metabase, outline, redash, signoz and superset on 2026-11-20); it is an extension of the function
 reading for one app, not a reader of its own.
 Compared:
