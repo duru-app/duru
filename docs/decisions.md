@@ -5893,8 +5893,8 @@ from `/` (`` `${base}${rest}` ``) stays `{?}`. A value that is, on every branch,
 (`` const param = flag ? `?tab=${tab}` : '' ``) ends the path, so `` `/db/${id}${param}` `` stays `/db/{*}`. A query
 value duru cannot read at all (`location.search`, a prop) is an unknown value like any other, so
 `` `/team/${id}${location.search}` `` gives no link where it gave `/team/{*}` before. A helper the source declares whose
-own move glues two values gives no link at that move, and its calls are not read either: reading them would read the
-value the helper puts in front, which waits with the hook below. The rule is in the one place a link's address is
+own move glues two values gives no link at that move; its calls are read with what each one gives it (see the hook
+paragraph below). The rule is in the one place a link's address is
 turned into its text, so it holds for a router link's `to`, a `navigate`, `push` or `replace` move (in a saga too), a
 `linkComponents` element, a `linkFunctions` call, and an address a declared helper or link component builds from what a
 call gives it. The `to` of a `Redirect` or `Navigate` in the route file is not a link and keeps `{*}`. Counted on
@@ -5906,10 +5906,34 @@ without the rule; redash writes no move with two values glued, and another priva
 Compared:
 - Dropping a value at the end of an address after any text: it would also drop `` (id) => history.push(`/doc/${id}`) ``
   and `` `/notes/${action.payload}` ``, which are links by the rules above.
-- Reading the address the hook builds (`linkFunctions` with a prefix and a condition, or following the hook held by
-  `useCallback`): it would give the hook's calls the links they lead to, but it adds config keys or reverses the
-  known limits of the helper rule for one app, so it waits until a second app writes the shape (driver's decision on
-  2026-11-16).
+- Reading the address the hook builds through `linkFunctions` with a prefix and a condition: it adds config keys for
+  one app. Following the hook was taken instead on 2026-11-20 (next paragraph).
+
+**A call of the function a hook returns is read as a call of that function, and a helper's glued move is read at each
+call.** (#574; driver's direction: follow the hook, add no config key.) `const go = useGo()` followed by `go('/list')`
+gave no link when `useGo` returns `` useCallback((to) => { if (INSIDE.test(to)) navigate(`/${zone}${to}`); else navigate(to); }) ``:
+the name `go` was not a declared function, and the glued move inside was left out of the helper rule. Three extensions
+of rules duru already has, none naming an app:
+- The helper rule follows a name whose value is a call of a declared function with one `return`, to the function
+  returned (written in the `return` or declared in the hook and returned by name), looking through calls that take it
+  as their first argument (`useCallback`).
+- A helper's move that glues two unread values where it is written, and so gives no link there, is read at each call
+  when the glued part comes from a parameter: `go('/list')` gives `/{*}/list`. A call that leaves two unread values
+  glued still gives no link.
+- A condition is settled where the call's values settle it: `pattern.test(to)` for a pattern written as a literal
+  without the `g` or `y` flag and a `to` read whole, and a condition joined by `&&` or `||` as soon as one side
+  settles it. `go('/login')` therefore gives `/login` only. A side duru cannot read (the route variable being there
+  or not) leaves both branches, so `go('/list')` gives `/{*}/list` and `/list`. A number given as the address
+  (`go(-1)`) is a step in the history, not a link.
+Measured 2026-11-20 on one private app, with the fixes of #655 and #654 applied to both sides since its map does not
+build without them: 34 files take the hook's function; links 139 → 190, links reaching a screen 88 → 112, screens
+some other screen links into 12 → 19, entry screens 39 → 32. 24 of the new links are the unprefixed branch and reach
+no screen. Reference apps, built with and without: appsmith, outline and signoz give the same links (signoz returns a
+moving function from a hook in `useNavigateToExplorer`, 9 calls, none giving it an address); mattermost loses 342 `{?}`
+links, two calls on 171 screens of a helper whose move to the address it is given sits under
+`same && to && !option.skip` while both calls pass `skip: true`.
+Limits: a hook that returns its function inside an object (`const { go } = useGo()`, 70 calls in signoz) is not
+followed; a pattern tested against an address read only in part settles nothing, so both branches stay.
 
 **`rebuild` prints one line when the map is not yet fit for story candidates or test matching, and a trace whose
 screens are all catch-alls gives no candidate.**

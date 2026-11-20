@@ -38,6 +38,7 @@ interface Moves {
   moveOf: (p: NodePath<CallExpression>) => Move | null;
   component: (p: NodePath<JSXElement>) => LinkComponent | null;
   linked: (p: NodePath) => boolean;
+  gluedWhereWritten: (p: NodePath) => boolean;
   linkedCall: (p: NodePath<CallExpression>) => boolean;
   linkedUse: (p: NodePath<JSXElement>) => boolean;
   isHistory: (p: NodePath) => boolean;
@@ -361,6 +362,17 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     }
     if (callee.isIdentifier() && passThrough(callee.node.name)) return args[0] ? values(args[0], at) : [leafOut(p)];
     const method = callee.isMemberExpression() && !callee.node.computed ? (callee.node.property as Identifier).name : null;
+    if (method === 'test' && args.length === 1) {
+      const object = unwrapped(callee.get('object') as NodePath<any>);
+      const written = object.isIdentifier() && !inEnv(object, at) ? declaredValue(object.scope, object.node.name) : object;
+      if (written?.isRegExpLiteral() && !/[gy]/.test(written.node.flags)) {
+        const pattern = new RegExp(written.node.pattern, written.node.flags);
+        return values(args[0], at).map((text) => {
+          const value = plain(text);
+          return typeof value === 'string' || typeof value === 'number' ? known(pattern.test(String(value))) : leafOut(p);
+        });
+      }
+    }
     if (method && TEXT_METHODS.has(method)) {
       const given = args.map(literalArgument);
       if (!given.includes(NOT_KNOWN)) {
@@ -588,6 +600,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
       if (p.node.operator === '??') return choose(left, (o) => (plain(o) === NOT_KNOWN && !truth(o) ? undefined : plain(o) === null || plain(o) === undefined), right, (o) => [o]);
       return choose(left, truth, p.node.operator === '||' ? (o) => [o] : right, p.node.operator === '||' ? right : (o) => [o]);
     }
+    if (p.isUnaryExpression({ operator: '-' }) && p.get('argument').isNumericLiteral()) return [known(-(p.node.argument as NumericLiteral).value)];
     if (p.isIdentifier()) return identifier(p, at);
     if ((p.isMemberExpression() || p.isOptionalMemberExpression()) && inEnv(p, at)) return memberValues(p, at);
     if (p.isCallExpression()) return call(p, at);
@@ -708,7 +721,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
         }
         const history = move.recognized ? null : givenHistory(move.history, fn);
         if (!move.recognized && !history) return;
-        const kept = addresses(move.address, true).filter((a) => !moves!.holdsRouteConstant(a) && (history || !moves!.linked(a)));
+        const kept = addresses(move.address, true).filter((a) => !moves!.holdsRouteConstant(a) && (history || !moves!.linked(a) || (moves!.gluedWhereWritten(a) && usesParam(a, fn))));
         if (kept.length) found.moves.push({ at: c, addresses: kept, history });
       };
       const visitElement = (e: NodePath<JSXElement>) => {
@@ -848,7 +861,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
         for (const o of values(a, at)) {
           const located = address(wholeOr(o, a), a);
           const value = located && plain(located);
-          if (located && value !== undefined && value !== null) outs.push(located);
+          if (located && value !== undefined && value !== null && typeof value !== 'number') outs.push(located);
         }
       }
     }
@@ -856,11 +869,19 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
   }
 
   // fn 안에서 p 를 둘러싼 if · ? : · && · || 가운데 값이 정해져 p 로 가지 않는 것이 있으면 거짓이다.
+  function testTruths(test: NodePath<any>, at: At): (boolean | undefined)[] {
+    const t = unwrapped(test);
+    if (!t.isLogicalExpression() || t.node.operator === '??') return values(t, at).map(truth);
+    const decides = t.node.operator === '||';
+    const rights = testTruths(t.get('right'), at);
+    return [...new Set(testTruths(t.get('left'), at).flatMap((l) => (l === decides ? [l] : rights.map((r) => (r === decides || l === undefined ? (r === decides ? r : undefined) : r)))))];
+  }
+
   function reached(p: NodePath, fn: AddressFunction, at: At): boolean {
     for (const { test, wanted } of enclosingTests(p, (up) => up.node === fn.node)) {
       let truths: (boolean | undefined)[];
       try {
-        truths = values(test, at).map(truth);
+        truths = testTruths(test, at);
       } catch (error) {
         if (error instanceof TooMany) continue;
         throw error;
@@ -919,13 +940,32 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     }
   }
 
+  // 호출한 이름이 함수 호출의 반환값이면 그 함수로 본다: `const go = useGo()` 의 go.
+  function returnedFunction(p: NodePath<CallExpression>): AddressFunction | null {
+    const callee = p.get('callee') as NodePath<any>;
+    const made = callee.isIdentifier() ? declaredValue(p.scope, callee.node.name) : null;
+    const maker = made?.isCallExpression() ? calledFunction(made, OUTSIDE) : null;
+    if (!maker || maker.node.async || maker.node.generator) return null;
+    const body = maker.get('body') as NodePath<any>;
+    const returned: NodePath<any>[] = body.isBlockStatement() ? [] : [body];
+    body.traverse({
+      Function: (f) => f.skip(),
+      ReturnStatement: (r) => void (r.node.argument && returned.push(r.get('argument'))),
+    });
+    if (returned.length !== 1) return null;
+    let value = unwrapped(returned[0]);
+    while (value.isCallExpression() && value.node.arguments.length) value = unwrapped(value.get('arguments.0') as NodePath<any>);
+    if (value.isIdentifier()) return declaredFunction(value.scope, value.node.name);
+    return value.isArrowFunctionExpression() || value.isFunctionExpression() ? value : null;
+  }
+
   // 받은 주소로 옮기는 함수를 부른 곳에서, 그 이동이 가는 주소를 부른 곳의 인자로 읽는다. 그런 함수가 아니면 null 이다.
   // 갈래가 너무 많으면 {?} 를 주되, 받은 history 로만 옮기는 함수면 null 이다.
   function helperBranches(p: NodePath<CallExpression>): Read | null {
     if (!moves || inAddress(p)) return null;
     const callee = p.get('callee') as NodePath<any>;
     if (callee.isIdentifier() && passThrough(callee.node.name)) return null;
-    const fn = calledFunction(p, OUTSIDE);
+    const fn = calledFunction(p, OUTSIDE) ?? returnedFunction(p);
     if (!fn || fn.node.generator || !isHelper(fn)) return null;
     let outs: Out[];
     try {
