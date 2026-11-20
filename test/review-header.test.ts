@@ -656,12 +656,12 @@ test('in a browser, a 「죽은 화면」 filter left checked does not hide ever
 
 const SESSION_OFF_TIP = '코멘트를 받을 세션이 없습니다. 지금 남긴 코멘트는 다음 세션이 duru wait 를 걸 때 전달됩니다';
 
-test('in a browser, the header chip is a pill with a dot that reads 세션 끊김 in the fail color with a title saying comments reach the next duru wait until one connects, then 세션 연결됨 with the seconds since the last check counting up, and 세션 끊김 again once the wait has ended and the grace time passed, all without a reload', { skip: browserMissing }, async () => {
+test('in a browser, the header chip is a pill with a dot that reads 세션 끊김 in the fail color with a title saying comments reach the next duru wait until one connects, then 세션 연결됨 with the seconds since the last check counting up, 세션 끊김 again once the wait has ended and the grace time passed, and 세션 끊김 with a title of its own as soon as the review server is gone while a wait is still counted, all without a reload', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, async (config) => {
     const server = await startReviewServer(config, { author: signer('reviewer'), sessionGraceMs: 1500 });
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     try {
-      await withPage(base, async (p) => {
+      await withPage(base, async (p, errors) => {
         await p.waitForSelector('#screen-list li');
         const chip = p.locator('header #session');
         const shown = (text: string) => p.waitForFunction((t) => document.getElementById('session')?.textContent === t, text);
@@ -694,6 +694,18 @@ test('in a browser, the header chip is a pill with a dot that reads 세션 끊�
         await shown('세션 끊김');
         assert.equal(await chip.getAttribute('title'), SESSION_OFF_TIP);
         assert.equal(await p.evaluate(() => (window as unknown as { kept?: boolean }).kept), true);
+
+        const again = new AbortController();
+        const held = await fetch(`${base}/api/events?unanswered`, { signal: again.signal });
+        await shown('세션 연결됨');
+        again.abort();
+        await held.body!.cancel().catch(() => {});
+        server.closeAllConnections();
+        server.close();
+        await shown('세션 끊김');
+        assert.equal(await chip.getAttribute('title'), '검토 서버에 닿지 않습니다. duru review 를 다시 띄워야 코멘트가 전달됩니다');
+        assert.ok(errors.every((e) => /^Failed to load resource: net::ERR_/.test(e)), errors.join('\n'));
+        errors.length = 0;
       });
     } finally {
       server.close();
