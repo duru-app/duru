@@ -6,7 +6,7 @@ import http from 'node:http';
 import path from 'node:path';
 import type { Page, Route } from 'playwright-core';
 import { loadMarks } from '../src/marks.ts';
-import { withRebuiltFixture, withServer, rebuild, browserMissing, toList, withPage, openScreenInfo, LAB_SETTING, ADMIN_ROLE, LONG_SETTING, asked, why, askedFocused, SAVE_REFUSED, untilSet, postJson, postMark, CANDIDATES, HELP_RECORD, HELP_KEY, PUBLISH_KEY, storiesTab, BAD_REQUEST, discardCandidate, holdRequests, storyStack, rightPane, postAgentCandidate, AGENT_KEY } from './review-helpers.ts';
+import { withRebuiltFixture, withServer, rebuild, browserMissing, toList, withPage, openScreenInfo, LAB_SETTING, ADMIN_ROLE, LONG_SETTING, asked, why, askedFocused, SAVE_REFUSED, untilSet, postJson, postMark, CANDIDATES, HELP_RECORD, HELP_KEY, PUBLISH_KEY, storiesTab, BAD_REQUEST, discardCandidate, holdRequests, storyStack, rightPane, postAgentCandidate, AGENT_KEY, EMAIL_INPUT } from './review-helpers.ts';
 import type { Guard, PageData, Reach } from './review-helpers.ts';
 
 const HOME = '/home#Home';
@@ -471,6 +471,163 @@ test('a step of a candidate is taken out and put back through the page in the ca
       assert.equal(fs.readFileSync(stored, 'utf8'), before);
       for (const step of [1, 2, 3]) assert.equal((await pick({ step, on: true })).status, 200);
       assert.equal('offSteps' in JSON.parse(fs.readFileSync(stored, 'utf8')), false);
+    }),
+  );
+});
+
+const candidateFiles = (config: { storiesDir: string }) => {
+  const folder = path.join(config.storiesDir, 'candidates');
+  return fs.existsSync(folder) ? fs.readdirSync(folder).map((f) => JSON.parse(fs.readFileSync(path.join(folder, f), 'utf8'))) : [];
+};
+const helpFile = (config: { storiesDir: string }) => candidateFiles(config).find((c) => c.name === 'open-help');
+const listedCandidate = async (base: string, key: string) => ((await (await fetch(`${base}/api/data`)).json()) as PageData).candidates.list.find((c) => c.key === key);
+
+test('a range of a candidate\'s steps accepted through the page becomes a story of only those steps with the record steps behind them as its source, and the candidate stays listed with the range, its story and the steps left until a second range uses the rest', async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const res = await postJson(base, '/api/candidates/accept', { key: HELP_KEY, id: 'inbox-help', name: '받은 편지함에서 도움말을 연다', steps: [3, 4] });
+      assert.equal(res.status, 201, await res.clone().text());
+      const saved = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'inbox-help.json'), 'utf8'));
+      assert.deepEqual(saved.screens, ['/beta/inbox', '/help#Help']);
+      assert.deepEqual(saved.source, { record: HELP_RECORD, steps: [3, 5] });
+      const file = helpFile(config);
+      assert.deepEqual(file.takenSteps, [{ steps: [3, 4], story: 'inbox-help' }]);
+      assert.equal('acceptedAs' in file, false);
+      const listed = await listedCandidate(base, HELP_KEY);
+      assert.deepEqual([listed?.takenSteps, listed?.stepsLeft], [[{ steps: [3, 4], story: 'inbox-help' }], 2]);
+
+      assert.equal((await postJson(base, '/api/candidates/accept', { key: HELP_KEY, id: 'sign-in-home', name: '로그인해 홈으로 간다', steps: [1, 2] })).status, 201);
+      assert.deepEqual(JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'sign-in-home.json'), 'utf8')).source, { record: HELP_RECORD, steps: [1, 2] });
+      assert.deepEqual(helpFile(config).takenSteps, [{ steps: [1, 2], story: 'sign-in-home' }, { steps: [3, 4], story: 'inbox-help' }]);
+      assert.equal(await listedCandidate(base, HELP_KEY), undefined);
+    }),
+  );
+});
+
+test('a range accepted through the page from a candidate an agent posted takes along the inputs, the expected results and the agent\'s lines of those steps, with the condition of the link into its first step left behind', async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const { comment } = await postAgentCandidate(base);
+      const res = await postJson(base, '/api/candidates/accept', { key: AGENT_KEY, id: 'home-lab', name: '홈에서 실험을 연다', steps: [2, 3] });
+      assert.equal(res.status, 201, await res.clone().text());
+      const saved = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'home-lab.json'), 'utf8'));
+      assert.deepEqual(saved.screens, [
+        { screen: '/home#Home', inputs: [{ box: { label: '검색' }, value: '실험' }], expects: ['홈이 보인다'] },
+        { screen: '/lab#Lab', needs: ['실험 메뉴가 켜져 있다'], linkNeeds: ['홈에서 실험을 누른다'], expects: ['실험 목록이 보인다'] },
+      ]);
+      assert.deepEqual(saved.source, {
+        comment,
+        added: [{ step: 1, reason: '로그인하면 홈으로만 갑니다' }],
+        written: [{ step: 1, inputs: [{ box: { label: '검색' }, value: '실험' }], expects: ['홈이 보인다'] }, { step: 2, needs: ['실험 메뉴가 켜져 있다'], linkNeeds: ['홈에서 실험을 누른다'] }],
+      });
+      const listed = await listedCandidate(base, AGENT_KEY);
+      assert.deepEqual([listed?.takenSteps, listed?.stepsLeft], [[{ steps: [2, 3], story: 'home-lab' }], 1]);
+
+      assert.equal((await postJson(base, '/api/candidates/accept', { key: AGENT_KEY, id: 'sign-in', name: '로그인한다', steps: [1, 1] })).status, 201);
+      assert.deepEqual(JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'sign-in.json'), 'utf8')).screens, [{ screen: '/signin#SignIn', inputs: [EMAIL_INPUT] }]);
+      assert.equal(await listedCandidate(base, AGENT_KEY), undefined);
+    }),
+  );
+});
+
+test('undoing a story accepted from a range through the page deletes its story file and gives its steps back to the candidate, which is listed again once all its steps had gone', async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      for (const [id, steps] of [['inbox-help', [3, 4]], ['sign-in-home', [1, 2]]] as const) {
+        assert.equal((await postJson(base, '/api/candidates/accept', { key: HELP_KEY, id, name: id, steps })).status, 201);
+      }
+      const res = await postJson(base, '/api/stories/unaccept', { id: 'inbox-help' });
+      assert.equal(res.status, 200, await res.clone().text());
+      assert.equal((await res.json()).key, HELP_KEY);
+      assert.equal(fs.existsSync(path.join(config.storiesDir, 'inbox-help.json')), false);
+      assert.deepEqual(helpFile(config).takenSteps, [{ steps: [1, 2], story: 'sign-in-home' }]);
+      const listed = await listedCandidate(base, HELP_KEY);
+      assert.deepEqual([listed?.takenSteps, listed?.stepsLeft], [[{ steps: [1, 2], story: 'sign-in-home' }], 2]);
+
+      assert.equal((await postJson(base, '/api/stories/unaccept', { id: 'sign-in-home' })).status, 200);
+      assert.equal('takenSteps' in helpFile(config), false);
+      const back = await listedCandidate(base, HELP_KEY);
+      assert.deepEqual([back?.takenSteps, back?.stepsLeft], [undefined, undefined]);
+    }),
+  );
+});
+
+test('a range over steps a story deleted by hand had taken is accepted again, and the candidate file keeps only the ranges whose stories exist', async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      assert.equal((await postJson(base, '/api/candidates/accept', { key: HELP_KEY, id: 'inbox-help', name: 'x', steps: [3, 4] })).status, 201);
+      fs.rmSync(path.join(config.storiesDir, 'inbox-help.json'));
+      assert.equal((await postJson(base, '/api/candidates/accept', { key: HELP_KEY, id: 'home-inbox-help', name: 'y', steps: [2, 4] })).status, 201);
+      assert.deepEqual(helpFile(config).takenSteps, [{ steps: [2, 4], story: 'home-inbox-help' }]);
+      const data = await (await fetch(`${base}/api/data`)).json();
+      assert.deepEqual(data.candidates.notices.filter((n: { file: string }) => n.file.includes('candidates/')), []);
+      const listed = await listedCandidate(base, HELP_KEY);
+      assert.deepEqual([listed?.takenSteps, listed?.stepsLeft], [[{ steps: [2, 4], story: 'home-inbox-help' }], 1]);
+    }),
+  );
+});
+
+test('undoing through the page a story accepted from a range whose steps were edited afterwards keeps the edited order as a candidate beside the candidate that gets its steps back', async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      assert.equal((await postJson(base, '/api/candidates/accept', { key: HELP_KEY, id: 'inbox-help', name: '받은 편지함에서 도움말을 연다', steps: [3, 4] })).status, 201);
+      const file = path.join(config.storiesDir, 'inbox-help.json');
+      const steps = [{ step: 1, screen: '/beta/inbox' }, { screen: '/home#Home' }, { step: 2, screen: '/help#Help' }];
+      assert.equal((await postJson(base, '/api/stories/steps', { id: 'inbox-help', steps, contentHash: crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex') })).status, 200);
+      const res = await postJson(base, '/api/stories/unaccept', { id: 'inbox-help' });
+      assert.equal(res.status, 200, await res.clone().text());
+      assert.equal((await res.json()).key, HELP_KEY);
+      assert.equal('takenSteps' in helpFile(config), false);
+      const edited = await listedCandidate(base, '/beta/inbox > /home#Home > /help#Help');
+      assert.deepEqual([edited?.name, edited?.source], ['inbox-help', { record: HELP_RECORD, steps: [3, 5] }]);
+      const back = await listedCandidate(base, HELP_KEY);
+      assert.deepEqual([back?.takenSteps, back?.stepsLeft], [undefined, undefined]);
+    }),
+  );
+});
+
+test('a range is refused with why, writing neither a story nor the candidate file, when its order is already a story, when it overlaps a range already accepted, when its first or last step is outside the candidate or the first comes after the last, and when a step taken out with ✕ is inside it', async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      assert.equal((await postJson(base, '/api/stories/add', { id: 'list-detail', name: '목록에서 문서를 연다', screens: ['/document/:tab#DocumentList', '/document/:id#DocumentDetail'] })).status, 201);
+      assert.equal((await postJson(base, '/api/candidates/accept', { key: HELP_KEY, id: 'inbox-help', name: 'x', steps: [3, 4] })).status, 201);
+      assert.equal((await postJson(base, '/api/candidates/steps', { key: PUBLISH_KEY, step: 4, on: false })).status, 200);
+      const before = candidateFiles(config);
+      const stories = fs.readdirSync(config.storiesDir);
+      const outside = (n: number) => `steps 는 받을 구간의 [처음, 끝] 단계 번호로, 1 부터 ${n} 까지에서 처음이 끝보다 뒤가 아니어야 합니다`;
+      const refusals: [object, string][] = [
+        [{ key: PUBLISH_KEY, steps: [2, 3] }, '구간의 화면 순서가 이미 스토리 list-detail 의 화면 순서입니다'],
+        [{ key: HELP_KEY, steps: [2, 3] }, '구간이 이미 스토리 inbox-help 로 받은 3~4 번째 단계와 겹칩니다'],
+        [{ key: HELP_KEY, steps: [4, 4] }, '구간이 이미 스토리 inbox-help 로 받은 3~4 번째 단계와 겹칩니다'],
+        [{ key: HELP_KEY, steps: [0, 2] }, outside(4)],
+        [{ key: HELP_KEY, steps: [1, 5] }, outside(4)],
+        [{ key: HELP_KEY, steps: [2, 1] }, outside(4)],
+        [{ key: HELP_KEY, steps: [1] }, outside(4)],
+        [{ key: HELP_KEY, steps: [1.5, 2] }, outside(4)],
+        [{ key: PUBLISH_KEY, steps: [3, 4] }, '4 번째 단계는 ✕ 로 뺀 단계라 구간에 넣을 수 없습니다. ✕ 를 되돌리거나 구간을 줄여 주세요'],
+      ];
+      for (const [body, text] of refusals) {
+        const refused = await postJson(base, '/api/candidates/accept', { id: 'refused', name: 'x', ...body });
+        assert.deepEqual([refused.status, await refused.text()], [400, text], JSON.stringify(body));
+      }
+      assert.deepEqual(candidateFiles(config), before);
+      assert.deepEqual(fs.readdirSync(config.storiesDir), stories);
+    }),
+  );
+});
+
+test('a step taken out with ✕ is not counted among the steps left of a candidate with accepted ranges, a candidate whose only steps left are taken out leaves the list, and undoing one of its stories lists it again', async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      assert.equal((await postJson(base, '/api/candidates/steps', { key: HELP_KEY, step: 1, on: false })).status, 200);
+      assert.equal((await postJson(base, '/api/candidates/accept', { key: HELP_KEY, id: 'inbox-help', name: 'x', steps: [3, 4] })).status, 201);
+      assert.equal((await listedCandidate(base, HELP_KEY))?.stepsLeft, 1);
+
+      assert.equal((await postJson(base, '/api/candidates/accept', { key: HELP_KEY, id: 'home-only', name: 'y', steps: [2, 2] })).status, 201);
+      assert.equal(await listedCandidate(base, HELP_KEY), undefined);
+
+      assert.equal((await postJson(base, '/api/stories/unaccept', { id: 'home-only' })).status, 200);
+      assert.equal((await listedCandidate(base, HELP_KEY))?.stepsLeft, 1);
     }),
   );
 });

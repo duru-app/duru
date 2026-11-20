@@ -744,7 +744,7 @@ export async function startReviewServer(config: any, { port = 0, author = review
         }
         try {
           const written = req.url === '/api/candidates/accept'
-            ? acceptCandidate(config.storiesDir, candidate, { id: input.id, name: input.name, author: author.name })
+            ? acceptCandidate(config.storiesDir, candidate, { id: input.id, name: input.name, author: author.name, steps: input.steps })
             : req.url === '/api/candidates/original'
               ? backToOriginal(config.storiesDir, candidate, { author: author.name })
               : discardCandidate(config.storiesDir, candidate, { reason: input.reason, author: author.name });

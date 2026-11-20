@@ -2275,6 +2275,40 @@ some file already holds that order.
 Undoing a story whose steps were edited after it was accepted also keeps the edited order as a candidate, beside the
 one found, because dropping it would lose what the reviewer wrote.
 
+**A story accepted from a range of a candidate's steps is kept in the candidate file as `takenSteps`, and the
+candidate is not finished by it.**
+#644, the first slice of #608: one record can hold several purposes in a row, and the reviewer takes each as its own
+story from the same candidate. Accepting with `steps: [first, last]` writes a story of only those steps, the way an
+acceptance with steps taken out does, and adds `{ "steps": [first, last], "story": <ID> }` to `takenSteps` in the
+candidate file, ordered by first step; no `acceptedAs` is written. The candidate stays listed while a step is in no
+range and not taken out with ✕, and leaves the list once no such step is left: a step taken out is one the reviewer
+said is not part of the flow, so nothing is left to take from it (driver's decision on 2026-11-20; `stepsLeft` counts
+the same way). Undoing such a story deletes it and takes its entry out, so its
+steps are free again; when its steps were edited after it was accepted, the edited order is also kept as a candidate,
+as for any story undone after an edit, since dropping it would lose what the reviewer wrote. Only an entry whose story still exists counts, as with `acceptedAs`, so a story deleted by hand
+frees its steps too. A story from a range does not hide its candidate by having the same source, which hid a visit
+record or comment candidate as soon as one of its stories was accepted; a record candidate's story names in its source
+the record steps behind the range, which a visit record story already carried.
+The numbers count the steps as the card shows them, as `replaces[].dropped` does, and not the found order as
+`offSteps` does (#608 fixed this). A test candidate has no step numbers of its own, and the page and the agent see card
+steps. The cost is that a `candidateSkipScreens` change that joins or drops steps moves a stored range to other screens
+without a word; undoing still finds the entry by the story's ID.
+A step taken out with ✕ inside the range is refused rather than skipped, since skipping it would make a story of an
+order the record never walked in a row (model's choice in #644, not yet put to the driver). The other refusals: a range
+whose order is already a story, as for the steps left after ✕; a range overlapping one already taken; a first or last
+step outside the candidate, or a first after the last. Accepting without `steps` is unchanged, also on a candidate
+whose steps partly went to ranges.
+Alternatives compared:
+- Making `acceptedAs` a list of stories with their steps: one key would say both "finished" and "partly used", and the
+  list, the undo and the agent's same-order check, which all read `acceptedAs` as one ID, would have to read existing
+  files another way.
+- Writing the range only into the story's source and working out at each listing which steps of which candidate are
+  used: a test candidate's source names no steps, a comment candidate's names none of the original order, and
+  working out at each listing which file became a story is what split candidates and hid them before `acceptedAs`
+  (#541).
+- Storing found-order numbers as `offSteps` does: a range would stay on its screens across a rule change, but the
+  page, the agent and `/api/data` would all need the conversion, and #608 asked for card numbers.
+
 **The ✕ on a candidate's step shows only while the pointer is over that step card or the keyboard is in it, and
 always on a step already taken out.**
 The ✕ was always in sight on every card, and the driver asked that it show only on hover (driver's request,
