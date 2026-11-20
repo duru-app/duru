@@ -656,7 +656,7 @@ test('in a browser, a 「죽은 화면」 filter left checked does not hide ever
 
 const SESSION_OFF_TIP = '코멘트를 받을 세션이 없습니다. 지금 남긴 코멘트는 다음 세션이 duru wait 를 걸 때 전달됩니다';
 
-test('in a browser, the header chip reads 세션 끊김 with a title saying comments reach the next duru wait until one connects, then 세션 연결됨 with the seconds since the last check counting up, and 세션 끊김 again once the wait has ended and the grace time passed, all without a reload', { skip: browserMissing }, async () => {
+test('in a browser, the header chip is a pill with a dot that reads 세션 끊김 in the fail color with a title saying comments reach the next duru wait until one connects, then 세션 연결됨 with the seconds since the last check counting up, and 세션 끊김 again once the wait has ended and the grace time passed, all without a reload', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, async (config) => {
     const server = await startReviewServer(config, { author: signer('reviewer'), sessionGraceMs: 1500 });
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -671,6 +671,9 @@ test('in a browser, the header chip reads 세션 끊김 with a title saying comm
         assert.equal(await chip.getAttribute('aria-label'), SESSION_OFF_TIP);
         assert.equal(await chip.evaluate((el) => el.classList.contains('off')), true);
         const offColor = await chip.evaluate((el) => getComputedStyle(el).color);
+        const look = () => chip.evaluate((el) => ({ border: getComputedStyle(el).borderTopColor, dot: getComputedStyle(el, '::before').backgroundColor, dotWidth: getComputedStyle(el, '::before').width, radius: getComputedStyle(el).borderTopLeftRadius }));
+        const off = await look();
+        assert.deepEqual([off.border, off.dot, off.dotWidth, off.radius], [offColor, offColor, '6px', '999px']);
         await p.evaluate(() => { (window as unknown as { kept: boolean }).kept = true; });
 
         const closing = new AbortController();
@@ -682,6 +685,9 @@ test('in a browser, the header chip reads 세션 끊김 with a title saying comm
         assert.equal(await chip.getAttribute('aria-label'), await chip.getAttribute('title'));
         assert.equal(await chip.evaluate((el) => el.classList.contains('off')), false);
         assert.notEqual(await chip.evaluate((el) => getComputedStyle(el).color), offColor);
+        const on = await look();
+        assert.equal(on.border, on.dot);
+        assert.notEqual(on.border, offColor);
 
         closing.abort();
         await wait.body!.cancel().catch(() => {});
