@@ -1133,7 +1133,7 @@ export default function Home({ flag }) {
   ]);
 });
 
-test('a move or a link whose address glues two values duru cannot read with no / between them gives no link, while a value standing alone between slashes, or glued to text, is still {*}', async () => {
+test('a move or a link whose address glues two values duru cannot read with no / between them gives no link, while a value standing alone between slashes, or glued to text, is still {*}, and a call of the function a hook returns, written in the return or returned by name, is read with the address it is given', async () => {
   const useGo = `import { useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -1141,7 +1141,7 @@ export default function useGo() {
   const navigate = useNavigate();
   const { zone } = useParams();
   return useCallback((to) => {
-    if (/^\\/(team|help)(\\/|$)/.test(to)) navigate(\`/\${zone}\${to}\`);
+    if (typeof to === 'string' && zone && /^\\/(team|help)(\\/|$)/.test(to)) navigate(\`/\${zone}\${to}\`);
     else navigate(to);
   }, [navigate, zone]);
 }
@@ -1156,6 +1156,8 @@ export default function Home({ id, section, part, rest, base, flag }) {
   return (
     <div>
       <button onClick={() => go('/team/list')}>list</button>
+      <button onClick={() => go('/login')}>out</button>
+      <button onClick={() => go(-1)}>back</button>
       <button onClick={() => navigate(\`/\${section}\${rest}\`)}>glued</button>
       <Link to={\`/team/\${id}\${rest}\`}>glued later</Link>
       <button onClick={() => navigate(\`/\${section}\${part}/new\`)}>glued before more</button>
@@ -1171,12 +1173,26 @@ export default function Home({ id, section, part, rest, base, flag }) {
   );
 }
 `;
+  const useHop = `import { useNavigate } from 'react-router-dom';
+
+export function useHop() {
+  const navigate = useNavigate();
+  function hop(to) {
+    navigate(to);
+  }
+  return hop;
+}
+`;
   const map = await build(writeApp(
-    { 'Routes.js': V6_ROUTES, 'Home.js': home, 'useGo.js': useGo },
+    { 'Routes.js': V6_ROUTES, 'Home.js': home.replace("import useGo from './useGo';", "import useGo from './useGo'; import { useHop } from './useHop';").replace('const go = useGo();', 'const go = useGo(); const hop = useHop();').replace('<button onClick={() => go(-1)}>back</button>', '<button onClick={() => go(-1)}>back</button><button onClick={() => hop("/help")}>by name</button>'), 'useGo.js': useGo, 'useHop.js': useHop },
     { linkFunctions: [{ import: 'pane-kit', name: 'openInPane', address: '0' }] },
   ));
   const at = (part: string) => lineOf(home, part);
   assert.deepEqual(linksOf(map, '/home#Home').map(([to, line]) => [to, line]), [
+    ['/{*}/team/list', at('>list<')],
+    ['/team/list', at('>list<')],
+    ['/login', at('>out<')],
+    ['/help', at('>back<')],
     ['/team/{*}', at('>team<')],
     ['/{*}/list', at('>section<')],
     ['/team/{*}', at('>joined by text<')],
@@ -1189,7 +1205,33 @@ export default function Home({ id, section, part, rest, base, flag }) {
   assert.match(decisions, /\*\*A move or a link whose address glues two values duru cannot read, with no `\/` between them, gives no link\.\*\*/);
 });
 
-test('a helper the source declares whose own move glues two values duru cannot read gives no link, at the move or at its calls', async () => {
+test('a move a helper makes under a condition joined by && or || gives no link at a call whose values settle one side of it, whatever the other side is', async () => {
+  const home = `import { useNavigate } from 'react-router-dom';
+
+export default function Home({ same, flag }) {
+  const navigate = useNavigate();
+  const back = (to, quiet) => {
+    if (same && to && !quiet) navigate(to);
+  };
+  const open = (to, loud) => {
+    if (flag || loud) navigate(to);
+  };
+  return (
+    <div>
+      <button onClick={() => back('/help', true)}>settled false</button>
+      <button onClick={() => back('/login', false)}>left open</button>
+      <button onClick={() => open('/team/new', true)}>settled true</button>
+      <button onClick={() => open('/team/7', false)}>open again</button>
+    </div>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Routes.js': V6_ROUTES, 'Home.js': home }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home').map(([to, line]) => [to, line]), [['/login', at('>left open<')], ['/team/new', at('>settled true<')], ['/team/7', at('>open again<')]]);
+});
+
+test('a helper the source declares whose own move glues two values duru cannot read gives no link at the move, and a link at each call whose values leave no two unread values glued', async () => {
   const home = `import { useNavigate, useParams } from 'react-router-dom';
 
 export default function Home({ id, rest }) {
@@ -1209,7 +1251,7 @@ export default function Home({ id, rest }) {
 }
 `;
   const map = await build(writeApp({ 'Routes.js': V6_ROUTES, 'Home.js': home }));
-  assert.deepEqual(linksOf(map, '/home#Home').map(([to, line]) => [to, line]), [['/help', lineOf(home, '>help<')]]);
+  assert.deepEqual(linksOf(map, '/home#Home').map(([to, line]) => [to, line]), [['/{*}/team/list', lineOf(home, '>list<')], ['/team/new', lineOf(home, '>new<')], ['/help', lineOf(home, '>help<')]]);
 });
 
 test('a move with more than 8 different addresses still gives {*} for a value glued after another when that value is, on every branch, empty or text starting with ? or #, and no link for any other glued value', async () => {

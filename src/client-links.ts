@@ -337,6 +337,7 @@ export function clientLinkReader({
       component: (p) => linkComponentOf(p),
       // 붙은 값 때문에 링크를 내지 않는 자리도 링크가 있는 자리로 보아, 함수를 부른 곳에서 앞에 붙인 값을 읽지 않는다.
       linked: (p) => addresses(p).length > 0 && linkAddresses(p, true).length > 0,
+      gluedWhereWritten: (p) => linkAddresses(p).length === 0,
       linkedCall: (p) => addressesOf(linkReading.helperBranches(p) ?? { branches: [] }, () => UNKNOWN, true).length > 0,
       linkedUse: (p) => addressesOf(linkReading.useBranches(p) ?? { branches: [] }, () => UNKNOWN, true).length > 0,
       isHistory: (p) => screenLinks.isHistory(p),
