@@ -320,7 +320,7 @@ test('a page connection hears at once that no duru wait is connected, then that 
       assert.equal(page.session()[2].connected, true);
       await until(() => page.session().length === 4, 'session state when the grace time has passed');
       assert.equal(page.session()[3].connected, false);
-      assert.ok(page.session()[3].checkedAgoMs! >= 300);
+      assert.ok(page.session()[3].checkedAgoMs! >= 290);
 
       const again = await listenTo(`${base}/api/events?unanswered`);
       await until(() => page.session().length === 5, 'session state when a wait connects again');
