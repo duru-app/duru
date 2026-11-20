@@ -4907,6 +4907,33 @@ export default function Home({ flag }) {
   ]);
 });
 
+test('a link component used with so many attributes of two values each that their combinations pass the limit gives one {?} link there, without building the combinations', async () => {
+  const links = `import { Link } from 'react-router-dom';
+
+export function Item({ to }) {
+  return <Link to={to}>on</Link>;
+}
+`;
+  const attributes = Array.from({ length: 40 }, (_, i) => `k${i}={flag ? 'a' : 'b'}`).join(' ');
+  const home = `import { Item } from './links';
+
+export default function Home({ flag }) {
+  return (
+    <nav>
+      <Item to="/login" ${attributes} />
+      <Item to="/start" />
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'links.js': links }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home').map(([to, line]) => [to, line]), [
+    ['{?}', at('to="/login"')],
+    ['/start', at('to="/start"')],
+  ]);
+});
+
 test('a link component whose to at the use holds a route constant, or whose own link holds one, gives only the route constant link where the constant is written', async () => {
   const links = `import { Link } from 'react-router-dom';
 import Option from './Option';

@@ -121,6 +121,12 @@ function literalArgument(p: NodePath<any>): unknown {
   return NOT_KNOWN;
 }
 
+// 조합이 MOST_BRANCHES 를 넘으면 나머지를 만들지 않고 멈춘다.
+function limitedProduct<T>(lists: T[][]): T[][] {
+  if (lists.some((list) => !list.length)) return [];
+  return lists.reduce<T[][]>((acc, list) => limited(acc.flatMap((a) => list.map((x) => [...a, x]))), [[]]);
+}
+
 // 다 읽은 값이면 그 값, 아니면 NOT_KNOWN
 function plain({ val }: Out): unknown {
   if ('pieces' in val) return val.pieces.some((x) => 'stop' in x) ? NOT_KNOWN : val.pieces.map((x) => ('text' in x ? x.text : '')).join('');
@@ -379,7 +385,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     if (fn && (reading.has(fn.node) || at.depth >= FOLLOWED)) return [unknownAt(p)];
     if (!fn || fn.node.async || fn.node.generator) return [leafOut(p)];
     const spread = args.findIndex((a) => a.isSpreadElement());
-    const lists = limited(product((spread < 0 ? args : args.slice(0, spread)).map((a) => checkedOuts(values(a, given), a, p))));
+    const lists = limitedProduct((spread < 0 ? args : args.slice(0, spread)).map((a) => checkedOuts(values(a, given), a, p)));
     return followed(fn, p, () => lists.flatMap((list) => bound(fn, list, spread < 0 ? null : args[spread], at.depth + 1).flatMap((e) => returnedValues(fn, e, p, at.depth + 1))));
   }
 
@@ -640,7 +646,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
       const { val } = out;
       return e.node.children.length && 'props' in val && !val.props.has('children') ? { ...out, val: { ...val, props: new Map(val.props).set('children', unknownAt(e)) } } : out;
     };
-    return product(lists).map((outs) => withChildren(merged(keys.map((key, i) => [key, outs[i]]), (spread) => spread.whole && { ...unknownAt(spread.whole), whole: spread.whole })));
+    return limitedProduct(lists).map((outs) => withChildren(merged(keys.map((key, i) => [key, outs[i]]), (spread) => spread.whole && { ...unknownAt(spread.whole), whole: spread.whole })));
   }
 
   function address(out: Out, at: NodePath): Out | null {
@@ -875,7 +881,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     const args = p.get('arguments') as NodePath<any>[];
     const spread = args.findIndex((a) => a.isSpreadElement());
     const given = { ...at, branching: true };
-    const lists = limited(product((spread < 0 ? args : args.slice(0, spread)).map((a) => checkedOuts(values(a, given), a, p).map((o) => wholeOr(o, a)))));
+    const lists = limitedProduct((spread < 0 ? args : args.slice(0, spread)).map((a) => checkedOuts(values(a, given), a, p).map((o) => wholeOr(o, a))));
     reading.add(fn.node);
     try {
       const outs = lists.flatMap((list) => bound(fn, list, spread < 0 ? null : args[spread], at.depth + 1).flatMap((env) => placeOuts(fn, env, at.depth + 1)));
@@ -887,7 +893,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
 
   function useOuts(e: NodePath<JSXElement>, fn: AddressFunction, at: At): Out[] {
     if (reading.has(fn.node) || at.depth >= FOLLOWED) return [];
-    const lists = limited(attributeValues(e, { ...at, branching: true }));
+    const lists = attributeValues(e, { ...at, branching: true });
     reading.add(fn.node);
     try {
       const outs = lists.flatMap((props) => bound(fn, [props], null, at.depth + 1).flatMap((env) => placeOuts(fn, env, at.depth + 1, true)));

@@ -4836,8 +4836,10 @@ Known limits:
 - An object key or a member name spelled like a parameter or a name of the function counts as naming that value, so
   `track({ tab: 'x' })` or `window.tab = 1` in a function with a parameter `tab` makes the call a piece duru cannot
   read though nothing of the function changes.
-- The limit of 64 is checked after the combinations of argument values, and of the pieces of a template, are built,
-  so a call with many arguments of several values each builds all their combinations before it stops.
+- The limit of 64 is checked while the combinations of a call's argument values, and of the attributes of an element
+  that uses a link component, are built, and the rest is not built once it is passed (#654: one screen that gave a
+  link component many attributes of two values each used up a 4 GB heap before the check). The combinations of the
+  pieces of a template, of the two sides of `+` and of an object's properties are still built whole first.
 - A piece duru cannot read takes a whole segment, as in a link written in the screen's code, so a function that
   glues its argument to written text with no `/` between (``(sub) => `/admin${sub}` ``, `BASE + path`) or returns a
   method's result that holds several segments (`'/' + parts.filter(Boolean).join('/')`) gives `/{*}`, which goes to
