@@ -901,7 +901,7 @@ test('in a browser, a comment on a story candidate shows in 「전체」 under t
 test('in a browser, a story accepted from a candidate with comments shows them first in its conversation, marked as from the candidate and named by it, open right after accepting and folded to one line with their count and the day of the last thing said after going to another story and back or reloading, which opens when pressed; undoing the acceptance shows them on the candidate again, and the comments of a discarded candidate show in the detached list with the candidate name, and not under the screens', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ ...CANDIDATES, ...TRACED }, (config) => {
     const asked = addMark(config.marksDir, { target: { candidate: HELP_KEY }, note: 'why the beta inbox?', author: 'reviewer' }, new Date('2026-10-13T01:00:00Z'));
-    addReply(config.marksDir, { replyTo: asked.id, note: 'the record went there' }, new Date('2026-10-13T02:00:00Z'));
+    addReply(config.marksDir, { replyTo: asked.id, note: 'the record went there' }, new Date('2026-10-15T02:00:00Z'));
     addMark(config.marksDir, { target: { candidate: TRACE_CANDIDATE }, note: 'which test gives this?', author: 'reviewer' });
     return withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
@@ -920,7 +920,7 @@ test('in a browser, a story accepted from a candidate with comments shows them f
         assert.equal(await said.count(), 1);
         assert.match((await said.textContent())!, /why the beta inbox\?.*the record went there/s);
         assert.deepEqual(await p.locator('#right-info .talk-scope button').allTextContents(), ['이 스토리 1', '전체 2']);
-        const lastSaid = new Date('2026-10-13T02:00:00Z').toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
+        const lastSaid = new Date('2026-10-15T02:00:00Z').toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
 
         await p.click('#candidate-list li:has-text("opens home and then help")');
         await discardCandidate(p, '도움말만 연다');

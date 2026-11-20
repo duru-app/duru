@@ -208,7 +208,7 @@ function earlierTalk(target, entries, said, item) {
     h('ul', { class: 'plain history' }, lines.map(({ m, r }) => item(m, r, m.target)))));
   if (target.story === undefined) return h('div', { class: 'earlier-talk' }, list);
   const open = state.earlierTalkOpen === target.story;
-  const last = groups.flatMap((g) => g.lines.map(({ r }) => r.date)).sort().pop();
+  const last = entries.flatMap((m) => m.history.map((r) => r.date)).sort().pop();
   const folded = `이전 대화 ${saidCount(entries)}`;
   const lastDay = new Date(last).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
   const toggle = h('button', {
