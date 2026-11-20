@@ -143,6 +143,9 @@ function screenCallOptions(apiCalls: MapScreen['apiCalls'], callsById: Map<strin
   return Object.fromEntries([...sent].map(([id, keys]) => [id, callsById.get(id)!.options.filter((o) => keys.has(o.key) || notOnlyInSource(o))]));
 }
 
+const unsentValues = (o: MapCall['options'][number], tests: { options?: { key: string; value: boolean }[] }[]) =>
+  [true, false].filter((value) => !tests.some((t) => t.options?.some((x) => x.key === o.key && x.value === value)) && !(o.requests ?? []).some((r) => r.values.includes(value)));
+
 const notOnlyInSource = (o: MapCall['options'][number]) => o.sources.includes('type') || o.sources.includes('config') || o.sources.includes('request');
 
 function tracedCallOptions(screen: string, calls: MapCall[]) {
@@ -217,7 +220,8 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
   const { traced, walks, traceFiles, ...tests } = applyJudgments(linked, testsLinked(linked) ? loadJudgments(config.judgmentsDir).judgments : [], nodeHashes(map));
   const testSteps: Walks = walks ?? {};
   const testTraces = Object.fromEntries(Object.entries<Record<string, string>>(traceFiles ?? {}).map(([key, runs]) => [key, Object.fromEntries(Object.entries(runs).map(([project, file]) => [project, fs.existsSync(path.resolve(config.configDir, file))]))]));
-  const callsById = new Map(map.calls.map((c) => [c.id, c]));
+  const withUnsent = (c: MapCall): MapCall => ({ ...c, options: c.options.map((o) => ({ ...o, unsent: unsentValues(o, tests.nodes[c.id] ?? []) })) });
+  const callsById = new Map(map.calls.map((c) => [c.id, withUnsent(c)]));
   const { ids: storyIds, ...stories } = checkStoryFiles(map, config.storiesDir, mapFile, { ...tests, traced });
   const caseKinds: Record<string, CaseKind> = config.caseKinds;
   const kinds = Object.keys(caseKinds);
@@ -228,7 +232,7 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
   const settingsFile = config.app?.settingsFile ? { root: config.app.settingsFile.root, merged: config.app.settingsFile.merged, file: fileSettings?.file ?? null } : null;
   const screens = map.screens.map((s) => ({
     ...s,
-    callOptions: { ...tracedCallOptions(s.id, map.calls), ...screenCallOptions(s.apiCalls, callsById, map.appWide?.apiCalls) },
+    callOptions: { ...tracedCallOptions(s.id, [...callsById.values()]), ...screenCallOptions(s.apiCalls, callsById, map.appWide?.apiCalls) },
     cases: [...screenCases(s.access), ...pickedCases(s.id)],
     access: {
       ...s.access,
@@ -237,7 +241,7 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
       ...(s.access.menuLinks && { menuLinks: s.access.menuLinks.map((l) => ({ ...l, part: linkKey(l) })) }),
     },
   }));
-  const calls = map.calls.map((c) => ({ ...c, cases: pickedCases(c.id) }));
+  const calls = map.calls.map((c) => ({ ...callsById.get(c.id)!, cases: pickedCases(c.id) }));
   const appWide = map.appWide && { ...map.appWide, callOptions: screenCallOptions(map.appWide.apiCalls, callsById) };
   const reviewMap = { ...map, screens, calls, appWide };
   return {

@@ -1544,6 +1544,22 @@ screen` after a place in the layout around it. With no open marks the list says 
 (listed, with `--unrecorded`) instead of `No open marks.`, after what the case kinds still have. With no such call the
 section is left out.
 
+**Story candidates still open.** The list also ends with `# Story candidates still open` and the line `N story
+candidates are open: no reviewer accepted them as a story or discarded them`: the paths through the screens that visit
+records or traces of tests found, less those that are a story already or were discarded. `tasks <config>
+--open-candidates` lists them as `- <screen> > <screen> … — <name>`, in the order the review page lists them. Only a
+reviewer accepts a candidate, on the review page. With none open the section is left out.
+
+**Option values no test sent.** The list also ends with `# Option values no test sent` and the line `N option values
+(true or false of an option) on M screens were sent by no test`: an option's value on a call of a screen that no
+test is tagged with (`@option:<key>=true|false`) and that no trace's request body carried. The same call and option on
+two screens counts on each, and an option of a call sent only as the app starts is not counted. `tasks <config> --unsent-options` lists
+them under `## <screen ID>`, a line for each call as `- <call ID> — <key>=<value>, …`. With none such the section is
+left out.
+
+With no open marks, the line that says what is counted below names these two sections too, in the same way as the
+write calls: `counted` below, `listed` when the flag for its list is given. The three flags can be given together.
+
 `case <config> <kind> <screen or call ID> needed|not-needed [--note "<why>"] [--author <name> | --server <review page address>]`
 writes a case mark of that kind for that screen or call, as the review page would, directly into `marksDir`: the
 author is `agent` unless `--author` names one, and the file also carries `"via": "duru case"`. Written this way, an
