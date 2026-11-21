@@ -375,8 +375,10 @@ A pair the reviewer hands over for tagging appears in the task list under `# Tag
    `null` once the candidate has been accepted or discarded, or when the map or `tests.json` could not be read at
    that moment. Such a comment asks about the order before the reviewer accepts it: answer why that order came out,
    citing the record and the steps behind each screen, or the test by its title and the steps it takes in the
-   target project. A comment on a candidate takes no status and never appears in the task list, so act on it when
-   its line arrives.
+   target project. A comment on a candidate takes no status and is not in the task list while it is a candidate, so
+   act on it when its line arrives. Once the candidate is accepted, the task list shows it, with its replies, under
+   that story's marks as a `comment, as candidate <name>` line, written about the candidate before it became that
+   story; a story with no open mark prints none of them.
    A comment can also be on a screen order the reviewer picked while writing a new story, with `target` set to
    `{ "screens": [ … ] }`, the screen IDs in the order picked; the reviewer often picks only the ends and writes in
    the note what should happen between them. `target` may also carry `gaps`, pairs of neighbouring step numbers such

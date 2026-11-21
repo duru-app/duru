@@ -1322,9 +1322,11 @@ shows under 「떨어져 나감」 once a `rebuild` no longer finds the conditio
 in as the tag of the comment being written; the comment is saved with `"target": { "candidate": "<key>" }` and
 nothing else in its target. The key is the candidate's screen IDs joined with ` > `, the same key the page puts in
 its address. The comment is written to `<marksDir>/stories/candidates/<key>/`. A candidate takes comments only, and
-its comments never enter the task list, so they reach a coding agent only as the lines printed while the review
-runs. Once the candidate is accepted or discarded and leaves the list, its comments show under 「떨어져 나감」 of the
-story tab with the candidate's name.
+while it is a candidate its comments reach a coding agent only as the lines printed while the review runs. Once it
+is accepted, its comments show first in the story's conversation, and the task list prints them under the story's
+marks, when the story has an open mark, as `comment, as candidate <name>`, together with the comments on the
+candidates it replaced. Once the candidate is discarded and leaves the list, its comments show under 「떨어져 나감」
+of the story tab with the candidate's name.
 
 **Comments on a screen order.** While a new story is written, the form under 「에이전트와 대화」 carries the steps
 chosen so far as the tag 「화면 순서 …」, so the reviewer can ask the coding agent to fill in the way between them, often

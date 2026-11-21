@@ -629,7 +629,7 @@ test('with a map built before links carried their conditions, visit records or t
     assert.deepEqual(withRecords.list, []);
     assert.equal((withRecords as { stale?: string }).stale, `${path.join(dir, 'map.json')} 은 링크에 조건이나 이어지는 화면이 적혀 있지 않은 예전 duru 로 만든 맵이라 후보를 맞춰 보지 못했습니다. duru rebuild 로 맵을 다시 만드세요`);
     assert.equal((candidatesOf({ ...empty, visitRecords: [] }, stale) as { stale?: string }).stale, undefined);
-    assert.deepEqual(tracedCandidatesOf(empty, stale, path.join(dir, 'map.json')), { list: [], discarded: [], notices: [], stale: (withRecords as { stale?: string }).stale });
+    assert.deepEqual(tracedCandidatesOf(empty, stale, path.join(dir, 'map.json')), { list: [], discarded: [], became: {}, notices: [], stale: (withRecords as { stale?: string }).stale });
   });
 });
 
@@ -1601,6 +1601,37 @@ test('a candidate posted for a comment on a candidate is written with the origin
     assert.deepEqual(names(traced), [['b', [SIGNIN, LAB]]]);
     undiscardCandidate(cfg.storiesDir, [HOME, HELP], { author: 'hit' }, new Date('2026-10-21T04:00:00Z'));
     assert.deepEqual(names(traced), [['b', [SIGNIN, LAB]], ['홈에서 도움말을 연다', [HOME, HELP]]]);
+  });
+});
+
+test('a candidate that left the list names what it became: the story it was accepted as, or for an original the candidate replacing it while listed and that one\'s story once accepted, and nothing once the acceptance is undone or the replacing candidate discarded', () => {
+  withReplaceable(HELP_VISITS, ({ cfg, comment, post, listed }) => {
+    const a = [SIGNIN, HOME, HELP].join(' > ');
+    const b = [SIGNIN, LAB].join(' > ');
+    const fix = [HOME, HELP].join(' > ');
+    storeCandidates(cfg.storiesDir, listed().list);
+    assert.deepEqual(listed().became, {});
+    post(comment({ candidate: a }), { name: '홈에서 도움말을 연다', screens: [HOME, HELP], replaces: [{ screens: [SIGNIN, HOME, HELP], dropped: [{ step: 1, reason: NO_SIGNIN }] }] });
+    assert.deepEqual(listed().became, { [a]: { candidate: fix } });
+    const listedOf = (key: string) => listed().list.find((c) => c.key === key)!;
+    acceptCandidate(cfg.storiesDir, listedOf(b), { id: 'lab', name: 'b', author: 'hit' });
+    acceptCandidate(cfg.storiesDir, listedOf(fix), { id: 'help', name: '홈에서 도움말을 연다', author: 'hit' });
+    assert.deepEqual(listed().became, { [a]: { story: 'help' }, [b]: { story: 'lab' }, [fix]: { story: 'help' } });
+    unacceptStory(cfg.storiesDir, 'help');
+    unacceptStory(cfg.storiesDir, 'lab');
+    assert.deepEqual(listed().became, { [a]: { candidate: fix } });
+    discardCandidate(cfg.storiesDir, listedOf(fix), { reason: '안 쓴다', author: 'hit' });
+    assert.deepEqual(listed().became, {});
+  });
+});
+
+test('a candidate accepted under a rule that took screens out names its story under the key it was listed by', () => {
+  withFolder({ 'visits/a.json': [{ url: '/signin' }, { url: '/home' }, { url: '/help' }] }, (dir: string) => {
+    const cfg = { ...config, configDir: dir, visitRecords: [path.join(dir, 'visits')], storiesDir: path.join(dir, 'stories'), candidateSkipScreens: [{ screen: SIGNIN, where: 'start' as const }] };
+    const [shown] = storyCandidates(cfg, map, MAP_FILE).list;
+    assert.equal(shown.key, [HOME, HELP].join(' > '));
+    acceptCandidate(cfg.storiesDir, shown, { id: 'help', name: 'a', author: 'hit' });
+    assert.deepEqual(storyCandidates(cfg, map, MAP_FILE).became, { [shown.key]: { story: 'help' } });
   });
 });
 

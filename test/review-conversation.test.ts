@@ -793,7 +793,7 @@ test('a comment on a test saved while tests.json cannot be read is still saved a
 const TRACE_CANDIDATE = '/home#Home > /help#Help';
 const TRACE_TITLES = ['opens home and then help', 'follows a link while waiting for the new address', 'uses the mouse right after the address changes', 'clicks a button that appears after the address changes'];
 
-test('a comment on a candidate from a trace is announced with its result file, test titles and screen order; once the candidate is accepted it is detached under the candidate name and a reply to it is announced with where as null', async () => {
+test('a comment on a candidate from a trace is announced with its result file, test titles and screen order; once the candidate is accepted it stays attached with the story it became, a reply to it is announced with where as null, undoing the acceptance gives it back to the candidate, and discarding the candidate detaches it under the candidate name', async () => {
   await withRebuiltFixture({ ...CANDIDATES, ...TRACED }, async (config) => {
     const lines: unknown[] = [];
     const server = await startReviewServer(config, { author: signer('reviewer'), onMark: (line) => lines.push(line) });
@@ -811,9 +811,18 @@ test('a comment on a candidate from a trace is announced with its result file, t
       assert.equal(answered.status, 201);
       assert.deepEqual(lines.slice(1).map((l) => [(l as { duru: string }).duru, (l as { target: unknown }).target, (l as { where: unknown }).where]), [['reply', target, null]]);
       data = await (await fetch(`${base}/api/data`)).json();
-      assert.deepEqual(data.marks.detached.map((m) => m.target), [target]);
+      const onCandidate = (data: PageData) => data.marks.attached.filter((m) => m.key === `candidate(${TRACE_CANDIDATE})`).map((m) => [m.target, m.became ?? null]);
+      assert.deepEqual(onCandidate(data), [[target, { story: 'home-help' }]]);
+      assert.deepEqual(data.marks.detached, []);
       assert.equal(data.candidates.gone[TRACE_CANDIDATE], 'opens home and then help');
       assert.equal(taskList(config), taskList({ ...config, marksDir: path.join(config.outDir, 'no-marks') }));
+
+      assert.equal((await postJson(base, '/api/stories/unaccept', { id: 'home-help' })).status, 200);
+      data = await (await fetch(`${base}/api/data`)).json();
+      assert.deepEqual(onCandidate(data), [[target, null]]);
+      assert.equal((await postJson(base, '/api/candidates/discard', { key: TRACE_CANDIDATE, reason: '도움말만 연다' })).status, 201);
+      data = await (await fetch(`${base}/api/data`)).json();
+      assert.deepEqual(data.marks.detached.map((m) => [m.target, m.became ?? null]), [[target, null]]);
     } finally {
       server.close();
     }
@@ -889,28 +898,59 @@ test('in a browser, a comment on a story candidate shows in 「전체」 under t
   });
 });
 
-test('in a browser, once a candidate with comments is accepted or discarded, its comments show under 「떨어져 나감」 of the stories with the candidate name, and not under the screens', { skip: browserMissing }, async () => {
+test('in a browser, a story accepted from a candidate with comments shows them first in its conversation, marked as from the candidate and named by it, open right after accepting and folded to one line with their count and the day of the last thing said after going to another story and back or reloading, which opens when pressed; undoing the acceptance shows them on the candidate again, and the comments of a discarded candidate show in the detached list with the candidate name, and not under the screens', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ ...CANDIDATES, ...TRACED }, (config) => {
-    addMark(config.marksDir, { target: { candidate: HELP_KEY }, note: 'why the beta inbox?', author: 'reviewer' });
+    const asked = addMark(config.marksDir, { target: { candidate: HELP_KEY }, note: 'why the beta inbox?', author: 'reviewer' }, new Date('2026-10-13T01:00:00Z'));
+    addReply(config.marksDir, { replyTo: asked.id, note: 'the record went there' }, new Date('2026-10-15T02:00:00Z'));
     addMark(config.marksDir, { target: { candidate: TRACE_CANDIDATE }, note: 'which test gives this?', author: 'reviewer' });
     return withServer(config, 'reviewer', (base) =>
-      withPage(base, async (p) => {
+      withPage(base, async (p, errors) => {
         await p.waitForSelector('#screen-list li');
         await p.click(storiesTab);
         assert.equal(await p.locator('#left .detached li').count(), 0);
         await p.click('#candidate-list li:has-text("open-help")');
         await p.click('#center button.accept');
         await p.waitForSelector('#story-list li.selected:has-text("open-help")');
+        const earlier = p.locator('#right-info .earlier-talk');
+        const toggle = earlier.locator('button.earlier-toggle');
+        assert.equal(await toggle.textContent(), '이전 대화');
+        assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+        assert.equal(await earlier.locator('.earlier-group h3').textContent(), 'open-help');
+        const said = earlier.locator('.earlier-group .history > li');
+        assert.equal(await said.count(), 1);
+        assert.match((await said.textContent())!, /why the beta inbox\?.*the record went there/s);
+        assert.deepEqual(await p.locator('#right-info .talk-scope button').allTextContents(), ['이 스토리 1', '전체 2']);
+        const lastSaid = new Date('2026-10-15T02:00:00Z').toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
+
         await p.click('#candidate-list li:has-text("opens home and then help")');
         await discardCandidate(p, '도움말만 연다');
         await p.waitForSelector('#candidate-list li:has-text("opens home and then help")', { state: 'detached' });
         assert.deepEqual(await p.locator('#left .detached li').evaluateAll((items) => items.map((li) => [li.querySelector('code')!.textContent, li.querySelector('div')!.textContent])), [
           ['후보 opens home and then help', 'which test gives this?'],
-          ['후보 open-help', 'why the beta inbox?'],
         ]);
+        await p.click('#story-list li:has-text("open-help")');
+        assert.equal(await toggle.textContent(), '이전 대화 1');
+        assert.equal(await toggle.getAttribute('title'), `스토리로 받기 전에 후보에 남긴 대화를 펼칩니다. 마지막 글 ${lastSaid}`);
+        assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+        assert.equal(await earlier.locator('.earlier-group').count(), 0);
+        await toggle.click();
+        assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+        assert.equal(await said.count(), 1);
+
+        await p.reload();
+        await p.waitForSelector('#view-story:not(:disabled)');
+        await p.click(storiesTab);
+        await p.click('#story-list li:has-text("open-help")');
+        assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+
+        await p.click('#center button.unaccept');
+        await p.waitForSelector('#candidate-list li.selected:has-text("open-help")');
+        assert.equal(await earlier.count(), 0);
+        assert.match((await p.textContent('#right-info .history > li'))!, /why the beta inbox\?/);
         await p.click('#view-list');
         await p.waitForSelector('#screen-list li');
         assert.doesNotMatch((await p.textContent('#left'))!, /후보 open/);
+        assert.deepEqual(errors, []);
       }));
   });
 });

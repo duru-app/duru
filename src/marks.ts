@@ -83,6 +83,8 @@ interface MarkableMap {
   inputsToCheck?: PartContext['inputsToCheck'];
 }
 
+export type Became = { story: string; candidate?: undefined } | { candidate: string; story?: undefined };
+
 export interface MarkEntry {
   key: string;
   target: MarkTarget;
@@ -90,6 +92,7 @@ export interface MarkEntry {
   history: Mark[];
   where?: TestPlace | SourcePlaces | StepPlace | HopPlace | null;
   codeChanged?: true;
+  became?: Became;
 }
 
 // 끝의 `.` 을 바꾸는 것은 Windows 가 그런 이름을 받지 않고, 화면 ID 가 `..` 이면 표시 폴더 밖을 가리키기 때문이다.
@@ -326,7 +329,7 @@ const targetKey = (t: MarkTarget) => (t.candidate !== undefined
   ? [`story(${t.story})`, t.part && `part:${t.part.kind}:${JSON.stringify(t.part.key)}`].filter(Boolean).join(' ')
   : [t.node, t.option && `${t.option.key}=${t.option.value}`, t.depth, t.case && `case:${t.case}`, t.part && `part:${t.part.kind}:${JSON.stringify(t.part.key)}`].filter(Boolean).join(' '));
 
-export function classifyMarks(marks: Mark[], map: MarkableMap, storyIds: string[] = [], caseKinds: string[] = [], tests: PartContext['tests'] = {}, roleGuards: Record<string, string[]> = {}, candidateKeys: string[] = [], storyPaths: StoryPath[] = []): { attached: MarkEntry[]; detached: MarkEntry[] } {
+export function classifyMarks(marks: Mark[], map: MarkableMap, storyIds: string[] = [], caseKinds: string[] = [], tests: PartContext['tests'] = {}, roleGuards: Record<string, string[]> = {}, candidateKeys: string[] = [], storyPaths: StoryPath[] = [], became: Record<string, Became> = {}): { attached: MarkEntry[]; detached: MarkEntry[] } {
   const nodes = new Map<string, Set<string>>([
     ...map.screens.map((s): [string, Set<string>] => [s.id, new Set()]),
     ...(map.calls ?? []).map((c): [string, Set<string>] => [c.id, new Set((c.options ?? []).map((o) => o.key))]),
@@ -370,10 +373,11 @@ export function classifyMarks(marks: Mark[], map: MarkableMap, storyIds: string[
       : nodes.has(target.node!) ? locatePart(target, { tests, screens: map.screens, roleGuards, inputsToCheck: map.inputsToCheck }) : null;
     const current = history.find((m) => m.status !== undefined) ?? null;
     const changed = current !== null && target.case === undefined && target.node !== undefined && differs(current.codeHash, hashes.get(target.node));
-    const entry = { key, target, current, history, ...(target.part && { where: where ?? null }), ...(changed && { codeChanged: true as const }) };
+    const moved = target.candidate !== undefined && !candidates.has(target.candidate) && Object.hasOwn(became, target.candidate) ? became[target.candidate] : undefined;
+    const entry = { key, target, current, history, ...(target.part && { where: where ?? null }), ...(changed && { codeChanged: true as const }), ...(moved && { became: moved }) };
     // 읽지 못한 스토리 파일의 단계는 맞춰 볼 수 없으므로, 스토리 코멘트처럼 「목록 밖 스토리 코멘트」에 남긴다.
     const located = !target.part || where || (target.story !== undefined && !path);
-    (isAttached(target) && located ? attached : detached).push(entry);
+    ((isAttached(target) || moved) && located ? attached : detached).push(entry);
   }
   return { attached, detached };
 }

@@ -482,6 +482,23 @@ test('a comment on a story candidate is attached while the candidate is listed a
   });
 });
 
+test('a comment on a candidate no longer listed is attached with the story or the listed candidate it became, and stays detached when it became neither, the list winning over what it became', () => {
+  withMarksDir((dir: string) => {
+    addMark(dir, { target: { candidate: 'open-help' }, note: 'why this order?', author: 'a' }, new Date('2026-10-13T01:00:00Z'));
+    addMark(dir, { target: { candidate: 'old-help' }, note: 'drop the sign-in', author: 'a' }, new Date('2026-10-13T02:00:00Z'));
+    addMark(dir, { target: { candidate: TRACE_KEY }, note: 'which test?', author: 'a' }, new Date('2026-10-13T03:00:00Z'));
+    addMark(dir, { target: { candidate: 'thrown' }, note: 'not this one', author: 'a' }, new Date('2026-10-13T04:00:00Z'));
+    const became = { 'open-help': { story: 'open-help' }, 'old-help': { candidate: TRACE_KEY }, [TRACE_KEY]: { story: 'other' } };
+    const { attached, detached } = classifyMarks(loadMarks(dir), MAP, ['open-help'], [], {}, {}, [TRACE_KEY], [], became);
+    assert.deepEqual(attached.map((m) => [m.key, m.became ?? null]), [
+      [`candidate(${TRACE_KEY})`, null],
+      ['candidate(old-help)', { candidate: TRACE_KEY }],
+      ['candidate(open-help)', { story: 'open-help' }],
+    ]);
+    assert.deepEqual(detached.map((m) => [m.target, m.became ?? null]), [[{ candidate: 'thrown' }, null]]);
+  });
+});
+
 test('a comment on a story candidate takes no status, and a candidate key mixed with a story, a node or a part, or an empty one, is refused and nothing is written', () => {
   withMarksDir((dir: string) => {
     const refused: [object, RegExp][] = [

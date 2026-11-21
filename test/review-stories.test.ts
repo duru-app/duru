@@ -1397,6 +1397,32 @@ const bringFixedBack = async (p: Page) => {
   await p.waitForFunction((n) => document.querySelector('#center h3')?.textContent === n, FIXED_NAME);
 };
 
+test('in a browser, a candidate an agent posted in place of another shows the conversation of the original first in its own, under the original\'s name and with no fold, and the story it is accepted as shows it the same way, marked as from the candidate', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      await postFixedCandidate(base);
+      await withPage(base, async (p, errors) => {
+        await p.waitForSelector('#view-story:not(:disabled)');
+        await p.click(storiesTab);
+        await pickCandidate(p, FIXED_NAME);
+        const earlier = p.locator('#right-info .earlier-talk');
+        assert.equal(await earlier.locator('button.earlier-toggle').count(), 0);
+        assert.deepEqual(await earlier.locator('.earlier-group h3').allTextContents(), ['open-help']);
+        assert.match((await earlier.locator('.earlier-group .history > li').textContent())!, /로그인 단계를 빼 줘/);
+        assert.equal(await p.locator('#left .detached li').count(), 0);
+
+        await p.click('#center button.accept');
+        await p.waitForSelector(`#story-list li.selected:has-text("${FIXED_NAME}")`);
+        assert.equal(await earlier.locator('button.earlier-toggle').textContent(), '이전 대화');
+        assert.deepEqual(await earlier.locator('.earlier-group h3').allTextContents(), ['open-help']);
+        assert.match((await earlier.locator('.earlier-group .history > li').textContent())!, /로그인 단계를 빼 줘/);
+        assert.equal(await p.locator('#left .detached li').count(), 0);
+        assert.deepEqual(errors, []);
+      });
+    }),
+  );
+});
+
 test('in a browser, 「되돌리기」 leaves a comment already being written on the original in its box and keeps the one on the fixed candidate for when that candidate comes back', { skip: browserMissing }, async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', async (base) => {

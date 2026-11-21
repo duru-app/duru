@@ -494,6 +494,7 @@ async function acceptAs(c, id, name) {
     state.candidate = null;
     state.candidateTalk = null;
     state.story = id;
+    state.earlierTalkOpen = id;
     state.storyDraft = null;
   }
   state.error = null;

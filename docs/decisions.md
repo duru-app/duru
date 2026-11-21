@@ -2085,7 +2085,8 @@ address: the screen order joined with ` > `, for a candidate from a visit record
 is not a story yet, so a comment on it takes no status, never enters the task list, and reaches the agent only as the
 line printed while the review runs, which carries the record and its steps or the result file and the test titles,
 and the screen order. When the candidate is accepted or discarded it leaves the list, and its comments show under
-「떨어져 나감」 with the name it had, which the candidate data keeps for the candidates that left.
+「떨어져 나감」 with the name it had, which the candidate data keeps for the candidates that left. #602 later kept the
+comments of an accepted candidate with its story; see the next entry.
 Alternatives compared:
 - Putting the key in `target.story`: no new kind of target, but a story ID may hold only `a-z`, `0-9`, `-` and `_`,
   and a screen order does not fit, so the check on every story mark would have to loosen; once it did, a key could
@@ -2095,6 +2096,28 @@ The screen order soon passes the 255-byte limit of a folder name (six screens li
 `/settings/users/:userId/edit#UserEditPage` already do), so a key whose file-safe form is longer than 80 characters
 names its folder by the first 71 characters of that form and a short hash of the whole key; which candidate a comment
 is on is read from its target, so the folder name decides nothing else.
+
+**A comment on a candidate that was accepted shows with the story it became, and one on a candidate another replaced
+shows with the candidate replacing it; the link is read from the candidate files each time, and no mark is
+rewritten.**
+Driver's decision in #602 (2026-11-17). A candidate file whose `acceptedAs` names a story links its listed key, and
+the key of each original in its `source.replaces`, to that story; a listed candidate with originals links their keys to
+itself. A comment on such a key stays attached and carries `became`, the story or candidate it now shows with: the
+page puts it first in that conversation under 「이전 대화」, one group per candidate it was written on, named by that
+candidate, and the task list prints it under an open story as `comment, as candidate <name>`. Undoing the acceptance
+takes `acceptedAs` out of the file, so the comments show on the candidate again. A discarded candidate, and the
+originals of a discarded replacement, link to nothing, so their comments stay under 「떨어져 나감」 (model's decision,
+not yet confirmed by the driver). Right after accepting the conversation is open; once the page is reloaded or the
+reviewer goes elsewhere it is one button 「이전 대화 N」 that opens when pressed, with the day of the last thing said
+there in its hover text only (driver's choice on 2026-11-20, over a date written in or beside the button), and what
+was opened is not stored. On a listed replacement the groups have no fold, since nothing was accepted yet (model's decision, not yet
+confirmed).
+Alternatives compared:
+- Rewriting the target of each comment to the story when the candidate is accepted: the story reads them as it reads
+  its own, but the marks folder is only added to, an undone acceptance would need a second rewrite, and files written
+  on two computers would conflict.
+- Hiding the comments of an accepted candidate, kept only as a record: nothing to link, but the conversation that led
+  to the story is out of sight, which is what the reviewer asked about.
 
 **The review page draws the app at a width picked above the frame, 1280 at first, and by default shows it smaller
 when the pane is narrower; a percent picked beside it shows it at that size instead.**
