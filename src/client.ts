@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import _traverse from '@babel/traverse';
 import type { Binding, NodePath } from '@babel/traverse';
-import type { ArrayExpression, CallExpression, Expression, Identifier, ImportSpecifier, ExportSpecifier, JSXAttribute, JSXElement, MemberExpression, Node, Program, StringLiteral, VariableDeclaration, VariableDeclarator } from '@babel/types';
+import type { ArrayExpression, CallExpression, Expression, Identifier, ImportSpecifier, ExportSpecifier, JSXAttribute, JSXElement, MemberExpression, Node, ObjectMethod, ObjectProperty, OptionalMemberExpression, Program, StringLiteral, VariableDeclaration, VariableDeclarator } from '@babel/types';
 import { routerTargets } from './access.ts';
 import type { Constants, GuardInit, Side } from './access.ts';
 import { apiModuleInputs, recordApiCalls } from './api-calls.ts';
@@ -197,6 +197,13 @@ export function guardsOf(nodePath: NodePath, src: string, note: Note, queryEnabl
       const s = src.slice(p.test.start!, p.test.end!);
       const negated = child.key !== 'consequent';
       add(negated ? `!(${t})` : t, parent.get('test') as NodePath, negated, negated ? `!(${s})` : s);
+    } else if ((p.type === 'ObjectProperty' && child.key === 'value') || (p.type === 'ObjectMethod' && child.key === 'body')) {
+      const row = pickedRow(parent as NodePath<ObjectProperty | ObjectMethod>, src);
+      if (row) add(row.text, row.at, false, row.text);
+    } else if (p.type === 'LogicalExpression' && p.operator !== '&&' && child.key === 'right' && tableLookup(parent.get('left') as NodePath)) {
+      const t = sliceText(src, p.left);
+      const s = src.slice(p.left.start!, p.left.end!);
+      add(`!(${t})`, parent.get('left') as NodePath, true, `!(${s})`);
     } else if (queryEnabled) {
       const enabled = queryEnabled(parent, child, nodePath);
       if (enabled && !enabledSeen.has(enabled.node)) {
@@ -208,6 +215,40 @@ export function guardsOf(nodePath: NodePath, src: string, note: Note, queryEnabl
     parent = parent.parentPath;
   }
   return guards;
+}
+
+// 같은 파일에서 `T[k]` 나 `T.name` 으로만 읽는 const 객체 T 와 그것을 읽는 자리
+function tableReads(obj: NodePath): NodePath<MemberExpression | OptionalMemberExpression>[] | null {
+  const declarator = obj.parentPath!;
+  if (!obj.isObjectExpression() || !declarator.isVariableDeclarator() || obj.key !== 'init' || declarator.node.id.type !== 'Identifier' || (declarator.parent as VariableDeclaration).kind !== 'const') return null;
+  const reads: NodePath<MemberExpression | OptionalMemberExpression>[] = [];
+  for (const ref of declarator.scope.getBinding(declarator.node.id.name)!.referencePaths) {
+    const up = ref.parentPath!;
+    if (!(up.isMemberExpression() || up.isOptionalMemberExpression()) || up.node.object !== ref.node) return null;
+    if ((up.parentPath.isAssignmentExpression() && up.key === 'left') || up.parentPath.isUpdateExpression()) return null;
+    reads.push(up);
+  }
+  return reads;
+}
+
+function tableLookup(p: NodePath) {
+  if (!(p.isMemberExpression() || p.isOptionalMemberExpression()) || !p.node.computed || p.node.object.type !== 'Identifier') return false;
+  const binding = p.scope.getBinding(p.node.object.name);
+  return !!binding?.path.isVariableDeclarator() && !!tableReads(binding.path.get('init') as NodePath);
+}
+
+function pickedRow(row: NodePath<ObjectProperty | ObjectMethod>, src: string): { text: string; at: NodePath } | null {
+  const reads = tableReads(row.parentPath);
+  const rows = row.parentPath.get('properties') as NodePath<any>[];
+  if (!reads || rows.some((r) => r.isSpreadElement())) return null;
+  const written = (key: NodePath<any>, computed: boolean) =>
+    (computed && !key.isStringLiteral() && !key.isNumericLiteral() ? (key.isIdentifier() ? key.node.name : sliceText(src, key.node)) : `'${keyName({ key: key.node })}'`);
+  const rowKey = (r: NodePath<any>) => written(r.get('key') as NodePath, r.node.computed);
+  const keys = new Set(rows.map(rowKey));
+  const readKeys = reads.map((r) => written(r.get('property') as NodePath, r.node.computed));
+  const pickers = new Set(readKeys.filter((k) => !keys.has(k) && !k.startsWith("'")));
+  const own = rowKey(row);
+  return pickers.size === 1 && !readKeys.includes(own) ? { text: `${[...pickers][0]} === ${own}`, at: row.get('key') as NodePath } : null;
 }
 
 const exportsOnly = (p: NodePath) => p.parentPath!.isExportSpecifier() || p.parentPath!.isExportDefaultDeclaration();

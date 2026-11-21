@@ -1105,6 +1105,56 @@ test('an API function declared in a file the listed barrel re-exports from is un
   assert.deepEqual(people(callsOnNoScreen!.other), ['GET:/people/used']);
 });
 
+test('a call written in a row of a table that one value picks from carries that value being the row\'s key as its condition, and the call after || carries the table having no row for it', () => {
+  const configFile = fixtureCopy({ ...CALLED, calledApiModules: ['contracts/api/letters.ts', ...CALLED.calledApiModules] }, {
+    'contracts/api/letters.ts': `${LONE_GET}export const listMine = () => get('/letters/mine');\nexport const listOwned = () => get('/letters/owned');\nexport const listGuest = () => get('/letters/guest');\nexport const fileOwned = () => get('/letters/owned/file');\nexport const fileGuest = () => get('/letters/guest/file');\nexport const listDraft = () => get('/letters/draft');\nexport const listSent = () => get('/letters/sent');\nexport const listOld = () => get('/letters/old');\nexport const listNew = () => get('/letters/new');\n`,
+    'components/LetterBox.tsx': `import { listMine, listOwned, listGuest, fileOwned, fileGuest, listDraft, listSent, listOld, listNew } from '../contracts/api/letters';
+
+export const KIND = { OWNER: 'owner', GUEST: 'guest' };
+const LIST_BY_KIND = {
+  [KIND.OWNER]: listOwned,
+  guest: () => listGuest(),
+};
+const FILE_BY_KIND = {
+  [KIND.OWNER]: { file: fileOwned },
+  [KIND.GUEST]: { file: (id: number) => fileGuest() },
+};
+const BY_TAB = {
+  draft: listDraft,
+  sent: listSent,
+};
+const BY_AGE = {
+  old: listOld,
+  fresh: listNew,
+};
+
+export function LetterBox({ kind, tab, age, other }: { kind: string; tab: 'draft' | 'sent'; age: string; other: string }) {
+  const list = LIST_BY_KIND[kind] || listMine;
+  const files = FILE_BY_KIND[kind as string];
+  const byTab = BY_TAB[tab] ?? BY_TAB.draft;
+  const byAge = BY_AGE[age] || BY_AGE[other];
+  return <button onClick={() => { list(); files.file(1); byTab(); byAge(); }}>open</button>;
+}
+`,
+    'screens/Inbox.tsx': "import { LetterBox } from '../components/LetterBox';\n\nexport default function Inbox() {\n  return <LetterBox kind=\"owner\" tab=\"sent\" age=\"old\" other=\"fresh\" />;\n}\n",
+  });
+  const { status, stderr } = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
+  assert.equal(status, 0, stderr);
+  const map = JSON.parse(fs.readFileSync(path.join(path.dirname(configFile), 'out/map.json'), 'utf8')) as ScreenMap;
+  const guards = Object.fromEntries(map.screens.find((s) => s.id === '/inbox#Inbox')!.apiCalls.map((c) => [c.fn!.split('#').pop(), c.guards]));
+  assert.deepEqual(guards, {
+    listOwned: ['kind === KIND.OWNER'],
+    listGuest: ["kind === 'guest'"],
+    listMine: ['!(LIST_BY_KIND[kind])'],
+    fileOwned: ['kind === KIND.OWNER'],
+    fileGuest: ['kind === KIND.GUEST'],
+    listDraft: [],
+    listSent: ["tab === 'sent'"],
+    listOld: [],
+    listNew: [],
+  }, 'a row also read by its written key, and a table two values pick from, get no condition');
+});
+
 test('the usage guide names the line for calls that reach no screen with both of its parts, the agent guide says which part to look at, and the decision record names the splits it was compared with', () => {
   const readme = fs.readFileSync(path.join(import.meta.dirname, '../README.md'), 'utf8');
   const skill = fs.readFileSync(path.join(import.meta.dirname, '../skills/duru/SKILL.md'), 'utf8');

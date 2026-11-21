@@ -410,8 +410,9 @@ conditions guarding them. A screen made from an item of a table in `routeTables`
 keys joined with `.`, a list item's key being its place in the list, and the file and line where the item is written. The settings come from every file in `sourceFiles`. The
 API calls and links are only those the screen's code reaches, so a file in `sourceFiles` can hold calls and links
 the screen does not list; each call and link names the file and line where it is written, and each API call
-also lists the conditions it is sent under: the `if`, `? :` and `&&` around it and the `enabled` given to the
-react-query query that sends it. A call or link a saga makes for the screen names the line in the saga and lists
+also lists the conditions it is sent under: the `if`, `? :` and `&&` around it, the `enabled` given to the
+react-query query that sends it, and, for a call written in a row of a table that one value picks from, that value
+being the row's key (`kind === KIND.OWNER`; `!(LIST_BY_KIND[kind])` for the call written after `||`). A call or link a saga makes for the screen names the line in the saga and lists
 under `actions` each action type that leads to it, with the places the screen dispatches that type
 (`dispatchedAt`).
 A component drawn around a group of routes, or beside it outside its `Switch` or `Routes`, gives its calls,

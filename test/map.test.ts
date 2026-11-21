@@ -1374,7 +1374,7 @@ test('a route constant written as a computed key of an object read only by its k
     '  const { [Option.ROUTE_PATH.ADMIN_AUDIT]: t } = x;',
     "  items.push({ title: 'a', href: parent[x] }, t);",
   ].join('\n');
-  assert.deepEqual(sideMenuLinks(await asSideMenu(body)), [['/lab', 'components/SideMenu.js', 6, []]]);
+  assert.deepEqual(sideMenuLinks(await asSideMenu(body)), [['/lab', 'components/SideMenu.js', 6, ['x === Option.ROUTE_PATH.ADMIN_REPORT']]]);
 });
 
 test('a route constant written as a computed key of an object used other than by its keys is a link', async () => {
