@@ -456,16 +456,20 @@ async function whileWritingStories(write) {
   }
 }
 
-async function writeStories(url, body) {
+async function writeStories(url, body, timing = {}) {
   state.storyError = null;
   let written = null;
   await whileWritingStories(async () => {
     redrawStory();
     try {
+      const began = performance.now();
       const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       if (!res.ok) throw new Error(await res.text());
       written = await res.json();
+      const saved = performance.now();
+      timing.server = saved - began;
       await load();
+      timing.data = performance.now() - saved;
     } catch (err) {
       state.storyError = written ? `저장했지만 다시 읽지 못했습니다: ${err.message}` : `저장하지 못했습니다: ${err.message}`;
     }
@@ -484,8 +488,9 @@ async function acceptAs(c, id, name) {
   const stayed = state.candidate === c.key;
   accepting = true;
   let written;
+  const timing = {};
   try {
-    written = await writeStories('/api/candidates/accept', { key: c.key, id, name });
+    written = await writeStories('/api/candidates/accept', { key: c.key, id, name }, timing);
   } finally {
     accepting = false;
   }
@@ -497,8 +502,15 @@ async function acceptAs(c, id, name) {
     state.storyDraft = null;
   }
   state.error = null;
+  const drawing = performance.now();
   render();
+  timing.draw = performance.now() - drawing;
+  reportTiming(timing);
   return true;
+}
+
+function reportTiming(timing) {
+  fetch('/api/timings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ of: 'accept', ...timing }) }).catch(() => {});
 }
 
 function takeStoryError() {

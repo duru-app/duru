@@ -946,7 +946,9 @@ route whose path is `*` or `/*`) gives no candidate. These candidates follow the
   by the part after `#`, or a modal or tab that opens without changing the address, does not show as a step.
 
 On the review page a candidate is accepted, which writes a story file into `storiesDir`, or discarded with a
-reason, which writes a file into `discarded/` in `storiesDir` so the same order does not come back.
+reason, which writes a file into `discarded/` in `storiesDir` so the same order does not come back. Each accept
+puts one line on the review's standard error with how long the server call, the fetching of the data again and the
+redrawing took: `candidate accepted: server call 12ms, data refetch 340ms, redraw 26ms`.
 
 `rebuild` keeps each candidate as a file in `candidates/` in `storiesDir`, one for each screen order that has no
 file there yet, holding the name, the screens, the source and the date it was first seen. Files are only added,

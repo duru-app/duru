@@ -284,7 +284,7 @@ if (command === 'tasks') {
     console.error(err.message);
     process.exit(1);
   }
-  const server = await startReviewServer(config, { port: portArg ?? DEFAULT_PORT, author, onDone: end, onMark, baselineTests });
+  const server = await startReviewServer(config, { port: portArg ?? DEFAULT_PORT, author, onDone: end, onMark, onTiming: (line) => console.error(line), baselineTests });
   process.on('SIGINT', () => {
     try {
       end()?.();
