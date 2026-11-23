@@ -577,7 +577,12 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     }
     if (pattern.isAssignmentPattern()) {
       const defaults = () => envs.flatMap((e) => values(pattern.get('right'), inner(e)).flatMap((d) => bind(pattern.get('left'), d, [e], inner)));
-      if (out && standIns.has(out)) return [...bind(pattern.get('left'), out, envs, inner), ...defaults()];
+      // 평가할 수 없는 값을 넣고 평가하는 동안에는 기본값 식이 어떤 인자를 쓰는지만 본다. 기본값마다 분기를 나누면
+      // 기본값이 있는 매개변수 하나마다 분기가 두 배가 된다.
+      if (out && standIns.has(out)) {
+        for (const e of envs) values(pattern.get('right'), inner(e));
+        return bind(pattern.get('left'), out, envs, inner);
+      }
       if (out && plain(out) !== undefined) return bind(pattern.get('left'), out, envs, inner);
       return defaults();
     }
