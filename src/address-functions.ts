@@ -206,7 +206,10 @@ function withheldIn({ val }: Out): boolean {
   return 'items' in val && val.items.some(withheldIn);
 }
 
-const keyOfOut = ({ val, made, whole, sides }: Out) => ('pieces' in val ? `${made}\0${whole?.node.start}\0${sides?.map((x) => `${x.key}=${x.on}`).join() ?? ''}\0${val.pieces.map((x) => ('text' in x ? x.text : 'stop' in x ? UNREADABLE_PIECE : '\u0001')).join('')}` : null);
+function keyOfOut({ val, made, whole, sides }: Out) {
+  const text = 'pieces' in val ? val.pieces.map((x) => ('text' in x ? x.text : 'stop' in x ? UNREADABLE_PIECE : '\u0001')).join('') : 'unknown' in val ? `\u0002${val.unknown.node.start}\0${val.truthy}` : null;
+  return text === null ? null : `${made}\0${whole?.node.start}\0${sides?.map((x) => `${x.key}=${x.on}`).join() ?? ''}\0${text}`;
+}
 
 function distinct(outs: Out[]) {
   const seen = new Set<string>();
@@ -299,6 +302,74 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
   const helperFound = new WeakMap<Node, boolean>();
   const componentFound = new WeakMap<Node, boolean>();
   const placeLinked = new WeakMap<Node, boolean>();
+  const standIns = new WeakMap<Out, { read: boolean }>();
+  // 링크가 있는지 정하는 중인 자리와, 그 자리로 되돌아와 링크가 있다고 본 횟수
+  const linking = new Set<Node>();
+  let guesses = 0;
+  // site 와 깊이, 읽는 중인 함수가 같으면 readInputs 의 결과도 같다. 되돌아와 링크가 있다고 본 읽기와, 바깥 값에 따라 달라지는
+  // 펼친 속성이 있는 요소의 결과는 담지 않는다.
+  const inputsRead = new WeakMap<Node, Map<string, boolean[]>>();
+  const nodeIds = new WeakMap<Node, number>();
+  let nextId = 0;
+  const idOf = (node: Node) => nodeIds.get(node) ?? nodeIds.set(node, nextId++).get(node)!;
+  // 0 보다 크면 읽지 못한 값을 넣고 읽는 중이라, 따라간 호출과 요소는 넘기는 값만 읽고 주소는 만들지 않는다.
+  let trying = 0;
+
+  // 넘기는 식마다 그 자리에 읽지 못한 값을 넣고 read 를 한 번 돌려, 그 값을 읽은 식인가를 돌려준다.
+  // 읽지 못한 값은 조건의 두 갈래를 다 따라가므로, 여기서 읽지 않은 식은 무슨 값이든 결과를 바꾸지 않는다.
+  function readInputs(site: Node | null, depth: number, inputs: NodePath[], read: (stands: Out[]) => unknown): boolean[] {
+    if (!inputs.length) return [];
+    const key = `${depth}:${[...reading].map(idOf).sort((a, b) => a - b).join()}`;
+    const found = site && inputsRead.get(site)?.get(key);
+    if (found) return found;
+    const before = guesses;
+    const stands = inputs.map(unknownAt);
+    const marks = stands.map((stand) => {
+      const mark = { read: false };
+      standIns.set(stand, mark);
+      return mark;
+    });
+    let used: boolean[];
+    trying++;
+    try {
+      read(stands);
+      used = marks.map((mark) => mark.read);
+    } catch (error) {
+      if (!(error instanceof TooMany)) throw error;
+      used = inputs.map(() => true);
+    } finally {
+      trying--;
+    }
+    if (site && guesses === before) inputsRead.set(site, (inputsRead.get(site) ?? new Map()).set(key, used));
+    return used;
+  }
+
+  // 통째로 넘긴 props 에서 안쪽 함수가 임시 값을 꺼내 쓰는지는, 그 함수까지 따라가서 분석해야 알 수 있다.
+  function holdsUnread(lists: Out[][]): boolean {
+    const seen = new Set<Out>();
+    const unread = (o: Out): boolean => {
+      if (seen.has(o)) return false;
+      seen.add(o);
+      if (standIns.get(o)?.read === false) return true;
+      const { val } = o;
+      return 'props' in val ? [...val.props.values(), ...(val.rest ? [val.rest] : [])].some(unread) : 'items' in val && val.items.some(unread);
+    };
+    return lists.some((list) => list.some(unread));
+  }
+
+  function markRead(o: Out) {
+    const stand = standIns.get(o);
+    if (stand) stand.read = true;
+  }
+
+  function readingFn<T>(fn: Followable, read: () => T): T {
+    reading.add(fn.node);
+    try {
+      return read();
+    } finally {
+      reading.delete(fn.node);
+    }
+  }
 
   function leafOut(p: NodePath): Out {
     const found = leaf(p);
@@ -397,8 +468,18 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     if (fn && (reading.has(fn.node) || at.depth >= FOLLOWED)) return [unknownAt(p)];
     if (!fn || fn.node.async || fn.node.generator) return [leafOut(p)];
     const spread = args.findIndex((a) => a.isSpreadElement());
-    const lists = limitedProduct((spread < 0 ? args : args.slice(0, spread)).map((a) => checkedOuts(values(a, given), a, p)));
-    return followed(fn, p, () => lists.flatMap((list) => bound(fn, list, spread < 0 ? null : args[spread], at.depth + 1).flatMap((e) => returnedValues(fn, e, p, at.depth + 1))));
+    const written = spread < 0 ? args : args.slice(0, spread);
+    const rest = (fn.get('params') as NodePath[]).findIndex((x) => x.isRestElement());
+    const outsOf = (list: Out[]) => bound(fn, list, spread < 0 ? null : args[spread], at.depth + 1).flatMap((e) => returnedValues(fn, e, p, at.depth + 1));
+    let used: boolean[];
+    try {
+      used = readingFn(fn, () => readInputs(p.node, at.depth, written, outsOf));
+    } catch (error) {
+      if (!(error instanceof Unreadable)) throw error;
+      used = written.map(() => true);
+    }
+    const lists = limitedProduct(written.map((a, i) => (used[i] || (rest >= 0 && i >= rest) ? checkedOuts(values(a, given), a, p) : [unknownAt(a)])));
+    return followed(fn, p, () => lists.flatMap(outsOf));
   }
 
   // 따라 읽은 함수나 getter 가 돌려준 갈래에, 그 안에서 만든 조각이라는 표시를 붙인다.
@@ -459,8 +540,10 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
       return envs.map((e) => new Map(e).set(binding, out ?? known(undefined)));
     }
     if (pattern.isAssignmentPattern()) {
+      const defaults = () => envs.flatMap((e) => values(pattern.get('right'), inner(e)).flatMap((d) => bind(pattern.get('left'), d, [e], inner)));
+      if (out && standIns.has(out)) return [...bind(pattern.get('left'), out, envs, inner), ...defaults()];
       if (out && plain(out) !== undefined) return bind(pattern.get('left'), out, envs, inner);
-      return envs.flatMap((e) => values(pattern.get('right'), inner(e)).flatMap((d) => bind(pattern.get('left'), d, [e], inner)));
+      return defaults();
     }
     if (pattern.isObjectPattern()) {
       const named = new Set(pattern.node.properties.flatMap((x) => (x.type === 'ObjectProperty' && !x.computed ? [keyOf(x.key)] : [])));
@@ -564,6 +647,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
 
   function values(p: NodePath<any>, at: At): Out[] {
     const outs = limited(valuesOf(unwrapped(p), at), distinct);
+    outs.forEach(markRead);
     return at.env ? outs : outs.map((o) => wholeOr(o, p));
   }
 
@@ -645,28 +729,42 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
   }
 
   // 링크 컴포넌트를 쓴 요소의 속성을 그 컴포넌트가 받는 props 로 읽는다. 값 없이 적은 속성은 true 이고, 쓰는 곳에서 그대로 넘긴
-  // 값을 펼치면 그 뒤에 적히지 않은 키는 그 값을 그대로 넘긴 것으로 본다.
-  function attributeValues(e: NodePath<JSXElement>, at: At): Out[] {
+  // 값을 펼치면 그 뒤에 적히지 않은 키는 그 값을 그대로 넘긴 것으로 본다. 속성마다 그 값들을 주되, 이름을 적은 속성 가운데 read 가
+  // 읽지 않는 것은 읽지 못한 값 하나로 둔다.
+  function attributeLists(e: NodePath<JSXElement>, at: At, read: (props: Out) => unknown): { lists: Out[][]; propsOf: (outs: Out[]) => Out } {
     const attributes = e.get('openingElement.attributes') as NodePath<any>[];
-    const lists = attributes.map((a): Out[] => {
-      const value = (a.isJSXSpreadAttribute() ? a.get('argument') : a.get('value')) as NodePath<any>;
-      if (!value.node) return [known(true)];
-      const x = unwrapped(value.isJSXExpressionContainer() ? value.get('expression') : value);
-      return x.isJSXEmptyExpression() ? [known(undefined)] : values(x, at).map((o) => wholeOr(o, x));
-    });
     const keys = attributes.map((a) => (a.isJSXSpreadAttribute() ? null : a.node.name.type === 'JSXIdentifier' ? a.node.name.name as string : ''));
+    const written = attributes.map((a) => {
+      const value = (a.isJSXSpreadAttribute() ? a.get('argument') : a.get('value')) as NodePath<any>;
+      return value.node ? unwrapped(value.isJSXExpressionContainer() ? value.get('expression') : value) : null;
+    });
+    const valuesAt = (x: NodePath) => values(x, at).map((o) => wholeOr(o, x));
+    const lists = written.map((x, i): Out[] | null => (!x ? [known(true)] : x.isJSXEmptyExpression() ? [known(undefined)] : keys[i] === null ? valuesAt(x) : null));
+    const named = lists.flatMap((list, i) => (list ? [] : [i]));
     const withChildren = (out: Out): Out => {
       const { val } = out;
       return e.node.children.length && 'props' in val && !val.props.has('children') ? { ...out, val: { ...val, props: new Map(val.props).set('children', unknownAt(e)) } } : out;
     };
-    return limitedProduct(lists).map((outs) => withChildren(merged(keys.map((key, i) => [key, outs[i]]), (spread) => spread.whole && { ...unknownAt(spread.whole), whole: spread.whole })));
+    const propsOf = (outs: Out[]) => withChildren(merged(keys.map((key, i) => [key, outs[i]]), (spread) => spread.whole && { ...unknownAt(spread.whole), whole: spread.whole }));
+    const used = readInputs(keys.includes(null) ? null : e.node, at.depth, named.map((i) => written[i]!), (stands) => {
+      for (const outs of limitedProduct(lists.map((list, i) => list ?? [stands[named.indexOf(i)]]))) read(propsOf(outs));
+    });
+    const given = lists.map((list, i) => {
+      if (list) return list;
+      const x = written[i]!;
+      return used[named.indexOf(i)] ? valuesAt(x) : [{ ...unknownAt(x), whole: x }];
+    });
+    return { lists: given, propsOf };
   }
 
   function address(out: Out, at: NodePath): Out | null {
     const { val } = out;
     if ('props' in val) {
       const pathname = val.props.get('pathname');
-      if (pathname) return address({ ...pathname, made: out.made || pathname.made }, at);
+      if (pathname) {
+        markRead(pathname);
+        return address({ ...pathname, made: out.made || pathname.made }, at);
+      }
       return val.open ? { ...unknownAt(at), made: out.made } : null;
     }
     const value = 'value' in val ? val.value : undefined;
@@ -754,17 +852,23 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
 
   // 읽는 중에 같은 자리로 되돌아오면 링크가 있는 것으로 보고 따라가지 않는다.
   function linkedWhereWritten<T extends Node>(c: NodePath<T>, linkedAt: (c: NodePath<T>) => boolean): boolean {
+    if (linking.has(c.node)) guesses++;
     if (placeLinked.has(c.node)) return placeLinked.get(c.node)!;
     placeLinked.set(c.node, true);
+    linking.add(c.node);
     const outer = [...reading];
+    const outerTrying = trying;
     reading.clear();
+    trying = 0;
     try {
       const linked = linkedAt(c);
       placeLinked.set(c.node, linked);
       return linked;
     } finally {
+      linking.delete(c.node);
       reading.clear();
       for (const node of outer) reading.add(node);
+      trying = outerTrying;
     }
   }
 
@@ -861,7 +965,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     }
     for (const place of [...places, ...(asComponent ? elements : [])]) {
       if (!reached(place.at, fn, at)) continue;
-      if ('history' in place && place.history && !values(place.history, at).some((o) => o.whole && moves!.isHistory(o.whole))) continue;
+      if ('history' in place && place.history && !values(place.history, at).some((o) => standIns.has(o) || (o.whole && moves!.isHistory(o.whole)))) continue;
       for (const a of place.addresses) {
         if (a.isDescendant(fn) && !reached(a, fn, at)) continue;
         for (const o of values(a, at)) {
@@ -897,31 +1001,35 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     return true;
   }
 
+  // 인자 가운데 fn 이 주소를 정하는 데 읽지 않는 것은 갈래를 펼치지 않는다. 나머지 매개변수로 받는 인자는 늘 펼친다.
   function helperOuts(p: NodePath<CallExpression>, fn: AddressFunction, at: At): Out[] {
     if (reading.has(fn.node) || at.depth >= FOLLOWED) return [];
     const args = p.get('arguments') as NodePath<any>[];
     const spread = args.findIndex((a) => a.isSpreadElement());
+    const written = spread < 0 ? args : args.slice(0, spread);
+    const rest = (fn.get('params') as NodePath[]).findIndex((x) => x.isRestElement());
     const given = { ...at, branching: true };
-    const lists = limitedProduct((spread < 0 ? args : args.slice(0, spread)).map((a) => checkedOuts(values(a, given), a, p).map((o) => wholeOr(o, a))));
-    reading.add(fn.node);
-    try {
-      const outs = lists.flatMap((list) => bound(fn, list, spread < 0 ? null : args[spread], at.depth + 1).flatMap((env) => placeOuts(fn, env, at.depth + 1)));
-      return outs.some(withheldIn) ? [unknownAt(p)] : outs;
-    } finally {
-      reading.delete(fn.node);
+    const outsOf = (list: Out[]) => bound(fn, list, spread < 0 ? null : args[spread], at.depth + 1).flatMap((env) => placeOuts(fn, env, at.depth + 1));
+    const used = readingFn(fn, () => readInputs(p.node, at.depth, written, outsOf));
+    const lists = written.map((a, i) => (used[i] || (rest >= 0 && i >= rest) ? checkedOuts(values(a, given), a, p).map((o) => wholeOr(o, a)) : [{ ...unknownAt(a), whole: a }]));
+    if (trying) {
+      if (holdsUnread(lists)) readingFn(fn, () => limitedProduct(lists).forEach(outsOf));
+      return [];
     }
+    const outs = readingFn(fn, () => limitedProduct(lists).flatMap(outsOf));
+    return outs.some(withheldIn) ? [unknownAt(p)] : outs;
   }
 
   function useOuts(e: NodePath<JSXElement>, fn: AddressFunction, at: At): Out[] {
     if (reading.has(fn.node) || at.depth >= FOLLOWED) return [];
-    const lists = attributeValues(e, { ...at, branching: true });
-    reading.add(fn.node);
-    try {
-      const outs = lists.flatMap((props) => bound(fn, [props], null, at.depth + 1).flatMap((env) => placeOuts(fn, env, at.depth + 1, true)));
-      return outs.some(withheldIn) ? [unknownAt(e)] : outs;
-    } finally {
-      reading.delete(fn.node);
+    const outsOf = (props: Out) => bound(fn, [props], null, at.depth + 1).flatMap((env) => placeOuts(fn, env, at.depth + 1, true));
+    const { lists, propsOf } = attributeLists(e, { ...at, branching: true }, (props) => readingFn(fn, () => outsOf(props)));
+    if (trying) {
+      if (holdsUnread(lists)) readingFn(fn, () => limitedProduct(lists).map(propsOf).forEach(outsOf));
+      return [];
     }
+    const outs = readingFn(fn, () => limitedProduct(lists).map(propsOf).flatMap(outsOf));
+    return outs.some(withheldIn) ? [unknownAt(e)] : outs;
   }
 
   function madeBranches(outs: Out[], p: NodePath): Read {
