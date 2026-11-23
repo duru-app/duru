@@ -504,7 +504,7 @@ async function acceptAs(c, id, name, pressed = performance.now()) {
     state.candidate = null;
     state.candidateTalk = null;
     state.story = id;
-    state.earlierTalkOpen = id;
+    state.earlierTalkOpen = `story(${id})`;
     state.storyDraft = null;
   }
   state.error = null;

@@ -2110,8 +2110,9 @@ originals of a discarded replacement, link to nothing, so their comments stay un
 not yet confirmed by the driver). Right after accepting the conversation is open; once the page is reloaded or the
 reviewer goes elsewhere it is one button 「이전 대화 N」 that opens when pressed, with the day of the last thing said
 there in its hover text only (driver's choice on 2026-11-20, over a date written in or beside the button), and what
-was opened is not stored. On a listed replacement the groups have no fold, since nothing was accepted yet (model's decision, not yet
-confirmed).
+was opened is not stored. A listed replacement has the same fold: its tab `이 후보 N` counts only its own comments, as
+its row `코멘트 N` does, and the originals' comments sit under 「이전 대화 N」, folded at first (driver's choice on
+2026-11-23, over adding the originals' comments to the row's count).
 Alternatives compared:
 - Rewriting the target of each comment to the story when the candidate is accepted: the story reads them as it reads
   its own, but the marks folder is only added to, an undone acceptance would need a second rewrite, and files written
