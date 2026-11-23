@@ -505,8 +505,11 @@ async function acceptAs(c, id, name, pressed = performance.now()) {
   state.error = null;
   const drawing = performance.now();
   render();
-  timing.draw = performance.now() - drawing;
-  reportTiming(timing);
+  // requestAnimationFrame 은 그리기 직전에 불리므로, 화면이 실제로 그려진 뒤까지 재도록 한 번 더 미룬다.
+  requestAnimationFrame(() => setTimeout(() => {
+    timing.draw = performance.now() - drawing;
+    reportTiming(timing);
+  }));
   return true;
 }
 
