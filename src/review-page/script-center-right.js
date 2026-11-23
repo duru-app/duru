@@ -366,7 +366,7 @@ function renderRight() {
   }
   const all = state.talkScope === 'all';
   const view = all ? 'all' : state.view !== 'story' && state.side === 'cases' ? `cases\n${state.caseNode}` : state.view !== 'story' ? `${state.selected}\n${state.target?.node}` : state.composing ? 'compose' : state.candidate ? `candidate(${state.candidate})` : state.need ? `need(${state.need})` : `story(${state.story})`;
-  if (view !== state.rightView && view !== `story(${state.earlierTalkOpen})`) state.earlierTalkOpen = null;
+  if (view !== state.rightView && view !== state.earlierTalkOpen) state.earlierTalkOpen = null;
   const shown = shownTarget();
   const dockKey = shown ? keyOf(shown) : null;
   if (dockKey !== state.dockKey) state.historyFilter = null;

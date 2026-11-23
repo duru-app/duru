@@ -15,8 +15,8 @@ function scopeButtons() {
     state.talkScope = scope;
     render();
   };
-  // 스토리가 후보였을 때 남긴 대화는 「이전 대화 N」이 따로 센다.
-  const counted = (target) => attachedTalk(target).filter((m) => target.story === undefined || m.became === undefined);
+  // 받기 전이나 고치기 전의 후보에 남긴 대화는 「이전 대화 N」이 따로 센다.
+  const counted = (target) => attachedTalk(target).filter((m) => m.became === undefined);
   return h('div', { class: 'talk-scope', role: 'group', 'aria-label': '대화 범위' },
     h('button', { type: 'button', 'aria-pressed': String(state.talkScope === 'here'), disabled: state.storyWriting, onclick: pick('here') }, here.target ? `${here.label} ${saidCount(counted(here.target))}` : here.label),
     h('button', { type: 'button', 'aria-pressed': String(state.talkScope === 'all'), disabled: state.storyWriting, onclick: pick('all') }, `전체 ${saidCount(talkMarks())}`));
@@ -83,7 +83,7 @@ function allTalk() {
         replies.length ? h('ul', { class: 'plain replies' }, replies.map((x) => h('li', { class: 'reply' }, h('span', { class: 'muted' }, signedAt(x)), h('div', {}, x.note)))) : null);
     }
     const reach = () => {
-      if (m.became?.story !== undefined) state.earlierTalkOpen = m.became.story;
+      if (m.became) state.earlierTalkOpen = groupOf(m.became);
       reachTalk(m.became ?? m.target, r.id, { record: r.id, group: groupOf(m.target) });
     };
     return h('button', { type: 'button', class: 'talk-line', 'data-record': r.id, onclick: reach }, meta, h('span', { class: 'first' }, firstLine(r.note)));
@@ -208,8 +208,9 @@ function earlierTalk(target, entries, said, item) {
   const list = groups.map(({ key, lines }) => h('div', { class: 'earlier-group', 'data-candidate': key },
     h('h3', { title: `후보 「${candidateName(key)}」에 남긴 대화` }, candidateName(key)),
     h('ul', { class: 'plain history' }, lines.map(({ m, r }) => item(m, r, m.target)))));
-  if (target.story === undefined) return h('div', { class: 'earlier-talk' }, list);
-  const open = state.earlierTalkOpen === target.story;
+  const here = groupOf(target);
+  const open = state.earlierTalkOpen === here;
+  const what = target.story !== undefined ? '스토리로 받기 전에 후보에 남긴 대화' : '에이전트가 고치기 전의 후보에 남긴 대화';
   const last = entries.flatMap((m) => m.history.map((r) => r.date)).sort().pop();
   const folded = `이전 대화 ${saidCount(entries)}`;
   const lastDay = new Date(last).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
@@ -217,10 +218,10 @@ function earlierTalk(target, entries, said, item) {
     type: 'button',
     class: 'earlier-toggle',
     'aria-expanded': String(open),
-    title: open ? '스토리로 받기 전에 후보에 남긴 대화입니다. 누르면 접습니다' : `스토리로 받기 전에 후보에 남긴 대화를 펼칩니다. 마지막 글 ${lastDay}`,
-    'aria-label': open ? '스토리로 받기 전에 후보에 남긴 대화' : `${folded}, ${lastDay}`,
+    title: open ? `${what}입니다. 누르면 접습니다` : `${what}를 펼칩니다. 마지막 글 ${lastDay}`,
+    'aria-label': open ? what : `${folded}, ${lastDay}`,
     onclick: () => {
-      state.earlierTalkOpen = open ? null : target.story;
+      state.earlierTalkOpen = open ? null : here;
       render();
     },
   }, open ? '이전 대화' : folded);

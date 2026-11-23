@@ -1397,7 +1397,7 @@ const bringFixedBack = async (p: Page) => {
   await p.waitForFunction((n) => document.querySelector('#center h3')?.textContent === n, FIXED_NAME);
 };
 
-test('in a browser, a candidate an agent posted in place of another shows the conversation of the original first in its own, under the original\'s name and with no fold, and the story it is accepted as shows it the same way, marked as from the candidate', { skip: browserMissing }, async () => {
+test('in a browser, a candidate an agent posted in place of another shows the conversation of the original first in its own, under the original\'s name and folded to one line with its count until pressed, and the story it is accepted as shows it the same way, marked as from the candidate', { skip: browserMissing }, async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', async (base) => {
       await postFixedCandidate(base);
@@ -1406,7 +1406,12 @@ test('in a browser, a candidate an agent posted in place of another shows the co
         await p.click(storiesTab);
         await pickCandidate(p, FIXED_NAME);
         const earlier = p.locator('#right-info .earlier-talk');
-        assert.equal(await earlier.locator('button.earlier-toggle').count(), 0);
+        const toggle = earlier.locator('button.earlier-toggle');
+        assert.equal(await toggle.textContent(), '이전 대화 1');
+        assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+        assert.equal(await earlier.locator('.earlier-group').count(), 0);
+        await toggle.click();
+        assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
         assert.deepEqual(await earlier.locator('.earlier-group h3').allTextContents(), ['open-help']);
         assert.match((await earlier.locator('.earlier-group .history > li').textContent())!, /로그인 단계를 빼 줘/);
         assert.equal(await p.locator('#left .detached li').count(), 0);
@@ -1417,6 +1422,34 @@ test('in a browser, a candidate an agent posted in place of another shows the co
         assert.deepEqual(await earlier.locator('.earlier-group h3').allTextContents(), ['open-help']);
         assert.match((await earlier.locator('.earlier-group .history > li').textContent())!, /로그인 단계를 빼 줘/);
         assert.equal(await p.locator('#left .detached li').count(), 0);
+        assert.deepEqual(errors, []);
+      });
+    }),
+  );
+});
+
+test('in a browser, the conversation tab of a candidate an agent posted in place of another counts only the candidate\'s own comments, the same number as its row in the candidate list, the original\'s are counted on the folded earlier-conversation button, and pressing one of them in the list of all comments opens the fold on it', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      await postFixedCandidate(base);
+      const data: PageData = await (await fetch(`${base}/api/data`)).json();
+      const fixed = data.candidates.list.find((c) => c.name === FIXED_NAME)!;
+      await postMark(base, { target: { candidate: fixed.key }, note: '이제 됐나?' });
+      await withPage(base, async (p, errors) => {
+        await p.waitForSelector('#view-story:not(:disabled)');
+        await p.click(storiesTab);
+        await pickCandidate(p, FIXED_NAME);
+        const row = p.locator('#candidate-list li', { hasText: FIXED_NAME });
+        assert.equal(await row.locator('.part-count').textContent(), '코멘트 1');
+        assert.deepEqual(await p.locator('#right-info .talk-scope button').allTextContents(), ['이 후보 1', '전체 2']);
+        const toggle = p.locator('#right-info button.earlier-toggle');
+        assert.equal(await toggle.textContent(), '이전 대화 1');
+        assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+
+        await p.click('#right-info .talk-scope button:has-text("전체")');
+        await p.click('#right-info .talk-line:has-text("로그인 단계를 빼 줘")');
+        await p.waitForSelector('#right-info .earlier-group .history > li.reached');
+        assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
         assert.deepEqual(errors, []);
       });
     }),
