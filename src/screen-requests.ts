@@ -33,14 +33,14 @@ interface Reading {
 
 type Base = string | null | undefined;
 
-// 펼친 상수에서 꺼낸 값. 소스에는 이 값을 적은 식이 없다.
-class Spread {
+// constants 에서 꺼낸 값. 소스에는 이 값을 적은 식이 없다.
+class FromConstant {
   readonly value: unknown;
   constructor(value: unknown) {
     this.value = value;
   }
 }
-type Written = NodePath<any> | Spread;
+type Written = NodePath<any> | FromConstant;
 
 const PAGE_OBJECTS = new Set(['window', 'globalThis', 'self']);
 const FROM_ROOT = /^\/(?!\/)/;
@@ -83,7 +83,7 @@ export function screenRequestReader({ requestFunction, constants, evaluate, obje
   const tagName = (name: JSXOpeningElement['name']): string => (name.type === 'JSXIdentifier' ? name.name : name.type === 'JSXMemberExpression' ? `${tagName(name.object)}.${name.property.name}` : `${name.namespace.name}:${name.name.name}`);
   const text = (v: unknown) => (typeof v === 'string' ? v : null);
 
-  const given = (w: Written | undefined) => (w instanceof Spread ? w.value : w?.node ? evaluate(w) : undefined);
+  const given = (w: Written | undefined) => (w instanceof FromConstant ? w.value : w?.node ? evaluate(w) : undefined);
   const holds = (value: unknown, key: string): value is Record<string, unknown> => value !== null && typeof value === 'object' && Object.hasOwn(value, key);
 
   // constants 의 이름이나 그 이름을 담은 const 에서 시작하는 `a.b.c` 가 가리키는 값. 거기서 시작하지 않으면 undefined 다.
@@ -100,12 +100,15 @@ export function screenRequestReader({ requestFunction, constants, evaluate, obje
     return value;
   }
 
-  // 객체 리터럴에 적힌 값. 키가 없으면 undefined, 상수가 아닌 펼친 값이나 계산한 키에 가려 알 수 없으면 null 이다.
+  // 객체 리터럴이나 constants 의 객체에 든 값. 키가 없으면 undefined, 상수가 아닌 값이나 계산한 키에 가려 알 수 없으면 null 이다.
   function written(options: Written | undefined, key: string): Written | null | undefined {
-    if (options instanceof Spread) return holds(options.value, key) ? new Spread(options.value[key]) : undefined;
+    if (options instanceof FromConstant) return holds(options.value, key) ? new FromConstant(options.value[key]) : undefined;
     if (!options?.node) return undefined;
     const props = objectLiteral(options)?.get('properties');
-    if (!props) return null;
+    if (!props) {
+      const whole = constantValue(options);
+      return whole !== null && typeof whole === 'object' ? written(new FromConstant(whole), key) : null;
+    }
     for (const p of [...props].reverse()) {
       if ((p.isObjectProperty() || p.isObjectMethod()) && !p.node.computed) {
         if (keyName(p.node) === key) return p.isObjectProperty() ? (p.get('value') as NodePath) : null;
@@ -113,7 +116,7 @@ export function screenRequestReader({ requestFunction, constants, evaluate, obje
       }
       const spread = p.isSpreadElement() ? constantValue(p.get('argument')) : undefined;
       if (spread === null || typeof spread !== 'object') return null;
-      if (holds(spread, key)) return new Spread(spread[key]);
+      if (holds(spread, key)) return new FromConstant(spread[key]);
     }
     return undefined;
   }
@@ -184,7 +187,7 @@ export function screenRequestReader({ requestFunction, constants, evaluate, obje
 
   // 주소를 이루는 조각 가운데 값을 읽지 못한, import 한 이름이나 그 이름으로 부른 함수의 결과가 있는지
   function hidesText(p: Written | undefined, seen = new Set<Binding>()): boolean {
-    if (p instanceof Spread || !p?.node) return false;
+    if (p instanceof FromConstant || !p?.node) return false;
     if (p.isTemplateLiteral()) return (p.get('expressions') as NodePath[]).some((e) => hidesText(e, seen));
     if (p.isBinaryExpression({ operator: '+' })) return hidesText(p.get('left'), seen) || hidesText(p.get('right'), seen);
     const binding = p.isIdentifier() && p.scope.getBinding(p.node.name);
