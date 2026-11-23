@@ -5183,8 +5183,8 @@ outline's starred document row now gives its `{?}` at the use that hands in the 
 screens) instead of at the row inside it. At outline's five other sidebar rows (`DocumentLink.tsx`,
 `ArchivedCollectionLink.tsx`, `DraggableCollectionLink.tsx`, `SharedWithMeLink.tsx` and the starred row's own use in
 `StarredLink.tsx`) the `{?}` stays on the same line and screens, as at main; only the line is gone (in
-`DocumentLink.tsx` the address is the document's `url`, read from data). The two SigNoz places left combine an object that the called
-function puts in what it returns. Build times stayed within a few seconds of main's.
+`DocumentLink.tsx` the address is the document's `url`, read from data). The two SigNoz places left are read by the
+next entry. Build times stayed within a few seconds of main's.
 Compared:
 - Merging the places' results with the same address before counting, without the first pass: the count is reached
   while the inputs are combined, before any address exists, so it would mean building every combination first;
@@ -5192,6 +5192,42 @@ Compared:
 - Reading which parameters reach an address from the code without running the reader: a value can reach it through a
   `const`, a destructured rest, an object handed to another component, or a condition around the place, each a
   rule of its own, where the pass with values duru cannot read follows all of them as the reader does.
+
+**A call of a function duru cannot read gives one value duru cannot read when its arguments pass 64 combinations, and
+a call whose result is destructured into named keys counts only those keys of what it returns.** Chosen for #674
+(2026-11-23). After #672 two SigNoz places still printed `link address not read … more than 64 combinations`, and the
+values counted there did not reach an address. Measured at the #672 head (753f88f), they were two different shapes:
+- The graph card (`container/WidgetCard/Card/index.tsx:269`) hands a link component the result of a query hook called
+  with a request object, a version and an options object. duru cannot read the hook's body, because a callback in it
+  assigns to its own variable. The pass with values duru cannot read stopped there, so every argument counted as read,
+  and their real values gave 128 combinations before the reading found out that the body cannot be read, where the
+  call is a value duru cannot read whatever the arguments are. Now, when that pass finds the body unreadable and the
+  real values pass 64, the call gives a value duru cannot read, which is what that pass gives. Under 64 they are still
+  read, so a call whose values all avoid the part that cannot be read keeps what they give.
+- The dashboard grid (`Section.tsx:79`) reads `const { isEditable } = useDashboardEditContext()`. The hook takes no
+  argument. It returns an object with ten fields, several of them chosen by conditions on values duru cannot read, and
+  the ways add up to 66 objects, though no single `return` gives more than 64. Some of them are the same in every field
+  as others. Objects that are the same in every field now merge, as identical text already did, and that alone brings
+  this place under 64: with the cut below turned off, both SigNoz maps are the same. The objects of one call are also
+  cut to the keys the destructuring names before they are counted, so objects that differ only in fields the caller
+  does not name merge too. That covers a function whose `return`s each stay under 64 but together give more than 64
+  different objects, as when an early `return` sets a flag field the later one sets otherwise. A destructuring with a
+  rest element or a computed key keeps the whole object, and it is the only use of the result, since no name holds the
+  whole value.
+Measured against #672's head: the `more than 64 combinations` lines are SigNoz 2 → 0 (and 2 → 0 with its API
+config); outline, mattermost and appsmith had none and their maps are the same. The `{?}` link at each place is gone (9
+screens for the graph card, 5 for the grid) and no link gained or lost a screen: what those links move to does not come
+from those values. SigNoz builds about 6 seconds slower (19–21 → 26 seconds), all of it in reading the uses that hold the
+graph card and the grid, which used to stop at the count and are now read through.
+Known limits:
+- The fields of one object are still all combined before they are counted, so a single `return { … }` whose fields
+  give more than 64 combinations still stops the reading, even when the caller names one key.
+- Only a destructuring right at the call is seen; `const state = useX(); state.open` keeps the whole object.
+Compared:
+- Counting only the fields of a returned object that are later read on the way to an address (the first idea for
+  #674): neither place combined an input that the function puts in what it returns, so it would have changed neither.
+- Treating the arguments of a function whose body cannot be read as not read at all: a call whose values never reach
+  the part that cannot be read would lose what it gives, though it has few combinations.
 
 **A settings value that picks a group of routes in a route file draws that group on one side of the value only, and
 a link does not reach a screen drawn only on the other side of the screen it is on.**
