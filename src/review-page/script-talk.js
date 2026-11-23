@@ -15,8 +15,10 @@ function scopeButtons() {
     state.talkScope = scope;
     render();
   };
+  // 스토리가 후보였을 때 남긴 대화는 「이전 대화 N」이 따로 센다.
+  const counted = (target) => attachedTalk(target).filter((m) => target.story === undefined || m.became === undefined);
   return h('div', { class: 'talk-scope', role: 'group', 'aria-label': '대화 범위' },
-    h('button', { type: 'button', 'aria-pressed': String(state.talkScope === 'here'), disabled: state.storyWriting, onclick: pick('here') }, here.target ? `${here.label} ${saidCount(attachedTalk(here.target))}` : here.label),
+    h('button', { type: 'button', 'aria-pressed': String(state.talkScope === 'here'), disabled: state.storyWriting, onclick: pick('here') }, here.target ? `${here.label} ${saidCount(counted(here.target))}` : here.label),
     h('button', { type: 'button', 'aria-pressed': String(state.talkScope === 'all'), disabled: state.storyWriting, onclick: pick('all') }, `전체 ${saidCount(talkMarks())}`));
 }
 
