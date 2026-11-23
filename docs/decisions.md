@@ -4883,8 +4883,10 @@ Known limits:
   read though nothing of the function changes.
 - The limit of 64 is checked while the combinations of a call's argument values, and of the attributes of an element
   that uses a link component, are built, and the rest is not built once it is passed (#654: one screen that gave a
-  link component many attributes of two values each used up a 4 GB heap before the check). The combinations of the
-  pieces of a template, of the two sides of `+` and of an object's properties are still built whole first.
+  link component many attributes of two values each used up a 4 GB heap before the check). Only the arguments and
+  attributes the function or component reads are combined (see the entry on what a function or component reads).
+  The combinations of the pieces of a template, of the two sides of `+` and of an object's properties are still built
+  whole first.
 - The summary prints the line for such a place once for each place, not once for each file (#662, chosen without a
   driver's answer, cheap to change). On the reference apps one line per file would give 22 lines instead of 34 in
   SigNoz and 7 instead of 8 in outline, and leave mattermost's 2 and appsmith's 1. The places in one file are
@@ -5149,7 +5151,47 @@ Known limits:
   context instead of the use writing it.
 - A higher-order component from the source (`menuItem(X)`) is read as `X`; what its body does to the props on the
   way is not seen.
-- Attributes whose values together give more than 64 ways make the use `{?}`.
+- Attributes the component reads on the way to its address, whose values together give more than 64 ways, make the
+  use `{?}`.
+
+**Only the arguments and attributes a function or component reads are combined; the others stay one value duru
+cannot read.** Chosen for #672 (2026-11-23). Before, every argument of a call of a function from the source and every
+attribute of an element using a link component was combined with the others, and past 64 combinations the place was
+`{?}` with a `link address not read … more than 64 combinations` line. In the reference apps the address at those
+places had one value: outline's sidebar rows hand `SidebarLink` a `to` read from the document plus about 18 other
+attributes of two or three values each (`component={isEditing ? "div" : undefined}`), and SigNoz's graph cards call
+a query hook with an object and options of several branches each, none of which reaches an address the hook moves to.
+Now each argument or attribute is first replaced by a value duru cannot read, the function or component is read once
+that way, and only those it read are combined with their real values; a value duru cannot read takes both branches of
+every condition, so one it does not read in that pass cannot change what the place gives. That pass skips the calls
+and elements it follows further in (it reads their arguments and attributes, not their addresses), unless what it
+hands one holds one of those replaced values it has not read yet, as when a component spreads its whole props into
+another (`<Item {...props} />`) or passes them to a function that moves: then it follows that call or element too, so
+the attribute counts as read if the inner one reads it. Skipping them there left `to` unread and made such a link
+`{?}` where main read it. The `pathname` of a location object built from the props (`<Link to={rest} />`) counts as
+read the same way. The pass's result is kept per place, depth and functions being read, except for an element with a
+spread attribute, whose spread values come from outside, and a pass that met a place still being checked for a link
+where it is written.
+Identical `{?}` values (same piece, whole and branch) now merge before the count, as identical text already did:
+mattermost's channel bookmarks gave the same data address 352 times through one element.
+Measured against main bd819cd: `more than 64 combinations` lines outline 8 → 0, SigNoz 34 → 2 (and 34 → 2 with its
+API config), mattermost 2 → 0, appsmith 1 → 0. No link went to a new screen. In SigNoz, mattermost, appsmith and at
+two of outline's places the `{?}` there is gone (one per place, on 1–39 screens), as it is at a place with few
+combinations: what is moved to there does not come from the combined values, and a value handed in from outside is a
+link where it is written (mattermost's bookmark address is read from the bookmark inside the bookmark component).
+outline's starred document row now gives its `{?}` at the use that hands in the document (`StarredLink.tsx`, 32
+screens) instead of at the row inside it. At outline's five other sidebar rows (`DocumentLink.tsx`,
+`ArchivedCollectionLink.tsx`, `DraggableCollectionLink.tsx`, `SharedWithMeLink.tsx` and the starred row's own use in
+`StarredLink.tsx`) the `{?}` stays on the same line and screens, as at main; only the line is gone (in
+`DocumentLink.tsx` the address is the document's `url`, read from data). The two SigNoz places left combine an object that the called
+function puts in what it returns. Build times stayed within a few seconds of main's.
+Compared:
+- Merging the places' results with the same address before counting, without the first pass: the count is reached
+  while the inputs are combined, before any address exists, so it would mean building every combination first;
+  those places had 84 to 6,561 at one level, several levels deep, which is the limit raised in all but name.
+- Reading which parameters reach an address from the code without running the reader: a value can reach it through a
+  `const`, a destructured rest, an object handed to another component, or a condition around the place, each a
+  rule of its own, where the pass with values duru cannot read follows all of them as the reader does.
 
 **A settings value that picks a group of routes in a route file draws that group on one side of the value only, and
 a link does not reach a screen drawn only on the other side of the screen it is on.**

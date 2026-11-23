@@ -3387,12 +3387,12 @@ const addRow = (rows, a, b, c, d, e, f, g) => {
 };
 
 function open(history, url, a, b, c, d, e, f, g) {
-  history.push(url);
+  if (a && b && c && d && e && f && g) history.push(url);
 }
 
 export default function Home({ type, doc, x }) {
   const history = useHistory();
-  const leave = (url, a, b, c, d, e, f, g) => history.push(url);
+  const leave = (url, a, b, c, d, e, f, g) => a && b && c && d && e && f && g && history.push(url);
   const model = createModel({ type, title: doc.title });
   const rows = [];
   addRow(rows, x.a ? 'a' : 'A', x.b ? 'b' : 'B', x.c ? 'c' : 'C', x.d ? 'd' : 'D', x.e ? 'e' : 'E', x.f ? 'f' : 'F', x.g ? 'g' : 'G');
@@ -3406,6 +3406,32 @@ export default function Home({ type, doc, x }) {
 `;
   const map = await build(writeApp({ 'Home.js': home }));
   assert.deepEqual(linksOf(map, '/home#Home'), [['{?}', lineOf(home, "leave('/login'"), [], []]]);
+});
+
+test('a helper call whose arguments, alone or as fields of an object, pass the branch limit but do not reach the address gives the address the helper moves to', async () => {
+  const home = `import { useHistory } from 'react-router-dom';
+
+function open(history, url, a, b, c, d, e, f, g) {
+  history.push(url);
+}
+
+export default function Home({ x }) {
+  const history = useHistory();
+  const load = (query, version, to) => history.push(to);
+  return (
+    <nav>
+      <a onClick={() => open(history, '/login', x.a ? 'a' : 'A', x.b ? 'b' : 'B', x.c ? 'c' : 'C', x.d ? 'd' : 'D', x.e ? 'e' : 'E', x.f ? 'f' : 'F', x.g ? 'g' : 'G')}>a</a>
+      <a onClick={() => load({ a: x.a ? 'a' : 'A', b: x.b ? 'b' : 'B', c: x.c ? 'c' : 'C', d: x.d ? 'd' : 'D', e: x.e ? 'e' : 'E', f: x.f ? 'f' : 'F', g: x.g ? 'g' : 'G' }, x.v ? 'v4' : 'v3', '/start')}>b</a>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home }));
+  assert.deepEqual(linksOf(map, '/home#Home').map(([to, line]) => [to, line]), [
+    ['/login', lineOf(home, "open(history, '/login'")],
+    ['/start', lineOf(home, 'load({')],
+  ]);
+  assert.equal(map.manyLinkBranches, undefined);
 });
 
 test('a ? : in the address a helper moves to keeps only the branch the arguments of the call lead to', async () => {
@@ -4247,6 +4273,26 @@ export default function Home({ team, kind, mode }) {
   ]);
 });
 
+test('an address function call whose arguments pass the branch limit but do not reach what it returns gives the address it returns', async () => {
+  const home = `import { Link } from 'react-router-dom';
+
+function teamPath(options, name) {
+  return \`/team/\${name}\`;
+}
+
+export default function Home({ x }) {
+  const path = teamPath({ a: x.a ? 'a' : 'A', b: x.b ? 'b' : 'B', c: x.c ? 'c' : 'C', d: x.d ? 'd' : 'D', e: x.e ? 'e' : 'E', f: x.f ? 'f' : 'F', g: x.g ? 'g' : 'G' }, 'a');
+  return (
+    <nav>
+      <Link to={path}>team</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home }));
+  assert.deepEqual(linksOf(map, '/home#Home'), [['/team/a', lineOf(home, 'to={path}'), [], ['/team/:team#Team']]]);
+});
+
 test('an address function reads a member of a parameter typed with a class through that class\'s own getter, with this.member a value duru cannot read', async () => {
   const team = `export default class Team {
   name = '';
@@ -4950,20 +4996,21 @@ export default function Home({ flag }) {
 });
 
 test('a link component used with so many attributes of two values each that their combinations pass the limit gives one {?} link there and a line for the summary, without building the combinations', async () => {
+  const keys = Array.from({ length: 40 }, (_, i) => `k${i}`);
   const links = `import { Link } from 'react-router-dom';
 
-export function Item({ to }) {
-  return <Link to={to}>on</Link>;
+export function Item(props) {
+  return ${keys.map((k) => `props.${k} && `).join('')}<Link to={props.to}>on</Link>;
 }
 `;
-  const attributes = Array.from({ length: 40 }, (_, i) => `k${i}={flag ? 'a' : 'b'}`).join(' ');
+  const attributes = keys.map((k) => `${k}={flag ? 'a' : 'b'}`).join(' ');
   const home = `import { Item } from './links';
 
 export default function Home({ flag }) {
   return (
     <nav>
       <Item to="/login" ${attributes} />
-      <Item to="/start" />
+      <Item to="/start" ${keys.join(' ')} />
     </nav>
   );
 }
@@ -4978,13 +5025,14 @@ export default function Home({ flag }) {
 });
 
 test('the line for a link left unread because its values give too many combinations names the screen that draws it, the number of screens and the first one when several do, and no screen when none does, with one line for each place in a file', async () => {
+  const keys = Array.from({ length: 40 }, (_, i) => `k${i}`);
   const links = `import { Link } from 'react-router-dom';
 
-export function Item({ to }) {
-  return <Link to={to}>on</Link>;
+export function Item(props) {
+  return ${keys.map((k) => `props.${k} && `).join('')}<Link to={props.to}>on</Link>;
 }
 `;
-  const attributes = Array.from({ length: 40 }, (_, i) => `k${i}={flag ? 'a' : 'b'}`).join(' ');
+  const attributes = keys.map((k) => `${k}={flag ? 'a' : 'b'}`).join(' ');
   const manyAt = (name: string) => `import { Item } from './links';
 
 export default function ${name}({ flag }) {
@@ -5026,6 +5074,205 @@ export default function ${name}({ flag }) {
     `  link address not read ← Home.js:${lineOf(manyAt('Home'), 'to="/login"')}: its values give more than 64 combinations, in screen /home#Home`,
     `  link address not read ← Home.js:${lineOf(manyAt('Home'), 'to="/start"')}: its values give more than 64 combinations, in screen /home#Home`,
     `  link address not read ← shared.js:${lineOf(shared, 'to="/start"')}: its values give more than 64 combinations, in 2 screens, the first is /help/:page?#Help`,
+  ]);
+});
+
+test('a link component used with many attributes of two values each that it does not put in its address, also through a component that hands them on, gives the link its address leads to', async () => {
+  const keys = Array.from({ length: 40 }, (_, i) => `k${i}`);
+  const links = `import { Link } from 'react-router-dom';
+
+export function Item({ to, ${keys.join(', ')} }) {
+  return <Link to={to} className={[${keys.join(', ')}].join(' ')}>on</Link>;
+}
+
+export function Row({ to, flag }) {
+  return <Item to={to} ${keys.map((k) => `${k}={flag ? 'a' : 'b'}`).join(' ')} />;
+}
+`;
+  const home = `import { Item, Row } from './links';
+
+export default function Home({ flag }) {
+  return (
+    <nav>
+      <Item to="/login" ${keys.map((k) => `${k}={flag ? 'a' : 'b'}`).join(' ')} />
+      <Row to="/start" flag={flag} />
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'links.js': links }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home').map(([to, line]) => [to, line]), [
+    ['/login', at('to="/login"')],
+    ['/start', at('to="/start"')],
+  ]);
+  assert.equal(map.manyLinkBranches, undefined);
+});
+
+test('a link component that moves to an address read from data, reached through more than the limit of attribute combinations, adds no link where it is used, as with few combinations', async () => {
+  const keys = ['a', 'b', 'c', 'd', 'e', 'f'];
+  const links = `import { useHistory } from 'react-router-dom';
+
+export function Item({ doc, ${keys.join(', ')} }) {
+  const history = useHistory();
+  const url = doc.url;
+  return ${keys.join(' && ')} && <a onClick={() => history.push(url)}>open</a>;
+}
+
+export function Row({ doc, flag }) {
+  return (
+    <div>
+      <Item doc={doc} ${keys.map((k) => `${k}={flag ? 1 : 2}`).join(' ')} />
+      <Item doc={doc} ${keys.map((k) => `${k}={flag ? 3 : 4}`).join(' ')} />
+    </div>
+  );
+}
+`;
+  const home = `import { Row } from './links';
+
+export default function Home({ doc, flag }) {
+  return (
+    <nav>
+      <Row doc={doc} flag={flag} />
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'links.js': links }));
+  assert.deepEqual(linksOf(map, '/home#Home'), []);
+  assert.equal(map.manyLinkBranches, undefined);
+});
+
+test('a component that hands its whole props to a link component, spread, kept in a variable, returned from a function, as the rest after named ones or as one attribute, gives the link the address written at its use', async () => {
+  const links = `import { Link } from 'react-router-dom';
+
+export function Item({ to }) {
+  return <Link to={to}>x</Link>;
+}
+
+export function Card({ link }) {
+  return <Link to={link.to}>x</Link>;
+}
+
+const same = (value) => value;
+
+export function Spread(props) {
+  return <Item {...props} />;
+}
+
+export function Kept(props) {
+  const given = props;
+  return <Item {...given} />;
+}
+
+export function Returned(props) {
+  return <Item {...same(props)} />;
+}
+
+export function Rest({ label, ...rest }) {
+  return <Item {...rest} />;
+}
+
+export function Whole(props) {
+  return <Card link={props} />;
+}
+`;
+  const home = `import { Spread, Kept, Returned, Rest, Whole } from './links';
+
+export default function Home({ flag }) {
+  return (
+    <nav>
+      <Spread to="/login" />
+      <Kept to="/start" />
+      <Returned to="/login" />
+      <Rest label="a" to="/start" />
+      <Whole to={flag ? '/login' : '/start'} />
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'links.js': links }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home').map(([to, line]) => [to, line]), [
+    ['/login', at('<Spread')],
+    ['/start', at('<Kept')],
+    ['/login', at('<Returned')],
+    ['/start', at('<Rest')],
+    ['/login', at('<Whole')],
+    ['/start', at('<Whole')],
+  ]);
+});
+
+test('a component that spreads its props into a link component that moves with history, or passes them whole to a function that moves, gives the address written at its use', async () => {
+  const links = `import { useHistory } from 'react-router-dom';
+
+function open(history, options) {
+  history.push(options.to);
+}
+
+export function Item({ to }) {
+  const history = useHistory();
+  return <a onClick={() => history.push(to)}>x</a>;
+}
+
+export function Row(props) {
+  return <Item {...props} />;
+}
+
+export function Button(props) {
+  const history = useHistory();
+  return <a onClick={() => open(history, props)}>x</a>;
+}
+`;
+  const home = `import { Row, Button } from './links';
+
+export default function Home() {
+  return (
+    <nav>
+      <Row to="/login" />
+      <Row to="/start" />
+      <Button to="/login" />
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'links.js': links }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/login', at('<Row to="/login"'), [], ['/login#Login']],
+    ['/start', at('<Row to="/start"'), [], ['/start#Start']],
+    ['/login', at('<Button'), [], ['/login#Login']],
+  ]);
+});
+
+test('a link component that links or moves to the rest of its props as a location gives the pathname written at its use', async () => {
+  const links = `import { Link, useHistory } from 'react-router-dom';
+
+export function Place({ children, ...location }) {
+  return <Link to={location}>{children}</Link>;
+}
+
+export function Go({ label, ...location }) {
+  const history = useHistory();
+  return <a onClick={() => history.push(location)}>{label}</a>;
+}
+`;
+  const home = `import { Place, Go } from './links';
+
+export default function Home() {
+  return (
+    <nav>
+      <Place pathname="/login">a</Place>
+      <Go label="b" pathname="/start" />
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'links.js': links }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/login', at('<Place'), [], ['/login#Login']],
+    ['/start', at('<Go'), [], ['/start#Start']],
   ]);
 });
 
