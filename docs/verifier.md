@@ -1,7 +1,7 @@
 # duru verifier
 
 A fresh agent that did not write the code judges one commit of duru. Nobody tells it what the author thinks the
-change does. The comparison it runs builds a private client's map, so its results stay on the PC that ran it.
+change does. The comparison it runs builds private clients' maps, so its results stay on the PC that ran it.
 
 ## How to start one
 
@@ -24,7 +24,7 @@ way, and the caller counts a block from any of them. One run measured about 8 mi
 ## After the report
 
 The report is a claim until the caller has run it. Before acting on a block, run the command it quotes; a block from
-comparison exit 4 stands only if that run exits 4 again. On a stacked
+comparison exit 4 stands only if running that client again with `--config <its config>` exits 4 again. On a stacked
 pull request, also run it at the top of the stack: a problem fixed higher up does not hold this pull request as long
 as the stack lands together, and a problem still there at the top is reported to whoever owns the stack. Whether a
 block changes the code or the document is the driver's decision when the issue does not settle it.
@@ -41,7 +41,7 @@ Rules:
   the subjects of the commits from the merge-base to the commit, and say in the report that nothing else was there to
   judge against: those subjects are the author's words.
 - Change nothing outside `scratch` and `~/duru-verify-out/compare/`, apart from `git fetch` and the temporary files the
-  comparison makes next to the client's config and removes. No commits, no pushes, no comments or labels on
+  comparison makes next to each client's config and removes. No commits, no pushes, no comments or labels on
   GitHub, no edits to any existing checkout. Other sessions may be working in other checkouts on this PC.
 - Nothing you found goes to GitHub. The comparison results name a private client; they stay on this PC.
 
@@ -63,17 +63,20 @@ Steps:
    `test/review-page-types.test.ts`. Do not run the whole suite; the merge queue does. A test that cannot start
    because Chromium is missing is reported as not run, never as passed.
 4. If the diff changes `package-lock.json` or anything under `src/`, run the comparison:
-   `node <checkout>/scripts/compare-maps.mjs <commit> --base <base>`. Exit 0 means no difference, 3 means a
-   difference, 4 means installing or rebuilding with this commit failed, whatever the cause. Exit 1 means something
-   else stopped it and 2 means it was started wrongly or the client config is missing; report those two as not run.
-   On exit 0 or 3, read `report.txt` and, for anything it lists, `output.diff` and `json-details.txt` in the folder
-   it names. A `fetch failed` line means the base may be old: say so in the report. If only `src/review-page/` changed, skip it
-   and say so.
+   `node <checkout>/scripts/compare-maps.mjs <commit> --base <base>`. It compares every client listed in
+   `~/duru-verify-out/compare.configs.json` and ends with one line per client. SAME (exit 0) means no difference,
+   DIFFERENT (3) a difference, HEAD FAILED (4) that installing or rebuilding with this commit failed, whatever the
+   cause, a rebuild over the time limit included. NOT COMPARED (1 or 2) means something else stopped it or it was
+   started wrongly; report that client as not run. The exit code is the most serious line, so read every line. For
+   each SAME or DIFFERENT client, read the `report.txt` its line names and, for anything it lists, `output.diff` and
+   `json-details.txt` beside it. A `fetch failed` line means the base may be old: say so in the report. If only
+   `src/review-page/` changed, skip it and say so.
 5. For each item in the issue's acceptance criteria, find what shows it: a test you ran, a line of the comparison, or
    a line of the diff. Mark each one shown, not shown, or a human step (for example the driver looking at a screen).
 6. Judge the comparison against the issue: does every difference follow from what the issue asks for, and does
-   anything the issue asks for fail to appear where this client has the shape it describes? A difference on the map
-   the issue does not explain is a finding. No difference is not itself a finding: this client may not have the shape.
+   anything the issue asks for fail to appear where a client has the shape it describes? A difference on the map
+   the issue does not explain is a finding. No difference is not itself a finding: it may be that no client has the
+   shape.
 
 What blocks the merge — only a problem you can show:
 
@@ -91,7 +94,7 @@ Final report, in this order:
 verdict: PASS | BLOCK
 commit: <sha>
 ran: <each command, with its result; what did not run, and why>
-comparison: <result line, the changes-since counts, and which differences the issue explains>
+comparison: <each client's result line and changes-since counts, and which differences the issue explains>
 criteria: <each acceptance criterion: shown by what / not shown / human step>
 blocks: <each with the command and output, or the quoted line; "none" if none>
 follow-ups: <one line each; "none" if none>

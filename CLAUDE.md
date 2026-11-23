@@ -34,12 +34,17 @@ You are the owner and long-term maintainer of this codebase, and its design is u
 ## Before queueing a pull request
 
 - Before `gh pr merge`, a pull request that changes `package-lock.json`, or `src/` outside
-  `src/review-page/`, gets `node scripts/compare-maps.mjs <head> --base origin/<base branch>`, which builds a real
-  client's map with both versions of duru and reports what differs. A new feature, or any difference it reports, also
-  gets a verifier that did not write the code, as `docs/verifier.md` says; only what that file lists as a block holds
-  the merge. Exit 4 means installing or rebuilding with the pull request failed: run it again, and a second exit 4
-  holds the merge. Exit 1 or 2 means nothing was compared: say so in the pull request. The client's config and the results stay in `~/duru-verify-out/` and name a private client, so nothing
-  from them goes into an issue or a pull request.
+  `src/review-page/`, gets `node scripts/compare-maps.mjs <head> --base origin/<base branch>`, which builds the map of
+  every private client listed in `~/duru-verify-out/compare.configs.json` with both versions of duru and ends with one
+  line per client: SAME, DIFFERENT, HEAD FAILED or NOT COMPARED. `--config <file>` runs one client. A rebuild or install
+  that takes over 10 minutes is stopped, as HEAD FAILED on the pull request's side and NOT COMPARED on the base's;
+  `--minutes <n>` changes the limit. The exit code is the
+  most serious line: 4 before 3 before 1 and 2, so read every line, not only the code. A new feature, or any difference
+  it reports, also gets a verifier that did not write the code, as `docs/verifier.md` says; only what that file lists
+  as a block holds the merge. Exit 4 means installing or rebuilding with the pull request failed for a client: run
+  that client again with `--config`, and a second failure holds the merge. A NOT COMPARED client was not compared: say
+  in the pull request how many were not. The clients' configs and the results stay in `~/duru-verify-out/` and name
+  private clients, so nothing from them goes into an issue or a pull request.
 
 ## Reading a new source shape
 
