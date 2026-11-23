@@ -5191,6 +5191,13 @@ screens) instead of at the row inside it. At outline's five other sidebar rows (
 `StarredLink.tsx`) the `{?}` stays on the same line and screens, as at main; only the line is gone (in
 `DocumentLink.tsx` the address is the document's `url`, read from data). The two SigNoz places left are read by the
 next entry. Build times stayed within a few seconds of main's.
+In that pass a parameter with a default (`flag = false`) takes the replaced value only. Its default is read for the
+arguments it uses (`to = \`${base}/team\`` reads `base`), but it is not a branch of its own. When it was (#682), each
+such parameter given a value at the use doubled the pass: a private client hands nine of them to one component at one
+place, which was read 512 ways there, and its map went from 9 seconds to over 5 minutes. Without that branch it
+takes 9 seconds again, and outline, SigNoz (both configs), mattermost, appsmith and four private clients give the same
+map as main. The fifth takes main 2275 seconds and gives the same map; against the version before #673 the only change
+there is eight `{?}` links gone with their `more than 64 combinations` lines.
 Compared:
 - Merging the places' results with the same address before counting, without the first pass: the count is reached
   while the inputs are combined, before any address exists, so it would mean building every combination first;

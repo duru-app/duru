@@ -5241,6 +5241,64 @@ export default function Home() {
   assert.equal(map.manyLinkBranches, undefined);
 });
 
+test('a link component and a helper with many parameters that have defaults, each handed a value, are read within a minute and give the address written where they are used', async () => {
+  const keys = Array.from({ length: 24 }, (_, i) => `k${i}`);
+  const links = `import { Link, useHistory } from 'react-router-dom';
+
+export function Item({ to, ${keys.map((k) => `${k} = false`).join(', ')} }) {
+  return <Link to={to} className={[${keys.join(', ')}].join(' ')}>on</Link>;
+}
+
+export function open(history, to, ${keys.map((k) => `${k} = false`).join(', ')}) {
+  if (${keys.join(' || ')} || to) history.push(to);
+}
+`;
+  const home = `import { useHistory } from 'react-router-dom';
+import { Item, open } from './links';
+
+export default function Home({ x }) {
+  const history = useHistory();
+  return (
+    <nav>
+      <Item to="/login" ${keys.map((k) => `${k}={x.${k}}`).join(' ')} />
+      <a onClick={() => open(history, '/start', ${keys.map((k) => `x.${k}`).join(', ')})}>start</a>
+    </nav>
+  );
+}
+`;
+  const configFile = writeApp({ 'Home.js': home, 'links.js': links });
+  const result = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8', timeout: 60000 });
+  assert.equal(result.signal, null, 'extract did not finish within a minute');
+  assert.equal(result.status, 0, result.stderr);
+  const map = await build(configFile);
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home').map(([to, line]) => [to, line]), [
+    ['/login', at('to="/login"')],
+    ['/start', at("open(history, '/start'")],
+  ]);
+});
+
+test('a link component whose parameter default reads another attribute gives the address that default makes from the attribute written at its use', async () => {
+  const links = `import { Link } from 'react-router-dom';
+
+export function Item({ base, to = \`\${base}/team\` }) {
+  return <Link to={to}>on</Link>;
+}
+`;
+  const home = `import { Item } from './links';
+
+export default function Home({ flag }) {
+  return (
+    <nav>
+      <Item base="/org" to={flag ? '/login' : undefined} />
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'links.js': links }));
+  assert.deepEqual(linksOf(map, '/home#Home').map(([to]) => to).sort(), ['/login', '/org/team']);
+});
+
 test('a link component that moves to an address read from data, reached through more than the limit of attribute combinations, adds no link where it is used, as with few combinations', async () => {
   const keys = ['a', 'b', 'c', 'd', 'e', 'f'];
   const links = `import { useHistory } from 'react-router-dom';
