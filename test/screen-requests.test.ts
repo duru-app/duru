@@ -423,6 +423,29 @@ test('a call of the request function through a namespace import of its module is
   ]);
 });
 
+const WHOLE_INBOX = `import * as Sending from '../lib/sending';
+import Option from '../_define/Option';
+
+export default function Inbox({ info }: { info: { METHOD: string; URL: string } }) {
+  const REPORT = Option.REST_API.REPORT;
+  const load = () => [
+    Sending.send({ info: Option.REST_API.REPORT.ARCHIVE }),
+    Sending.send({ info: REPORT.SCHEDULE }),
+    Sending.send({ info }),
+  ];
+  return <button onClick={load} />;
+}
+`;
+
+test('a method and address the request function finds at a constant given whole, not spread, are read from that constant, also through a const that names it, while a value that is not a constant still hides them', async () => {
+  const map = await build(fixtureCopy({ ...SENDING, 'screens/Inbox.tsx': WHOLE_INBOX }, SENT_THROUGH));
+  assert.deepEqual(sent(map, INBOX), [
+    ['Sending.send', 'POST /api/v1/report/archive', true],
+    ['Sending.send', 'POST /api/v1/report/schedule', true],
+    ['Sending.send', 'null null', true],
+  ]);
+});
+
 const ENDPOINTS = {
   'lib/endpoints.ts': `export default { mail: { list: { url: '/api/v1/mail/list', method: 'post' }, base: { baseURL: '/api/v2' } } };\n`,
 };
@@ -438,6 +461,27 @@ export default function Inbox() {
   return <button onClick={load} />;
 }
 `;
+
+const WHOLE_OPTIONS_INBOX = `import axios from 'axios';
+import Endpoints from '../lib/endpoints';
+
+export default function Inbox() {
+  const load = () => [
+    axios.get('/mail', Endpoints.mail.base),
+    fetch('/api/v1/mail/flags', Endpoints.mail.list),
+  ];
+  return <button onClick={load} />;
+}
+`;
+
+test('the options given to axios or fetch as a constant whole read the method and baseURL it holds', async () => {
+  const constants = { Option: '_define/Option.ts', Settings: 'store/index.ts', Endpoints: 'lib/endpoints.ts' };
+  const map = await build(fixtureCopy({ ...ENDPOINTS, 'screens/Inbox.tsx': WHOLE_OPTIONS_INBOX }, { constants }));
+  assert.deepEqual(sent(map, INBOX), [
+    ['axios.get', 'GET /api/v2/mail', true],
+    ['fetch', 'POST /api/v1/mail/flags', true],
+  ]);
+});
 
 test('the options given to axios or fetch read the url, method and baseURL a spread of a constant holds', async () => {
   const constants = { Option: '_define/Option.ts', Settings: 'store/index.ts', Endpoints: 'lib/endpoints.ts' };
