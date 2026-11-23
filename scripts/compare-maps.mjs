@@ -1,17 +1,19 @@
 #!/usr/bin/env node
 // 두 duru 로 같은 클라이언트를 rebuild 해서 지도와 출력의 차이를 보고한다.
-// 사용: node scripts/compare-maps.mjs <head: 커밋·브랜치·폴더> [--base <ref>] [--config <file>]
-// 기본 설정은 ~/duru-verify-out/compare.config.json 이고, 결과는 ~/duru-verify-out/compare/ 에 쌓인다.
+// 사용: node scripts/compare-maps.mjs <head: 커밋·브랜치·폴더> [--base <ref>] [--config <file>] [--minutes <n>]
+// --config 가 없으면 ~/duru-verify-out/compare.configs.json 에 적힌 설정(JSON 배열, 그 파일 기준 상대 경로)을 하나씩 모두 견준다.
+// 결과는 ~/duru-verify-out/compare/ 에 클라이언트마다 쌓인다. rebuild 와 npm ci 는 하나에 --minutes 분(기본 10)까지만 기다린다.
 // 종료 코드: 0 차이 없음, 3 차이 있음, 4 PR 쪽 설치나 rebuild 실패, 2 잘못된 사용, 1 그 밖의 실행 실패.
+// 여러 클라이언트를 견주면 4, 3, 2, 1 순으로 하나라도 나온 코드를 내고, 모두 0 일 때만 0 을 낸다.
 // 결과에 비공개 클라이언트의 경로와 이름이 들어 있으므로 공개 저장소나 PR 본문에 옮기지 않는다.
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
 const HOME = os.homedir();
 const REPO = path.resolve(import.meta.dirname, '..');
-const DEFAULT_CONFIG = path.join(HOME, 'duru-verify-out/compare.config.json');
+const CONFIG_LIST = path.join(HOME, 'duru-verify-out/compare.configs.json');
 const REPORTS = path.join(HOME, 'duru-verify-out/compare');
 const IGNORED_KEYS = new Set(['generatedAt', 'duruCommit']);
 const KEPT_FOLDERS = { marksDir: 'marks', storiesDir: 'stories', judgmentsDir: 'judgments' };
@@ -19,15 +21,16 @@ const KEPT_FOLDERS = { marksDir: 'marks', storiesDir: 'stories', judgmentsDir: '
 class HeadFailed extends Error {}
 
 function parseArgs(argv) {
-  const opts = { base: 'origin/main', config: DEFAULT_CONFIG, head: null };
+  const opts = { base: 'origin/main', config: null, head: null, minutes: 10 };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--base') opts.base = argv[++i];
     else if (argv[i] === '--config') opts.config = path.resolve(argv[++i]);
+    else if (argv[i] === '--minutes') opts.minutes = Number(argv[++i]);
     else if (!opts.head) opts.head = argv[i];
     else opts.head = null, i = argv.length;
   }
-  if (!opts.head || !opts.base) {
-    console.error('usage: node scripts/compare-maps.mjs <head commit, branch or folder> [--base <ref>] [--config <file>]');
+  if (!opts.head || !opts.base || !(opts.minutes > 0)) {
+    console.error('usage: node scripts/compare-maps.mjs <head commit, branch or folder> [--base <ref>] [--config <file>] [--minutes <n>]');
     process.exit(2);
   }
   return opts;
@@ -54,12 +57,12 @@ function checkout(sha, dir) {
     fs.symlinkSync(path.join(REPO, 'node_modules'), path.join(dir, 'node_modules'));
     return 'shared node_modules';
   }
-  execFileSync('npm', ['ci', '--no-audit', '--no-fund'], { cwd: dir, stdio: ['ignore', 'ignore', 'pipe'], maxBuffer: 1 << 28 });
+  execFileSync('npm', ['ci', '--no-audit', '--no-fund'], { cwd: dir, stdio: ['ignore', 'ignore', 'pipe'], maxBuffer: 1 << 28, timeout: limitMs });
   return 'own npm ci';
 }
 
 const rebuildFailed = (run) => run.status !== 0 || run.error;
-const howItEnded = (run) => run.error?.message ?? run.signal ?? `exit ${run.status}`;
+const howItEnded = (run) => (run.error?.code === 'ETIMEDOUT' ? `over the ${opts.minutes}-minute limit` : run.error?.message ?? run.signal ?? `exit ${run.status}`);
 
 function rebuild(duruDir, config, configFile, outDir, baselineMap) {
   const written = { ...config, outDir };
@@ -74,7 +77,7 @@ function rebuild(duruDir, config, configFile, outDir, baselineMap) {
   }
   fs.writeFileSync(configFile, JSON.stringify(written, null, 2));
   const started = Date.now();
-  const run = spawnSync('node', [path.join(duruDir, 'src/cli.ts'), 'rebuild', configFile], { encoding: 'utf8', maxBuffer: 1 << 28 });
+  const run = spawnSync('node', [path.join(duruDir, 'src/cli.ts'), 'rebuild', configFile], { encoding: 'utf8', maxBuffer: 1 << 28, timeout: limitMs });
   return { status: run.status, signal: run.signal, error: run.error, stdout: run.stdout ?? '', stderr: run.stderr ?? '', seconds: Math.round((Date.now() - started) / 1000) };
 }
 
@@ -191,7 +194,59 @@ function summarize(found) {
   return [...byPattern.entries()].sort((a, b) => b[1].length - a[1].length).map(([pattern, list]) => `  ${pattern || '(root)'}: ${list.length}, e.g. ${list.slice(0, 2).map((d) => d.at).join(' ; ')}`);
 }
 
+const RESULT_WORDS = { 0: 'SAME', 3: 'DIFFERENT', 4: 'HEAD FAILED' };
+
+function compareOne(head, base, config) {
+  const args = [import.meta.filename, head, '--base', base, '--config', config, '--minutes', String(opts.minutes)];
+  const child = spawn(process.execPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  let out = '';
+  let err = '';
+  child.stdout.on('data', (chunk) => (process.stdout.write(chunk), (out += chunk)));
+  child.stderr.on('data', (chunk) => (process.stderr.write(chunk), (err += chunk)));
+  return new Promise((resolve) => {
+    child.on('close', (status) => {
+      const report = (out + err).match(/^report (?:folder )?(.+)$/m)?.[1];
+      const problem = err.split('\n').find((line) => line && !line.startsWith('fetch failed') && !line.startsWith('report folder '));
+      resolve({ code: status ?? 1, report, problem });
+    });
+  });
+}
+
+async function compareAll() {
+  if (!fs.existsSync(CONFIG_LIST)) {
+    console.error(`no client list at ${CONFIG_LIST}; write one as a JSON array of config paths, or pass --config`);
+    return 2;
+  }
+  const configs = JSON.parse(fs.readFileSync(CONFIG_LIST, 'utf8')).map((file) => path.resolve(path.dirname(CONFIG_LIST), file));
+  const missing = configs.filter((file) => !fs.existsSync(file));
+  if (!configs.length || missing.length) {
+    console.error(`${CONFIG_LIST}: ${configs.length ? `no client config at ${missing.join(', ')}` : 'lists no client config'}`);
+    return 2;
+  }
+  // origin 이 도중에 바뀌어도 모든 클라이언트가 같은 두 커밋을 견주도록 처음에 한 번 정한다.
+  spawnSync('git', ['-C', REPO, 'fetch', 'origin', '--quiet']);
+  const headIsFolder = fs.existsSync(path.join(opts.head, 'src/cli.ts'));
+  const head = headIsFolder ? opts.head : git('rev-parse', '--verify', `${opts.head}^{commit}`);
+  const base = headIsFolder ? git('rev-parse', '--verify', `${opts.base}^{commit}`) : git('merge-base', opts.base, head);
+
+  const results = [];
+  for (const [i, config] of configs.entries()) {
+    console.log(`\n== client ${i + 1}/${configs.length}: ${config}`);
+    results.push({ config, ...(await compareOne(head, base, config)) });
+  }
+  console.log(`\n== ${configs.length} clients, base ${short(base)}, head ${headIsFolder ? head : short(head)}, limit ${opts.minutes} minutes`);
+  for (const { config, code, report, problem } of results) {
+    const word = RESULT_WORDS[code] ?? 'NOT COMPARED';
+    console.log(`${word} (exit ${code}) ${config}${code === 0 || code === 3 ? '' : `: ${problem}`}${report ? ` | ${report}` : ''}`);
+  }
+  const combined = [4, 3, 2, 1].find((code) => results.some((r) => r.code === code)) ?? 0;
+  console.log(`result: ${RESULT_WORDS[combined] ?? 'NOT COMPARED'} (exit ${combined})`);
+  return combined;
+}
+
 const opts = parseArgs(process.argv.slice(2));
+const limitMs = opts.minutes * 60_000;
+if (!opts.config) process.exit(await compareAll());
 if (!fs.existsSync(opts.config)) {
   console.error(`no client config at ${opts.config}; pass one with --config`);
   process.exit(2);
