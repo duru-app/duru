@@ -6131,8 +6131,10 @@ Compared:
 **The time accepting a candidate takes is measured in the page and printed by the server on the review's standard
 error, one line per accept.**
 Chosen for #595 (2026-11-21). The reported "several seconds" could not be reproduced (123 to 161 ms in the issue's
-measurements), so the next slow accept has to leave a record of which of the three steps was slow: the accept call,
-fetching the data again, redrawing. Only the page sees all three, so the page times them and posts the numbers to
+measurements), so the next slow accept has to leave a record of which step was slow: waiting for the step and line saves
+the reviewer made just before, the accept call, fetching the data again, redrawing. The wait is timed because a queue
+of those saves was one of the suspects measured in the issue; left untimed, a slow wait would show as three small numbers.
+Only the page sees all four, so the page times them and posts the numbers to
 `/api/timings`; the server prints them the way it already prints each saved mark. The reviewer sees the slowness in
 the browser, but an agent running duru already reads the review's standard error and can read the record without the
 reviewer copying anything. Nothing is stored, so no file format has to be kept.

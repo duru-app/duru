@@ -301,8 +301,8 @@ A pair the reviewer hands over for tagging appears in the task list under `# Tag
    line starts with `duru review comment;` and names the `duru reply` to run, and its second line is the comment's
    JSON line. Answer it as below, and keep `duru wait` running all the same; when the same comment `id` comes both
    ways, answer it once.
-   When the reviewer says accepting a candidate was slow, read the `candidate accepted: server call … data refetch …
-   redraw …` lines on the review's standard error: the largest time is the slow part.
+   When the reviewer says accepting a candidate was slow, read the `candidate accepted: earlier saves … server call …
+   data refetch … redraw …` lines on the review's standard error: the largest time is the slow part.
    Each mark or comment the reviewer saves also comes out on the review's standard error at once, and `duru wait`
    prints comments in the same shape: one JSON line starting with `{"duru":`: `"comment"` (no `status`) or
    `"mark"`, with its `id`, `target` (a screen or call ID under `node`, or a story ID under `story`; `targets` for a

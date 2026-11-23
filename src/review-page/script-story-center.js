@@ -471,6 +471,7 @@ async function writeStories(url, body, timing = {}) {
       await load();
       timing.data = performance.now() - saved;
     } catch (err) {
+      if (written) timing.data = null;
       state.storyError = written ? `저장했지만 다시 읽지 못했습니다: ${err.message}` : `저장하지 못했습니다: ${err.message}`;
     }
   });
@@ -482,13 +483,13 @@ const storyIdProblem = (id) => (state.data.stories.list.some((st) => st.id === i
 
 let accepting = false;
 
-async function acceptAs(c, id, name) {
+async function acceptAs(c, id, name, pressed = performance.now()) {
   await lineWrites;
   await stepWrites;
+  const timing = { wait: performance.now() - pressed };
   const stayed = state.candidate === c.key;
   accepting = true;
   let written;
-  const timing = {};
   try {
     written = await writeStories('/api/candidates/accept', { key: c.key, id, name }, timing);
   } finally {
@@ -530,11 +531,11 @@ async function nameAs(c, id, name) {
 
 const idOf = (c) => c.proposedId ?? '';
 
-async function acceptChosen(key = state.candidate) {
+async function acceptChosen(key = state.candidate, pressed = performance.now()) {
   const c = state.data.candidates.list.find((x) => x.key === key);
   if (!c) return;
   if (storyIdProblem(idOf(c))) return askAccept(c, 'button.accept', null);
-  if (await acceptAs(c, idOf(c), c.name)) return;
+  if (await acceptAs(c, idOf(c), c.name, pressed)) return;
   if (state.candidate === c.key) askAccept(c, 'button.accept', takeStoryError());
 }
 
@@ -542,13 +543,14 @@ let acceptPresses = 0;
 
 async function acceptAfterPicks() {
   const press = ++acceptPresses;
+  const pressed = performance.now();
   const key = state.candidate;
   let pending;
   do {
     pending = [lineWrites, stepWrites];
     await Promise.all(pending);
   } while (lineWrites !== pending[0] || stepWrites !== pending[1]);
-  if (press === acceptPresses) await acceptChosen(key);
+  if (press === acceptPresses) await acceptChosen(key, pressed);
 }
 
 const acceptDialog = /** @type {HTMLDialogElement} */ (document.getElementById('accept-ask'));

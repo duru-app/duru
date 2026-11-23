@@ -947,8 +947,10 @@ route whose path is `*` or `/*`) gives no candidate. These candidates follow the
 
 On the review page a candidate is accepted, which writes a story file into `storiesDir`, or discarded with a
 reason, which writes a file into `discarded/` in `storiesDir` so the same order does not come back. Each accept
-puts one line on the review's standard error with how long the server call, the fetching of the data again and the
-redrawing took: `candidate accepted: server call 12ms, data refetch 340ms, redraw 26ms`.
+puts one line on the review's standard error with how long waiting for the candidate's earlier saves, the server
+call, the fetching of the data again and the redrawing took:
+`candidate accepted: earlier saves 0ms, server call 12ms, data refetch 340ms, redraw 26ms`. `data refetch failed`
+means the story was written but the page could not fetch the data again.
 
 `rebuild` keeps each candidate as a file in `candidates/` in `storiesDir`, one for each screen order that has no
 file there yet, holding the name, the screens, the source and the date it was first seen. Files are only added,

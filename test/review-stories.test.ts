@@ -8,7 +8,7 @@ import { addMark } from '../src/marks.ts';
 import { startReviewServer } from '../src/review.ts';
 import { addStory } from '../src/stories.ts';
 import { taskList } from '../src/tasks.ts';
-import { FIXTURE, signer, withRebuiltFixture, withServer, postMark, rebuild, browserMissing, withPage, TRACED, asked, why, placeOf, postJson, CANDIDATES, HELP_RECORD, HELP_KEY, PUBLISH_KEY, storiesTab, BAD_REQUEST, discardCandidate, postCandidate, postAgentCandidate, AGENT_KEY, EMAIL_INPUT, untilSet } from './review-helpers.ts';
+import { FIXTURE, signer, withRebuiltFixture, withServer, postMark, rebuild, browserMissing, withPage, TRACED, asked, why, placeOf, postJson, CANDIDATES, HELP_RECORD, HELP_KEY, PUBLISH_KEY, storiesTab, BAD_REQUEST, discardCandidate, postCandidate, postAgentCandidate, AGENT_KEY, EMAIL_INPUT, untilSet, SAVE_REFUSED } from './review-helpers.ts';
 import type { PageData } from './review-helpers.ts';
 
 test('the data carries each story checked against the map with its status, the tests per story and the story files that could not be read, read again on every request', async () => {
@@ -289,7 +289,7 @@ test('in a browser, a candidate whose name has no Latin letters shows the path n
   );
 });
 
-test('in a browser, accepting a candidate hands one line with the three times to the server output', { skip: browserMissing }, async () => {
+test('in a browser, accepting a candidate hands one line with the four times to the server output', { skip: browserMissing }, async () => {
   await withRebuiltFixture(CANDIDATES, async (config) => {
     const lines: string[] = [];
     const server = await startReviewServer(config, { author: signer('reviewer'), onTiming: (line) => lines.push(line) });
@@ -304,7 +304,64 @@ test('in a browser, accepting a candidate hands one line with the three times to
         await p.waitForSelector('#story-list li.selected:has-text("로그인해 실험을 연다")');
         await untilSet(() => lines.length, 'the timing line');
         assert.equal(lines.length, 1);
-        assert.match(lines[0], /^candidate accepted: server call \d+ms, data refetch \d+ms, redraw \d+ms$/);
+        assert.match(lines[0], /^candidate accepted: earlier saves \d+ms, server call \d+ms, data refetch \d+ms, redraw \d+ms$/);
+      });
+    } finally {
+      server.close();
+    }
+  });
+});
+
+test('in a browser, accepting while a line switched off is still being saved counts the time from the press until that save is done as the wait for earlier saves', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, async (config) => {
+    const lines: string[] = [];
+    const server = await startReviewServer(config, { author: signer('reviewer'), onTiming: (line) => lines.push(line) });
+    try {
+      const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      await withPage(base, async (p) => {
+        await postAgentCandidate(base);
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#candidate-list li:has-text("로그인해 실험을 연다")');
+        let held: Route | null = null;
+        await p.route('**/api/candidates/lines', (route) => { held = route; });
+        await p.click('#center input[name="line-3-needs-1"]');
+        const save = (await untilSet(() => held, 'the line save held'))!;
+        await p.click('#center button.accept');
+        await p.waitForTimeout(400);
+        await save.continue();
+        await untilSet(() => lines.length, 'the timing line');
+        const wait = Number(/^candidate accepted: earlier saves (\d+)ms, /.exec(lines[0])?.[1]);
+        assert.ok(wait >= 400, lines[0]);
+      });
+    } finally {
+      server.close();
+    }
+  });
+});
+
+test('in a browser, a candidate accepted whose data could not be fetched again still hands the line, with the data refetch as failed', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, async (config) => {
+    const lines: string[] = [];
+    const server = await startReviewServer(config, { author: signer('reviewer'), onTiming: (line) => lines.push(line) });
+    try {
+      const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      await withPage(base, async (p, errors) => {
+        await postAgentCandidate(base);
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#candidate-list li:has-text("로그인해 실험을 연다")');
+        let refused = false;
+        await p.route('**/api/data', (route) => {
+          if (refused) return route.continue();
+          refused = true;
+          return route.fulfill({ status: 500, body: 'data gone' });
+        });
+        await p.click('#center button.accept');
+        await untilSet(() => lines.length, 'the timing line');
+        assert.equal(lines.length, 1);
+        assert.match(lines[0], /^candidate accepted: earlier saves \d+ms, server call \d+ms, data refetch failed, redraw \d+ms$/);
+        assert.deepEqual(errors.splice(0), SAVE_REFUSED);
       });
     } finally {
       server.close();
