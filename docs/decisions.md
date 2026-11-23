@@ -6010,7 +6010,7 @@ functions still goes through the real function and is not recorded, and `apiModu
 file: their addresses do not come from the run.
 
 **A screen's call of the request function through a namespace import of its module (`M.send(...)`) is a call of it,
-and a spread of a constant in the options it is given hides only the keys that constant holds.**
+and a constant in the options it is given, spread or given whole, is read for the keys it holds.**
 Chosen for #676 (2026-11-23). A private app imports its request module with `import * as M`, and its screens send
 with `M.<name>({ endpoint: { ...ENDPOINTS.list } })`, where `ENDPOINTS` is a const holding a member of a `constants`
 module and the method, and often the address, sit only inside that constant. duru took the namespace member for a
@@ -6026,6 +6026,16 @@ configured function reached another way, and the spread follows `constants` the 
 so neither waits for a second app. On that app the screens with a request read from their source go from 0 to all 24,
 and the method is read on 245 of the 378 such requests its screens list; most addresses stay `imported-piece`, since a function
 imported from a package fills the path variables into the address.
+Widened for #683 (2026-11-23): the same app also hands the constant over whole, `{ endpoint: ENDPOINTS.create }`,
+and duru still took the method and address as not written there, since the value is no object literal. A place that
+is not an object literal is now read from the loaded constant when it starts from a `constants` name the way a spread
+does, and so are the options given to axios and `fetch`; anything else still hides what it may hold. Counted on
+2026-11-23: the private app hands a constant over whole in 21 places, 4 of them to the configured function and the
+other 17 to a function that sends no request; 2 of the 4 lie on screens. Among the seven reference apps none
+configures a request function with places, and no axios or `fetch` call is given its options as a constant. Reading
+the whole constant is the spread's rule applied to a value with nothing written around it, so it does not wait for a
+second app. On that app those 2 screen requests now have their method and address, and the calls go from 9 to 11; the
+reference apps' maps do not change.
 Compared:
 - Evaluating any spread with the evaluator used for addresses: it returns an object even when it skipped computed keys
   or spreads it could not read, so a key missing from it would be read as absent when it may be hidden.
