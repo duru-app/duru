@@ -3,14 +3,15 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { loadConfig } from '../src/config.ts';
 import { addJudgment, loadJudgments } from '../src/judgments.ts';
 import { loadMarks } from '../src/marks.ts';
-import { PAGE_PARTS, reviewAuthor } from '../src/review.ts';
+import { PAGE_PARTS, reviewAuthor, startReviewServer } from '../src/review.ts';
 import { taskList } from '../src/tasks.ts';
-import { FIXTURE, CLI, CASE_KINDS, withRebuiltFixture, withServer, postMark, postJudgment, initGitRepoNamed } from './review-helpers.ts';
+import { FIXTURE, CLI, CASE_KINDS, withRebuiltFixture, withServer, postMark, postJudgment, initGitRepoNamed, signer } from './review-helpers.ts';
 import type { Config, PageData } from './review-helpers.ts';
 
 const snapshot = (dir: string) =>
@@ -308,4 +309,34 @@ test('the page served at / is every file of src/review-page joined in the order 
       assert.equal(await (await fetch(`${base}/`)).text(), PAGE_PARTS.map((part) => fs.readFileSync(path.join(dir, part), 'utf8')).join(''));
     }),
   );
+});
+
+test('the page reports how long accepting a candidate took, and the server hands one line with the four times to onTiming, the data refetch as failed when it is null and a mark after the redraw when the page was hidden; anything else is refused and not handed on', async () => {
+  await withRebuiltFixture({}, async (config) => {
+    const lines: string[] = [];
+    const server = await startReviewServer(config, { author: signer('reviewer'), onTiming: (line) => lines.push(line) });
+    try {
+      const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      const post = (body: unknown, type = 'application/json') => fetch(`${base}/api/timings`, { method: 'POST', headers: { 'content-type': type }, body: JSON.stringify(body) });
+      assert.equal((await post({ of: 'accept', wait: 830.2, server: 12.4, data: 340, draw: 25.6 })).status, 204);
+      assert.equal((await post({ of: 'accept', wait: 0, server: 12, data: null, draw: 4, hidden: false })).status, 204);
+      assert.equal((await post({ of: 'accept', wait: 0, server: 12, data: 30, draw: 4210, hidden: true })).status, 204);
+      assert.deepEqual(lines, [
+        'candidate accepted: earlier saves 830ms, server call 12ms, data refetch 340ms, redraw 26ms',
+        'candidate accepted: earlier saves 0ms, server call 12ms, data refetch failed, redraw 4ms',
+        'candidate accepted: earlier saves 0ms, server call 12ms, data refetch 30ms, redraw 4210ms (page was hidden)',
+      ]);
+      assert.equal((await post({ of: 'accept', wait: 0, server: 1, data: 1, draw: 3, hidden: 'yes' })).status, 400);
+      assert.equal((await post({ of: 'accept', wait: 0, server: 1, data: 'slow', draw: 3 })).status, 400);
+      assert.equal((await post({ of: 'accept', wait: 0, server: -1, data: 1, draw: 3 })).status, 400);
+      assert.equal((await post({ of: 'accept', server: 1, data: 1, draw: 3 })).status, 400);
+      assert.equal((await post({ of: 'accept', wait: 0, server: 1, draw: 3 })).status, 400);
+      assert.equal((await post({ of: 'accept', wait: 0, server: null, data: 1, draw: 3 })).status, 400);
+      assert.equal((await post({ of: 'other', wait: 0, server: 1, data: 1, draw: 3 })).status, 400);
+      assert.equal((await post({ of: 'accept', wait: 0, server: 1, data: 1, draw: 3 }, 'text/plain')).status, 415);
+      assert.equal(lines.length, 3);
+    } finally {
+      server.close();
+    }
+  });
 });

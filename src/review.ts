@@ -446,7 +446,7 @@ type Where = ReturnType<typeof locatePart> | ReturnType<typeof locateStoryPart> 
 type Target = NonNullable<Mark['target']>;
 export type AnnouncedMark = Mark & { duru: string; where?: Where; wheres?: Where[] };
 
-export async function startReviewServer(config: any, { port = 0, author = reviewAuthor(config), onDone = () => {}, onMark = () => {}, baselineTests = config.baselineTests ? readBaselineTests(config) : null, sessionGraceMs = SESSION_GRACE_MS }: { port?: number; author?: ReviewAuthor; onDone?: () => (() => void) | void | null; onMark?: (line: AnnouncedMark, taken: () => void) => void; baselineTests?: BaselineTests | null; sessionGraceMs?: number } = {}) {
+export async function startReviewServer(config: any, { port = 0, author = reviewAuthor(config), onDone = () => {}, onMark = () => {}, onTiming = () => {}, baselineTests = config.baselineTests ? readBaselineTests(config) : null, sessionGraceMs = SESSION_GRACE_MS }: { port?: number; author?: ReviewAuthor; onDone?: () => (() => void) | void | null; onMark?: (line: AnnouncedMark, taken: () => void) => void; onTiming?: (line: string) => void; baselineTests?: BaselineTests | null; sessionGraceMs?: number } = {}) {
   const mapFile = path.join(config.outDir, 'map.json');
   // 없거나 아직 쓰는 중인 맵은 페이지가 요청할 때 알리고, 예전 형식의 맵만 서버를 띄우기 전에 알린다.
   let onDisk: any = null;
@@ -680,6 +680,21 @@ export async function startReviewServer(config: any, { port = 0, author = review
           return send(res, 400, 'text/plain', 'expected { "screen", "role", "typed" } with the typed values as text');
         }
         return await sendPathValues(res, screen, role, typed);
+      }
+      if (req.method === 'POST' && req.url === '/api/timings') {
+        if (!isJson(req)) return send(res, 415, 'text/plain', 'expected application/json');
+        let input;
+        try {
+          input = JSON.parse(await readBody(req));
+        } catch (err: any) {
+          return send(res, 400, 'text/plain', err.message);
+        }
+        const { of, wait, server: call, data, draw, hidden } = isPlainObject(input) ? input : ({} as Record<string, unknown>);
+        const ms = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+        if (of !== 'accept' || !ms(wait) || !ms(call) || !(data === null || ms(data)) || !ms(draw) || !(hidden === undefined || typeof hidden === 'boolean')) return send(res, 400, 'text/plain', 'expected { "of": "accept", "wait", "server", "data", "draw", "hidden"? } with the times in milliseconds, "data" null when fetching the data again failed and "hidden" true when the page was hidden after the press');
+        onTiming(`candidate accepted: earlier saves ${Math.round(wait)}ms, server call ${Math.round(call)}ms, data refetch ${data === null ? 'failed' : `${Math.round(data)}ms`}, redraw ${Math.round(draw)}ms${hidden ? ' (page was hidden)' : ''}`);
+        res.writeHead(204);
+        return res.end();
       }
       if (req.method === 'POST' && req.url === '/api/settings') {
         if (!isJson(req)) return send(res, 415, 'text/plain', 'expected application/json');

@@ -6260,6 +6260,22 @@ Compared:
 - Letting an agent accept the candidates it lists: a story is the reviewer's decision about what a path means, so the
   section only points at the candidates.
 
+**The time accepting a candidate takes is measured in the page and printed by the server on the review's standard
+error, one line per accept.**
+Chosen for #595 (2026-11-21). The reported "several seconds" could not be reproduced (123 to 161 ms in the issue's
+measurements), so the next slow accept has to leave a record of which step was slow: waiting for the step and line saves
+the reviewer made just before, the accept call, fetching the data again, redrawing. The wait is timed because a queue
+of those saves was one of the suspects measured in the issue; left untimed, a slow wait would show as three small numbers.
+Only the page sees all four, so the page times them and posts the numbers to
+`/api/timings`; the server prints them the way it already prints each saved mark. The reviewer sees the slowness in
+the browser, but an agent running duru already reads the review's standard error and can read the record without the
+reviewer copying anything. Nothing is stored, so no file format has to be kept.
+Compared:
+- The browser console only: the reviewer would have to open the developer tools and copy the lines, and they are lost
+  when the page reloads.
+- Appending to a file in `outDir`: it survives the review, but it is a new stored format that the next change to what
+  is timed would have to keep readable.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

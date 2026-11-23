@@ -456,17 +456,22 @@ async function whileWritingStories(write) {
   }
 }
 
-async function writeStories(url, body) {
+async function writeStories(url, body, timing = {}) {
   state.storyError = null;
   let written = null;
   await whileWritingStories(async () => {
     redrawStory();
     try {
+      const began = performance.now();
       const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       if (!res.ok) throw new Error(await res.text());
       written = await res.json();
+      const saved = performance.now();
+      timing.server = saved - began;
       await load();
+      timing.data = performance.now() - saved;
     } catch (err) {
+      if (written) timing.data = null;
       state.storyError = written ? `저장했지만 다시 읽지 못했습니다: ${err.message}` : `저장하지 못했습니다: ${err.message}`;
     }
   });
@@ -477,15 +482,20 @@ async function writeStories(url, body) {
 const storyIdProblem = (id) => (state.data.stories.list.some((st) => st.id === id) ? '같은 ID 의 스토리가 이미 있습니다.' : STORY_ID.test(id) ? null : '영문 소문자, 숫자, -, _ 만 쓸 수 있습니다.');
 
 let accepting = false;
+let lastHidden = -Infinity;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) lastHidden = performance.now();
+});
 
-async function acceptAs(c, id, name) {
+async function acceptAs(c, id, name, pressed = performance.now()) {
   await lineWrites;
   await stepWrites;
+  const timing = { wait: performance.now() - pressed };
   const stayed = state.candidate === c.key;
   accepting = true;
   let written;
   try {
-    written = await writeStories('/api/candidates/accept', { key: c.key, id, name });
+    written = await writeStories('/api/candidates/accept', { key: c.key, id, name }, timing);
   } finally {
     accepting = false;
   }
@@ -498,8 +508,18 @@ async function acceptAs(c, id, name) {
     state.storyDraft = null;
   }
   state.error = null;
+  const drawing = performance.now();
   render();
+  // requestAnimationFrame 은 그리기 직전에 불리므로, 화면이 실제로 그려진 뒤까지 재도록 한 번 더 미룬다.
+  requestAnimationFrame(() => setTimeout(() => {
+    timing.draw = performance.now() - drawing;
+    reportTiming({ ...timing, hidden: lastHidden >= pressed });
+  }));
   return true;
+}
+
+function reportTiming(timing) {
+  fetch('/api/timings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ of: 'accept', ...timing }) }).catch(() => {});
 }
 
 function takeStoryError() {
@@ -519,11 +539,11 @@ async function nameAs(c, id, name) {
 
 const idOf = (c) => c.proposedId ?? '';
 
-async function acceptChosen(key = state.candidate) {
+async function acceptChosen(key = state.candidate, pressed = performance.now()) {
   const c = state.data.candidates.list.find((x) => x.key === key);
   if (!c) return;
   if (storyIdProblem(idOf(c))) return askAccept(c, 'button.accept', null);
-  if (await acceptAs(c, idOf(c), c.name)) return;
+  if (await acceptAs(c, idOf(c), c.name, pressed)) return;
   if (state.candidate === c.key) askAccept(c, 'button.accept', takeStoryError());
 }
 
@@ -531,13 +551,14 @@ let acceptPresses = 0;
 
 async function acceptAfterPicks() {
   const press = ++acceptPresses;
+  const pressed = performance.now();
   const key = state.candidate;
   let pending;
   do {
     pending = [lineWrites, stepWrites];
     await Promise.all(pending);
   } while (lineWrites !== pending[0] || stepWrites !== pending[1]);
-  if (press === acceptPresses) await acceptChosen(key);
+  if (press === acceptPresses) await acceptChosen(key, pressed);
 }
 
 const acceptDialog = /** @type {HTMLDialogElement} */ (document.getElementById('accept-ask'));
