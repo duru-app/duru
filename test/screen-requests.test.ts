@@ -387,6 +387,68 @@ test('a call of the request function requestFunction names gives the method and 
   assert.deepEqual(callsOf(map, INBOX).filter((id) => id.includes('mail')), ['GET:/internal/v2/mail', 'GET:/internal/v2/mail/{?}', 'POST:/internal/v2/mail']);
 });
 
+const SENDING = {
+  'lib/sending.ts': `export const send = async (options: { info: { METHOD?: string; URL?: string } }) => options;\nexport const other = async (options: unknown) => options;\n`,
+};
+const SENT_THROUGH = { requestFunction: { import: './lib/sending', name: 'send', method: '0.info.METHOD', url: '0.info.URL' } };
+
+const SPREAD_INBOX = `import * as Sending from '../lib/sending';
+import Option from '../_define/Option';
+
+const REPORT = Option.REST_API.REPORT;
+
+export default function Inbox({ info }: { info: { METHOD: string; URL: string } }) {
+  const load = () => [
+    Sending.send({ info: { METHOD: 'get', URL: '/api/v1/mail' } }),
+    Sending.send({ info: { ...Option.REST_API.REPORT.ARCHIVE } }),
+    Sending.send({ info: { ...REPORT.SCHEDULE, URL: '/api/v1/report/schedule/now' } }),
+    Sending.send({ info: { URL: '/api/v1/mail/old', ...REPORT.ARCHIVE } }),
+    Sending.send({ info: { METHOD: 'DELETE', URL: '/api/v1/mail', ...Option.ROUTE_PATH } }),
+    Sending.send({ info: { ...info } }),
+    Sending.other({ info: { METHOD: 'GET', URL: '/api/v1/other' } }),
+  ];
+  return <button onClick={load} />;
+}
+`;
+
+test('a call of the request function through a namespace import of its module is a call of it, and a method or address that sits only inside a spread of a constant is read from that constant, by the last spread or key that holds it, through a const that names the constant, while a spread of a value that is not a constant still hides what it may hold', async () => {
+  const map = await build(fixtureCopy({ ...SENDING, 'screens/Inbox.tsx': SPREAD_INBOX }, SENT_THROUGH));
+  assert.deepEqual(sent(map, INBOX), [
+    ['Sending.send', 'GET /api/v1/mail', true],
+    ['Sending.send', 'POST /api/v1/report/archive', true],
+    ['Sending.send', 'POST /api/v1/report/schedule/now', true],
+    ['Sending.send', 'POST /api/v1/report/archive', true],
+    ['Sending.send', 'DELETE /api/v1/mail', true],
+    ['Sending.send', 'null null', true],
+  ]);
+});
+
+const ENDPOINTS = {
+  'lib/endpoints.ts': `export default { mail: { list: { url: '/api/v1/mail/list', method: 'post' }, base: { baseURL: '/api/v2' } } };\n`,
+};
+const OPTION_SPREAD_INBOX = `import axios from 'axios';
+import Endpoints from '../lib/endpoints';
+
+export default function Inbox() {
+  const load = () => [
+    axios({ ...Endpoints.mail.list }),
+    axios.get('/mail', { ...Endpoints.mail.base }),
+    fetch('/api/v1/mail/flags', { ...Endpoints.mail.list }),
+  ];
+  return <button onClick={load} />;
+}
+`;
+
+test('the options given to axios or fetch read the url, method and baseURL a spread of a constant holds', async () => {
+  const constants = { Option: '_define/Option.ts', Settings: 'store/index.ts', Endpoints: 'lib/endpoints.ts' };
+  const map = await build(fixtureCopy({ ...ENDPOINTS, 'screens/Inbox.tsx': OPTION_SPREAD_INBOX }, { constants }));
+  assert.deepEqual(sent(map, INBOX), [
+    ['axios', 'POST /api/v1/mail/list', true],
+    ['axios.get', 'GET /api/v2/mail', true],
+    ['fetch', 'POST /api/v1/mail/flags', true],
+  ]);
+});
+
 const MOVING_INBOX = `import { useFetcher, useLocation } from 'react-router-dom';
 import { Form as RouteForm } from 'react-router-dom';
 import { Form } from './Form';

@@ -165,6 +165,7 @@ export function clientCallReader({ config, resolve, follower, constants, calledF
   const requestImports = new Map<string, boolean>();
   const screenRequests = screenRequestReader({
     requestFunction: config.requestFunction,
+    constants,
     evaluate,
     objectLiteral,
     server: config.app?.server ?? null,

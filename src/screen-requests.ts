@@ -1,6 +1,7 @@
 import type { Binding, NodePath } from '@babel/traverse';
 import type { AssignmentExpression, CallExpression, ImportDeclaration, JSXAttribute, JSXOpeningElement, ObjectExpression, StringLiteral } from '@babel/types';
-import { keyName, memberChain, UNKNOWN } from './client.ts';
+import type { Constants } from './access.ts';
+import { keyName, lookupConstant, memberChain, UNKNOWN } from './client.ts';
 import { cleanAddress, OTHER_SITE, pathOnSite, placeUnknown, sentAddress, staysInBrowser, VERBS, WITH_DATA, withBase } from './sent-address.ts';
 import type { UnresolvedReason } from './server.ts';
 
@@ -23,6 +24,7 @@ interface RequestFunction {
 
 interface Reading {
   requestFunction: RequestFunction | null;
+  constants: Constants;
   evaluate: (p: NodePath<any>) => any;
   objectLiteral: (p: NodePath<any>) => NodePath<ObjectExpression> | null;
   isRequestFunction: (file: string, spec: string, name: string) => boolean;
@@ -30,6 +32,15 @@ interface Reading {
 }
 
 type Base = string | null | undefined;
+
+// 펼친 상수에서 꺼낸 값. 소스에는 이 값을 적은 식이 없다.
+class Spread {
+  readonly value: unknown;
+  constructor(value: unknown) {
+    this.value = value;
+  }
+}
+type Written = NodePath<any> | Spread;
 
 const PAGE_OBJECTS = new Set(['window', 'globalThis', 'self']);
 const FROM_ROOT = /^\/(?!\/)/;
@@ -68,33 +79,56 @@ export function importedAs(binding: Binding) {
 
 export const routerImport = (binding: Binding | undefined) => Boolean(binding && ROUTER_PACKAGES.has(importedAs(binding)?.spec ?? ''));
 
-export function screenRequestReader({ requestFunction, evaluate, objectLiteral, isRequestFunction, server }: Reading) {
+export function screenRequestReader({ requestFunction, constants, evaluate, objectLiteral, isRequestFunction, server }: Reading) {
   const tagName = (name: JSXOpeningElement['name']): string => (name.type === 'JSXIdentifier' ? name.name : name.type === 'JSXMemberExpression' ? `${tagName(name.object)}.${name.property.name}` : `${name.namespace.name}:${name.name.name}`);
   const text = (v: unknown) => (typeof v === 'string' ? v : null);
 
-  // 객체 리터럴에 적힌 값. 키가 없으면 undefined, 펼친 값이나 계산한 키에 가려 알 수 없으면 null 이다.
-  function written(options: NodePath<any> | undefined, key: string) {
+  const given = (w: Written | undefined) => (w instanceof Spread ? w.value : w?.node ? evaluate(w) : undefined);
+  const holds = (value: unknown, key: string): value is Record<string, unknown> => value !== null && typeof value === 'object' && Object.hasOwn(value, key);
+
+  // constants 의 이름이나 그 이름을 담은 const 에서 시작하는 `a.b.c` 가 가리키는 값. 거기서 시작하지 않으면 undefined 다.
+  function constantValue(p: NodePath<any>, seen = new Set<Binding>()): unknown {
+    const chain = memberChain(p.node);
+    if (!chain) return undefined;
+    const direct = lookupConstant(constants, chain);
+    if (direct !== undefined) return direct;
+    const binding = p.scope.getBinding(chain[0]);
+    if (binding?.kind !== 'const' || seen.has(binding) || !binding.path.isVariableDeclarator() || !binding.path.get('id').isIdentifier()) return undefined;
+    seen.add(binding);
+    let value = constantValue(binding.path.get('init') as NodePath<any>, seen);
+    for (const key of chain.slice(1)) value = holds(value, key) ? value[key] : undefined;
+    return value;
+  }
+
+  // 객체 리터럴에 적힌 값. 키가 없으면 undefined, 상수가 아닌 펼친 값이나 계산한 키에 가려 알 수 없으면 null 이다.
+  function written(options: Written | undefined, key: string): Written | null | undefined {
+    if (options instanceof Spread) return holds(options.value, key) ? new Spread(options.value[key]) : undefined;
     if (!options?.node) return undefined;
     const props = objectLiteral(options)?.get('properties');
     if (!props) return null;
-    const named = (p: NodePath<any>) => ((p.isObjectProperty() || p.isObjectMethod()) && !p.node.computed ? keyName(p.node) : null);
-    const at = props.findLastIndex((p) => named(p) === key);
-    if (props.slice(at + 1).some((p) => named(p) === null)) return null;
-    if (at < 0) return undefined;
-    return props[at].isObjectProperty() ? (props[at].get('value') as NodePath) : null;
+    for (const p of [...props].reverse()) {
+      if ((p.isObjectProperty() || p.isObjectMethod()) && !p.node.computed) {
+        if (keyName(p.node) === key) return p.isObjectProperty() ? (p.get('value') as NodePath) : null;
+        continue;
+      }
+      const spread = p.isSpreadElement() ? constantValue(p.get('argument')) : undefined;
+      if (spread === null || typeof spread !== 'object') return null;
+      if (holds(spread, key)) return new Spread(spread[key]);
+    }
+    return undefined;
   }
 
   function methodIn(options: NodePath<any> | undefined) {
     const method = written(options, 'method');
-    return method === undefined ? 'GET' : method && verbOf(evaluate(method));
+    return method === undefined ? 'GET' : method && verbOf(given(method));
   }
 
   // 요청 하나에 준 옵션은 읽지 못해도 base 를 바꾸지 않는다고 보고, create 에 준 옵션은 읽지 못하면 base 를 모른다고 본다.
   function baseIn(options: NodePath<any> | undefined, inherited: Base, creating = false): Base {
-    const given = written(options, 'baseURL');
-    if (given === null && creating) return UNKNOWN;
-    if (!given) return inherited;
-    const base = hidesText(given) ? undefined : evaluate(given);
+    const option = written(options, 'baseURL');
+    if (option === null && creating) return UNKNOWN;
+    if (!option) return inherited;
+    const base = hidesText(option) ? undefined : given(option);
     return typeof base === 'string' ? base || null : UNKNOWN;
   }
 
@@ -108,10 +142,15 @@ export function screenRequestReader({ requestFunction, evaluate, objectLiteral, 
     return routerImport(binding) || (Boolean(callee?.isIdentifier()) && routerImport(callee!.scope.getBinding(callee!.node.name)));
   }
 
+  // 설정에 적은 이름을 import 한 것이거나, 그 모듈을 namespace 로 import 해 그 이름의 멤버를 부른 것(`M.name`)
   function configured(p: NodePath<any>, file: string) {
-    const binding = p.isIdentifier() && p.scope.getBinding(p.node.name);
+    const member = p.isMemberExpression() && !p.node.computed ? (p.node.property as { name?: string }).name : null;
+    const id = member ? (p.get('object') as NodePath<any>) : p;
+    const binding = id.isIdentifier() && id.scope.getBinding(id.node.name);
     const from = binding && importedAs(binding);
-    return Boolean(from && isRequestFunction(file, from.spec, from.name));
+    if (!from) return false;
+    if (!member) return isRequestFunction(file, from.spec, from.name);
+    return from.name === '*' && isRequestFunction(file, from.spec, member);
   }
 
   // axios 와 설정에 적은 요청 객체, 그리고 그 create() 로 만들어 const 에 담은 객체. base 는 create 에 준 baseURL 이다.
@@ -144,8 +183,8 @@ export function screenRequestReader({ requestFunction, evaluate, objectLiteral, 
   const imported = (p: NodePath<any>): boolean => (p.isIdentifier() ? p.scope.getBinding(p.node.name)?.kind === 'module' : (p.isMemberExpression() || p.isOptionalMemberExpression()) && imported(p.get('object') as NodePath));
 
   // 주소를 이루는 조각 가운데 값을 읽지 못한, import 한 이름이나 그 이름으로 부른 함수의 결과가 있는지
-  function hidesText(p: NodePath<any> | undefined, seen = new Set<Binding>()): boolean {
-    if (!p?.node) return false;
+  function hidesText(p: Written | undefined, seen = new Set<Binding>()): boolean {
+    if (p instanceof Spread || !p?.node) return false;
     if (p.isTemplateLiteral()) return (p.get('expressions') as NodePath[]).some((e) => hidesText(e, seen));
     if (p.isBinaryExpression({ operator: '+' })) return hidesText(p.get('left'), seen) || hidesText(p.get('right'), seen);
     const binding = p.isIdentifier() && p.scope.getBinding(p.node.name);
@@ -174,8 +213,8 @@ export function screenRequestReader({ requestFunction, evaluate, objectLiteral, 
     return { fn, method, url: value, navigation: true, unresolved: reason };
   }
 
-  function sent(fn: string, method: string | null, address: NodePath<any> | undefined, base: Base = undefined): ScreenRequest {
-    const whole = withBase(address?.node ? text(evaluate(address)) : null, base);
+  function sent(fn: string, method: string | null, address: Written | undefined, base: Base = undefined): ScreenRequest {
+    const whole = withBase(text(given(address)), base);
     const hides = hidesText(address);
     if (whole === null) return { fn, method, url: null, unresolved: hides ? 'imported-piece' : 'not-written' };
     const url = pathOnSite(whole, server, UNKNOWN);
@@ -189,7 +228,7 @@ export function screenRequestReader({ requestFunction, evaluate, objectLiteral, 
   // requestFunction 의 「0.endpoint.method」 같은 자리에 적힌 식. 객체 리터럴을 따라 내려가다 끊기면 undefined 다.
   function placed(args: NodePath<any>[], place: string) {
     const [index, ...keys] = place.split('.');
-    let at: NodePath<any> | null | undefined = args[Number(index)];
+    let at: Written | null | undefined = args[Number(index)];
     for (const key of keys) at = at && written(at, key);
     return at ?? undefined;
   }
@@ -207,9 +246,10 @@ export function screenRequestReader({ requestFunction, evaluate, objectLiteral, 
     if (callee.isIdentifier()) {
       const object = requestObject(callee, file);
       if (object) return args[0] && objectLiteral(args[0]) ? fromConfig(fn, args[0], object.base) : sent(fn, methodIn(args[1]), args[0], baseIn(args[1], object.base));
-      if (!requestFunction || requestFunction.object || !configured(callee, file)) return null;
+    }
+    if (requestFunction && !requestFunction.object && configured(callee, file)) {
       const method = requestFunction.method ? placed(args, requestFunction.method) : undefined;
-      return sent(fn, method ? verbOf(evaluate(method)) : null, placed(args, requestFunction.url!));
+      return sent(fn, method ? verbOf(given(method)) : null, placed(args, requestFunction.url!));
     }
     if (!callee.isMemberExpression() || callee.node.computed) return null;
     const object = requestObject(callee.get('object'), file);
