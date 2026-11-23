@@ -339,6 +339,9 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
   const idOf = (node: Node) => nodeIds.get(node) ?? nodeIds.set(node, nextId++).get(node)!;
   // 0 보다 크면 읽지 못한 값을 넣고 읽는 중이라, 따라간 호출과 요소는 넘기는 값만 읽고 주소는 만들지 않는다.
   let trying = 0;
+  // 있으면 부른 곳이 받은 history 자리에 history 를 넘기는지만 본다. 인자마다 첫 값 하나로 읽으므로, 그 값이 막는 조건은 보지 않고 주소도
+  // 만들지 않는다.
+  let historyCheck: { handed: boolean } | null = null;
 
   // 넘기는 식마다 그 자리에 읽지 못한 값을 넣고 read 를 한 번 돌려, 그 값을 읽은 식인가를 돌려준다.
   // 읽지 못한 값은 조건의 두 갈래를 다 따라가므로, 여기서 읽지 않은 식은 무슨 값이든 결과를 바꾸지 않는다.
@@ -891,8 +894,10 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     linking.add(c.node);
     const outer = [...reading];
     const outerTrying = trying;
+    const outerCheck = historyCheck;
     reading.clear();
     trying = 0;
+    historyCheck = null;
     try {
       const linked = linkedAt(c);
       placeLinked.set(c.node, linked);
@@ -902,6 +907,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
       reading.clear();
       for (const node of outer) reading.add(node);
       trying = outerTrying;
+      historyCheck = outerCheck;
     }
   }
 
@@ -990,15 +996,21 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     const at: At = { env: new Map([...env].map(([b, o]) => [b, b.constant ? o : unknownAt(b.path)])), fn, branching: true, depth, consts: true };
     const outs: Out[] = [];
     const { moves: places, calls, elements, uses } = placesOf(fn);
+    const check = trying ? null : historyCheck;
+    const goes = (p: NodePath) => Boolean(check) || reached(p, fn, at);
     for (const call of calls) {
-      if (reached(call.at, fn, at) && isHelper(call.fn) && !linkedWhereWritten(call.at, moves!.linkedCall)) outs.push(...helperOuts(call.at, call.fn, at));
+      if (goes(call.at) && isHelper(call.fn) && !linkedWhereWritten(call.at, moves!.linkedCall)) outs.push(...helperOuts(call.at, call.fn, at));
     }
     for (const use of asComponent ? uses : []) {
-      if (reached(use.at, fn, at) && isLinkComponent(use.fn) && !linkedWhereWritten(use.at, moves!.linkedUse)) outs.push(...useOuts(use.at, use.fn, at));
+      if (goes(use.at) && isLinkComponent(use.fn) && !linkedWhereWritten(use.at, moves!.linkedUse)) outs.push(...useOuts(use.at, use.fn, at));
     }
     for (const place of [...places, ...(asComponent ? elements : [])]) {
-      if (!reached(place.at, fn, at)) continue;
+      if (!goes(place.at)) continue;
       if ('history' in place && place.history && !values(place.history, at).some((o) => standIns.has(o) || (o.whole && moves!.isHistory(o.whole)))) continue;
+      if (check) {
+        check.handed = true;
+        continue;
+      }
       for (const a of place.addresses) {
         if (a.isDescendant(fn) && !reached(a, fn, at)) continue;
         for (const o of values(a, at)) {
@@ -1049,8 +1061,24 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
       if (holdsUnread(lists)) readingFn(fn, () => limitedProduct(lists).forEach(outsOf));
       return [];
     }
-    const outs = readingFn(fn, () => limitedProduct(lists).flatMap(outsOf));
+    const combined = historyCheck ? (lists.some((list) => !list.length) ? [] : [lists.map((list) => list[0])]) : limitedProduct(lists);
+    const outs = readingFn(fn, () => combined.flatMap(outsOf));
     return outs.some(withheldIn) ? [unknownAt(p)] : outs;
+  }
+
+  // p 가 넘기는 값 가운데, fn 이나 fn 이 넘겨 부르는 함수가 받은 history 로 옮기는 자리에 history 로 가는 것이 있는가
+  function handsHistory(p: NodePath<CallExpression>, fn: AddressFunction): boolean {
+    const outer = historyCheck;
+    const check = { handed: false };
+    historyCheck = check;
+    try {
+      helperOuts(p, fn, OUTSIDE);
+    } catch (error) {
+      if (!(error instanceof TooMany)) throw error;
+    } finally {
+      historyCheck = outer;
+    }
+    return check.handed;
   }
 
   function useOuts(e: NodePath<JSXElement>, fn: AddressFunction, at: At): Out[] {
@@ -1107,7 +1135,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
   }
 
   // 받은 주소로 옮기는 함수를 부른 곳에서, 그 이동이 가는 주소를 부른 곳의 인자로 읽는다. 그런 함수가 아니면 null 이다.
-  // 갈래가 너무 많으면 {?} 를 주되, 받은 history 로만 옮기는 함수면 null 이다.
+  // 갈래가 너무 많으면 {?} 를 주되, 받은 history 로만 옮기는 함수에 부른 곳이 history 를 넘기지 않으면 null 이다.
   function helperBranches(p: NodePath<CallExpression>): Read | null {
     if (!moves || inAddress(p)) return null;
     const callee = p.get('callee') as NodePath<any>;
@@ -1118,7 +1146,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     try {
       outs = helperOuts(p, fn, OUTSIDE);
     } catch (error) {
-      if (error instanceof TooMany) return movesItself(fn) ? { tooMany: true } : null;
+      if (error instanceof TooMany) return movesItself(fn) || handsHistory(p, fn) ? { tooMany: true } : null;
       throw error;
     }
     return madeBranches(outs, p);

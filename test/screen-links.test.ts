@@ -3368,7 +3368,7 @@ ${steps}
   ]);
 });
 
-test('a helper call whose arguments pass the branch limit is {?} only when the helper moves with a history it does not take from the call, so a string replace or an array push on a parameter never gives a link', async () => {
+test('a helper call whose arguments pass the branch limit is {?} only when the helper moves with a history, its own or one the call hands it, so a string replace or an array push on a parameter never gives a link', async () => {
   const home = `import { useHistory } from 'react-router-dom';
 
 const strip = (label) => label.replace(/^Doc /, '');
@@ -3405,7 +3405,52 @@ export default function Home({ type, doc, x }) {
 }
 `;
   const map = await build(writeApp({ 'Home.js': home }));
-  assert.deepEqual(linksOf(map, '/home#Home'), [['{?}', lineOf(home, "leave('/login'"), [], []]]);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['{?}', lineOf(home, "open(history, '/start'"), [], []],
+    ['{?}', lineOf(home, "leave('/login'"), [], []],
+  ]);
+});
+
+test('a helper call that hands the helper a history and whose arguments in the address pass the branch limit is {?}, also through a helper it calls or an object, and one that hands it something else gives no link', async () => {
+  const names = Array.from({ length: 8 }, (_, i) => `a${i}`);
+  const params = names.join(', ');
+  const address = `\`/team/${names.map((n) => `\${${n}}`).join('')}\``;
+  const values = names.map((n) => `x.${n} ? 'p' : 'q'`).join(', ');
+  const home = `import { useHistory } from 'react-router-dom';
+
+function go(history, ${params}) {
+  history.push(${address});
+}
+
+function goVia(history, ${params}) {
+  go(history, ${params});
+}
+
+function goWith({ history }, ${params}) {
+  history.replace(${address});
+}
+
+export default function Home({ x }) {
+  const history = useHistory();
+  const rows = [];
+  return (
+    <nav>
+      <a onClick={() => go(history, ${values})}>a</a>
+      <a onClick={() => goVia(history, ${values})}>b</a>
+      <a onClick={() => goWith({ history }, ${values})}>c</a>
+      <a onClick={() => go(rows, ${values})}>d</a>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home').map(([to, line]) => [to, line]), [
+    ['{?}', at('go(history, x')],
+    ['{?}', at('goVia(history, x')],
+    ['{?}', at('goWith({ history }, x')],
+  ]);
+  assert.deepEqual(map.manyLinkBranches?.map(({ line }) => line), [at('go(history, x'), at('goVia(history, x'), at('goWith({ history }, x')]);
 });
 
 test('a helper call whose arguments, alone or as fields of an object, pass the branch limit but do not reach the address gives the address the helper moves to', async () => {
