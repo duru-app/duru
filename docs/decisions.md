@@ -5024,10 +5024,15 @@ not followed, and a move in the body whose address holds one, through a name or 
 (`const route = META_TYPE_ROUTES[type]`), is dropped, as the constant is already a link where it is written. A
 function calling another is followed 8 deep (`FOLLOWED`), and a call of a function being read stops there.
 A call whose arguments give more than 64 ways is `{?}` when the function, or one it hands them to, moves with a
-history it does not take from the call; when every such move is with a history the function is given, the call gives
-no link, as duru cannot tell whether the call hands it a history, and a string `replace` or an array `push` on a
-parameter (`(label) => label.replace(/^Doc /, '')`) reads like such a move (into-sign 1.5.0 gave 3 `{?}` lines at a
-`createViewModel(…)` call that never moves before this was settled, in #398).
+history it does not take from the call; when every such move is with a history the function is given, the call is
+`{?}` only if it hands a history to one of those moves, since a string `replace` or an array `push` on a parameter
+(`(label) => label.replace(/^Doc /, '')`) reads like such a move (into-sign 1.5.0 gave 3 `{?}` lines at a
+`createViewModel(…)` call that never moves before this was settled, in #398). To tell, duru reads the call once more
+with the first value of each argument and does not read the conditions around those moves, as the first value may be
+one a condition rules out; a history is one value, so taking the first loses none. Until #675 such a call gave no link
+and no `link address not read` line at all, though it plainly handed `useHistory()` to the function; reading the
+conditions with the first values was not chosen, as a call whose first values miss the condition would have stayed
+silent.
 Known limits: a function taken from props or a parameter (`this.props.actions.switchTeam(url)`, `props.go(url)`,
 `const { go } = props; go(url)`) is not read, since duru does not reach its declaration; neither is a helper held
 by `useCallback(…)`, a class method called as `this.go(url)`, nor a function given a `navigate` as an argument. A
