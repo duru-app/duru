@@ -6009,6 +6009,28 @@ the old result, and a `requestFunction … did not run` line says so. A request 
 functions still goes through the real function and is not recorded, and `apiModules` runs still replace the whole
 file: their addresses do not come from the run.
 
+**A screen's call of the request function through a namespace import of its module (`M.send(...)`) is a call of it,
+and a spread of a constant in the options it is given hides only the keys that constant holds.**
+Chosen for #676 (2026-11-23). A private app imports its request module with `import * as M`, and its screens send
+with `M.<name>({ endpoint: { ...ENDPOINTS.list } })`, where `ENDPOINTS` is a const holding a member of a `constants`
+module and the method, and often the address, sit only inside that constant. duru took the namespace member for a
+request object, whose imported name `*` is not the configured name, so it mapped no call on any screen; and a spread made every
+key before it unknown. Now the member's own name is what is checked against `requestFunction`, and a spread whose value
+starts from a `constants` name, directly or through a const that holds one, is read from the loaded constant: a key it
+holds is taken from it, a key it lacks is looked for further back. The same reading serves the options given to axios
+and `fetch`. A spread of anything else still hides every key before it. Counted on 2026-11-23: the private app writes the
+namespace call in 69 files and 197 calls; among appsmith, mattermost, metabase, outline, redash, signoz and superset,
+one call (mattermost, a namespace member that sends with `XMLHttpRequest` and is not a configured request function)
+has the namespace shape and none spreads a request's method or address out of a constant. The namespace call is the
+configured function reached another way, and the spread follows `constants` the way values are already read from them,
+so neither waits for a second app. On that app the screens with a request read from their source go from 0 to all 24,
+and the method is read on 245 of the 378 such requests its screens list; most addresses stay `imported-piece`, since a function
+imported from a package fills the path variables into the address.
+Compared:
+- Evaluating any spread with the evaluator used for addresses: it returns an object even when it skipped computed keys
+  or spreads it could not read, so a key missing from it would be read as absent when it may be hidden.
+- A config key naming the namespace: the configured `import` already names the module.
+
 **A value a traced test writes into a box whose selector names a password, a secret or a token is kept neither in
 `tests.json` nor in a candidate; the step stays, with `"secret": true`.**
 A private app's sign-in test left its password in `tests.json` on every `rebuild`, and the same box found by its label
