@@ -5109,6 +5109,93 @@ export default function Home({ flag }) {
   assert.equal(map.manyLinkBranches, undefined);
 });
 
+test('a hook duru cannot read, called with arguments whose values pass the branch limit, gives a value duru cannot read to the link component it is handed to, which then gives the link its address leads to', async () => {
+  const links = `import { Link } from 'react-router-dom';
+
+export function Item({ to, result }) {
+  return result.failed ? null : <Link to={to}>on</Link>;
+}
+`;
+  const panel = `import { useMemo } from 'react';
+import { useQuery } from 'react-query';
+import { Item } from './links';
+
+function useLoad(request, version, options) {
+  const retry = useMemo(() => {
+    let tries;
+    tries = 2;
+    return tries;
+  }, []);
+  return useQuery({ ...options, retry });
+}
+
+export function Panel({ to, x }) {
+  const result = useLoad({ a: x.a ? 'a' : 'A', b: x.b ? 'b' : 'B', c: x.c ? 'c' : 'C', d: x.d ? 'd' : 'D' }, x.v ? 'v4' : 'v3', { cache: x.c ? 30000 : 0, interval: x.i ? 'custom' : 'auto' });
+  return <Item to={to} result={result} />;
+}
+`;
+  const home = `import { Panel } from './panel';
+
+export default function Home({ x }) {
+  return <Panel to="/start" x={x} />;
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'panel.js': panel, 'links.js': links }));
+  assert.deepEqual(linksOf(map, '/home#Home').map(([to, line]) => [to, line]), [['/start', lineOf(home, 'to="/start"')]]);
+  assert.equal(map.manyLinkBranches, undefined);
+});
+
+test('a call whose result is destructured counts only the destructured fields of the objects it returns against the branch limit, and keeps their branches', async () => {
+  const fields = ['k1', 'k2', 'k3', 'k4'];
+  const others = fields.map((k) => `${k}: s.${k} ? 'a' : 'b'`).join(', ');
+  const links = `import { Link } from 'react-router-dom';
+
+export function Item({ to, on }) {
+  return on ? <Link to={to}>on</Link> : null;
+}
+`;
+  const panel = `import { useStore } from 'store';
+import { Item } from './links';
+
+function useMode() {
+  const s = useStore();
+  if (s.locked) return { locked: true, open: false, path: '/team/a', ${others} };
+  return { locked: false, open: s.open ? true : false, path: s.other ? '/team/b' : '/team/a', ${others} };
+}
+
+export function Panel({ to }) {
+  const { open } = useMode();
+  return <Item to={to} on={open} />;
+}
+
+export function go(history) {
+  const { path } = useMode();
+  history.push(path);
+}
+`;
+  const home = `import { useHistory } from 'react-router-dom';
+import { Panel, go } from './panel';
+
+export default function Home() {
+  const history = useHistory();
+  return (
+    <nav>
+      <Panel to="/start" />
+      <a onClick={() => go(history)}>team</a>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'panel.js': panel, 'links.js': links }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home').map(([to, line]) => [to, line]), [
+    ['/start', at('to="/start"')],
+    ['/team/a', at('go(history)')],
+    ['/team/b', at('go(history)')],
+  ]);
+  assert.equal(map.manyLinkBranches, undefined);
+});
+
 test('a link component that moves to an address read from data, reached through more than the limit of attribute combinations, adds no link where it is used, as with few combinations', async () => {
   const keys = ['a', 'b', 'c', 'd', 'e', 'f'];
   const links = `import { useHistory } from 'react-router-dom';

@@ -206,9 +206,34 @@ function withheldIn({ val }: Out): boolean {
   return 'items' in val && val.items.some(withheldIn);
 }
 
-function keyOfOut({ val, made, whole, sides }: Out) {
-  const text = 'pieces' in val ? val.pieces.map((x) => ('text' in x ? x.text : 'stop' in x ? UNREADABLE_PIECE : '\u0001')).join('') : 'unknown' in val ? `\u0002${val.unknown.node.start}\0${val.truthy}` : null;
+function keyOfOut({ val, made, whole, sides }: Out): string | null {
+  const text = 'pieces' in val ? val.pieces.map((x) => ('text' in x ? x.text : 'stop' in x ? UNREADABLE_PIECE : '\u0001')).join('') : 'unknown' in val ? `\u0002${val.unknown.node.start}\0${val.truthy}` : 'props' in val ? keyOfProps(val) : 'value' in val && (val.value === null || typeof val.value !== 'object') ? `\u0004${typeof val.value}\0${String(val.value)}` : null;
   return text === null ? null : `${made}\0${whole?.node.start}\0${sides?.map((x) => `${x.key}=${x.on}`).join() ?? ''}\0${text}`;
+}
+
+function keyOfProps({ props, open, rest }: { props: Map<string, Out>; open: boolean; rest?: Out }): string | null {
+  const entries = [...props].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([key, out]) => [key, keyOfOut(out)]);
+  const restKey = rest ? keyOfOut(rest) : '';
+  return entries.some(([, key]) => key === null) || restKey === null ? null : `\u0003${JSON.stringify([open, restKey, entries])}`;
+}
+
+// `const { a, b } = f()` 처럼 호출 결과를 이름을 적은 키로만 꺼내면 그 키들. 나머지를 모으거나 계산한 키를 쓰면 null 이다.
+function destructuredKeys(p: NodePath): Set<string> | null {
+  let child = p;
+  while (child.parentPath && unwrapped(child.parentPath) !== child.parentPath) child = child.parentPath;
+  const declarator = child.parentPath;
+  if (!declarator?.isVariableDeclarator() || child.key !== 'init' || declarator.node.id.type !== 'ObjectPattern') return null;
+  const keys = new Set<string>();
+  for (const prop of declarator.node.id.properties) {
+    if (prop.type !== 'ObjectProperty' || prop.computed) return null;
+    keys.add(keyOf(prop.key));
+  }
+  return keys;
+}
+
+function picked(out: Out, keys: Set<string> | null): Out {
+  const { val } = out;
+  return keys && 'props' in val ? { ...out, val: { ...val, props: new Map([...val.props].filter(([key]) => keys.has(key))) } } : out;
 }
 
 function distinct(outs: Out[]) {
@@ -472,14 +497,22 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     const rest = (fn.get('params') as NodePath[]).findIndex((x) => x.isRestElement());
     const outsOf = (list: Out[]) => bound(fn, list, spread < 0 ? null : args[spread], at.depth + 1).flatMap((e) => returnedValues(fn, e, p, at.depth + 1));
     let used: boolean[];
+    let unreadable = false;
     try {
       used = readingFn(fn, () => readInputs(p.node, at.depth, written, outsOf));
     } catch (error) {
       if (!(error instanceof Unreadable)) throw error;
       used = written.map(() => true);
+      unreadable = true;
     }
-    const lists = limitedProduct(written.map((a, i) => (used[i] || (rest >= 0 && i >= rest) ? checkedOuts(values(a, given), a, p) : [unknownAt(a)])));
-    return followed(fn, p, () => lists.flatMap(outsOf));
+    const keys = destructuredKeys(p);
+    try {
+      const lists = limitedProduct(written.map((a, i) => (used[i] || (rest >= 0 && i >= rest) ? checkedOuts(values(a, given), a, p) : [unknownAt(a)])));
+      return followed(fn, p, () => lists.flatMap((list) => outsOf(list).map((o) => picked(o, keys))));
+    } catch (error) {
+      if (unreadable && error instanceof TooMany) return [unknownAt(p)];
+      throw error;
+    }
   }
 
   // 따라 읽은 함수나 getter 가 돌려준 갈래에, 그 안에서 만든 조각이라는 표시를 붙인다.
