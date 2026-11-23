@@ -288,7 +288,7 @@ export async function extractClient(config: any) {
 
   const { bodyOptions, extractApiModule, sagas, calledOrigin, requestFile, screenRequests, screenInputs } = clientCallReader({ config, resolve: imports.resolve, follower, constants, calledFiles, parse, programFile, evaluate, constInit, objectLiteral, propertyKey });
 
-  const manyLinkBranches: { file: string; line: number }[] = [];
+  const manyLinkBranches: { file: string; line: number; sites: RouterLink[] }[] = [];
 
   const {
     linkAddressRefs, exportedKeys, importedLater, comparedLists, listReaderFiles, movedTo, madeHistories, usedListed, routeTabNotices,
@@ -518,15 +518,15 @@ export async function extractClient(config: any) {
     const recordHelperLinks = (p: NodePath<CallExpression>) => {
       if (screenLinks.moveOf(p) || (p.get('arguments') as NodePath[]).some((a) => madeFrom(a).some(holdsRouteRef))) return;
       const read = linkReading.helperBranches(p);
-      if (read && 'tooMany' in read) manyLinkBranches.push({ file: relFile, line: p.node.loc!.start.line });
-      for (const address of read ? addressesOf(read, () => UNKNOWN) : []) record('routerLinks', address, p);
+      const sites = (read ? addressesOf(read, () => UNKNOWN) : []).map((address) => record('routerLinks', address, p) as RouterLink);
+      if (read && 'tooMany' in read) manyLinkBranches.push({ file: relFile, line: p.node.loc!.start.line, sites });
     };
     const recordUseLinks = (p: NodePath<JSXElement>) => {
       const written = (p.get('openingElement.attributes') as NodePath<any>[]).map((a) => (a.isJSXSpreadAttribute() ? a.get('argument') : a.get('value')) as NodePath<any>);
       if (written.some((v) => v.node && madeFrom(v.isJSXExpressionContainer() ? v.get('expression') : v).some(holdsRouteRef))) return;
       const read = linkReading.useBranches(p);
-      if (read && 'tooMany' in read) manyLinkBranches.push({ file: relFile, line: p.node.loc!.start.line });
-      for (const address of read ? addressesOf(read, () => UNKNOWN) : []) record('routerLinks', address, p);
+      const sites = (read ? addressesOf(read, () => UNKNOWN) : []).map((address) => record('routerLinks', address, p) as RouterLink);
+      if (read && 'tooMany' in read) manyLinkBranches.push({ file: relFile, line: p.node.loc!.start.line, sites });
     };
     const inRouteFile = routeFileSet.has(file);
     const menusHere = menuTables.get(file) ?? [];
@@ -980,6 +980,7 @@ export async function extractClient(config: any) {
   const members = typedMembers(config.tsconfig, [...new Set([...sourced.flatMap((x) => x.files), ...appWideFiles])], imports.resolve);
   const heldRouteFiles = new Set(sourced.flatMap((x) => x.files).filter((f) => routeFileSet.has(f)));
   const screenFollower = members ? nameFollower<FollowedSite>({ parse, resolve: imports.resolve, sitesOf, members }) : follower;
+  const linkSitesOfScreen: Set<FollowedSite>[] = [];
   const screens = sourced.map(({ s, entryFiles, isOtherScreen, files, drawnUnder, drawnFiles }, index) => {
     const inSources = new Set<string | null>(files);
     // 화면이 import 하지 않고 context 훅에서 받은 스토어를 거쳐서만 닿는 파일. 화면의 소스는 아니지만, 화면이 호출한 스토어 메서드를 추적할 때 들어간다.
@@ -1052,6 +1053,7 @@ export async function extractClient(config: any) {
       const link = screenLink(site, index);
       if (link) links.push({ ...link, file: rel(drawnBy) });
     }
+    linkSitesOfScreen[index] = ownLinks;
     // 훅으로만 받은 스토어 파일의 dispatch 는 읽지 않는다.
     for (const f of received) takeCalls(f, fileFacts(f));
     const bySaga = new Map<ApiCallSite, DispatchedActions>();
@@ -1082,6 +1084,10 @@ export async function extractClient(config: any) {
     const sent: typeof apiCalls = [...apiCalls, ...sagaCalls];
     return { ...s, componentFile: rel(s.componentFile), closureSize: files.length, sourceFiles: files.map(rel).sort(), apiCalls: sent, settingReads, links };
   });
+
+  const linkNotices = manyLinkBranches
+    .map(({ file, line, sites }) => ({ file, line, screens: linkSitesOfScreen.flatMap((own, i) => (sites.some((site) => own.has(site)) ? [i] : [])) }))
+    .sort((a, b) => compare(a.file, b.file) || a.line - b.line);
 
   const appWide = appWideEntries.length ? appWideRequests() : null;
   function appWideRequests() {
@@ -1130,5 +1136,5 @@ export async function extractClient(config: any) {
   const sagaRuns = sagaSources.length ? { runs: runs.map(({ file, line }) => `${rel(file)}:${line}`), watchers: [...watchesOf.values()].flat().length } : null;
   // 같은 곳에서 알린 탭 줄은 한 번만 남긴다. 항목의 줄은 그리는 파일을 소스로 갖는 화면마다 다시 읽힌다.
   const routeTabNoticeLines = routeTabNotices.filter((n, i) => !routeTabNotices.slice(0, i).some((m) => m.file === n.file && m.line === n.line && m.reason === n.reason));
-  return { screens, appWide, apiFunctions, unreferencedApiFunctions, sagaRuns, unrunApiModules: called?.failedModules ?? null, outsideStandIns: called?.outsideStandIns ?? [], silentApiModules: called?.silentModules ?? [], requestFileError: called?.requestFileError ?? null, bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, unreadRoutePaths, unreadRoutes, routeTabNotices: routeTabNoticeLines.length ? routeTabNoticeLines : null, manyLinkBranches, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved(), unusedListed: listedComponents.length + listedFunctions.length ? [...listedComponents, ...listedFunctions].filter((e) => !usedListed.has(e)).map((e) => `${e.key} ${e.import} ${e.name}`) : null, madeHistories: [...madeHistories].sort(([a], [b]) => compare(a, b)).map(([file, call]) => ({ file, call })), emptyRouteFiles, takingAddressesUnder: screensTakingAddressesUnder(routeRoots, sourced.map((x) => x.s.path)), framesPickingByAddress: [...framesPickingByAddress.values()].map((f) => ({ ...f, componentFile: rel(f.componentFile)! })).sort((a, b) => compare(a.file, b.file) || a.line - b.line) };
+  return { screens, appWide, apiFunctions, unreferencedApiFunctions, sagaRuns, unrunApiModules: called?.failedModules ?? null, outsideStandIns: called?.outsideStandIns ?? [], silentApiModules: called?.silentModules ?? [], requestFileError: called?.requestFileError ?? null, bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, unreadRoutePaths, unreadRoutes, routeTabNotices: routeTabNoticeLines.length ? routeTabNoticeLines : null, manyLinkBranches: linkNotices, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved(), unusedListed: listedComponents.length + listedFunctions.length ? [...listedComponents, ...listedFunctions].filter((e) => !usedListed.has(e)).map((e) => `${e.key} ${e.import} ${e.name}`) : null, madeHistories: [...madeHistories].sort(([a], [b]) => compare(a, b)).map(([file, call]) => ({ file, call })), emptyRouteFiles, takingAddressesUnder: screensTakingAddressesUnder(routeRoots, sourced.map((x) => x.s.path)), framesPickingByAddress: [...framesPickingByAddress.values()].map((f) => ({ ...f, componentFile: rel(f.componentFile)! })).sort((a, b) => compare(a.file, b.file) || a.line - b.line) };
 }
