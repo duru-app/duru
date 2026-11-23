@@ -919,7 +919,7 @@ test('in a browser, a story accepted from a candidate with comments shows them f
         const said = earlier.locator('.earlier-group .history > li');
         assert.equal(await said.count(), 1);
         assert.match((await said.textContent())!, /why the beta inbox\?.*the record went there/s);
-        assert.deepEqual(await p.locator('#right-info .talk-scope button').allTextContents(), ['이 스토리 1', '전체 2']);
+        assert.deepEqual(await p.locator('#right-info .talk-scope button').allTextContents(), ['이 스토리 0', '전체 2']);
         const lastSaid = new Date('2026-10-15T02:00:00Z').toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
 
         await p.click('#candidate-list li:has-text("opens home and then help")');
@@ -953,6 +953,26 @@ test('in a browser, a story accepted from a candidate with comments shows them f
         assert.deepEqual(errors, []);
       }));
   });
+});
+
+test('in a browser, the conversation tab of a story accepted from a candidate with comments counts only the story\'s own comments, the same number as its row in the story list, and the candidate\'s are counted on the folded earlier-conversation button', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      await postMark(base, { target: { candidate: HELP_KEY }, note: 'why the beta inbox?' });
+      assert.equal((await postJson(base, '/api/candidates/accept', { key: HELP_KEY, id: 'help-story', name: '도움말 열기' })).status, 201);
+      await postMark(base, { target: { story: 'help-story' }, note: 'one more step?' });
+      await withPage(base, async (p, errors) => {
+        await p.waitForSelector('#view-story:not(:disabled)');
+        await p.click(storiesTab);
+        const row = p.locator('#story-list li', { hasText: '도움말 열기' });
+        await row.click();
+        assert.equal(await row.locator('.talk-count').textContent(), '코멘트 1');
+        assert.deepEqual(await p.locator('#right-info .talk-scope button').allTextContents(), ['이 스토리 1', '전체 2']);
+        assert.equal(await p.textContent('#right-info button.earlier-toggle'), '이전 대화 1');
+        assert.deepEqual(errors, []);
+      });
+    }),
+  );
 });
 
 test('in a browser, a comment typed on one screen and not saved is still there after choosing another screen and coming back, the other screen gets an empty form, and 「리뷰 끝」 asks about it while it waits on the other screen', { skip: browserMissing }, async () => {
