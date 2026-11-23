@@ -4862,6 +4862,13 @@ Known limits:
   that uses a link component, are built, and the rest is not built once it is passed (#654: one screen that gave a
   link component many attributes of two values each used up a 4 GB heap before the check). The combinations of the
   pieces of a template, of the two sides of `+` and of an object's properties are still built whole first.
+- The summary prints the line for such a place once for each place, not once for each file (#662, chosen without a
+  driver's answer, cheap to change). On the reference apps one line per file would give 22 lines instead of 34 in
+  SigNoz and 7 instead of 8 in outline, and leave mattermost's 2 and appsmith's 1. The places in one file are
+  separate elements, each with its own `{?}` link and its own conditions on the map (SigNoz draws four chart cards
+  in one file, each under a different state test), so a line per file would still have to list every line number.
+  The line names the screens whose links hold that `{?}` link, as their number and the first of them when there are
+  several, so a place in a file many screens share is still one line.
 - A piece duru cannot read takes a whole segment, as in a link written in the screen's code, so a function that
   glues its argument to written text with no `/` between (``(sub) => `/admin${sub}` ``, `BASE + path`) or returns a
   method's result that holds several segments (`'/' + parts.filter(Boolean).join('/')`) gives `/{*}`, which goes to
