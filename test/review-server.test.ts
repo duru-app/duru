@@ -311,7 +311,7 @@ test('the page served at / is every file of src/review-page joined in the order 
   );
 });
 
-test('the page reports how long accepting a candidate took, and the server hands one line with the four times to onTiming, the data refetch as failed when it is null; anything else is refused and not handed on', async () => {
+test('the page reports how long accepting a candidate took, and the server hands one line with the four times to onTiming, the data refetch as failed when it is null and a mark after the redraw when the page was hidden; anything else is refused and not handed on', async () => {
   await withRebuiltFixture({}, async (config) => {
     const lines: string[] = [];
     const server = await startReviewServer(config, { author: signer('reviewer'), onTiming: (line) => lines.push(line) });
@@ -319,11 +319,14 @@ test('the page reports how long accepting a candidate took, and the server hands
       const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
       const post = (body: unknown, type = 'application/json') => fetch(`${base}/api/timings`, { method: 'POST', headers: { 'content-type': type }, body: JSON.stringify(body) });
       assert.equal((await post({ of: 'accept', wait: 830.2, server: 12.4, data: 340, draw: 25.6 })).status, 204);
-      assert.equal((await post({ of: 'accept', wait: 0, server: 12, data: null, draw: 4 })).status, 204);
+      assert.equal((await post({ of: 'accept', wait: 0, server: 12, data: null, draw: 4, hidden: false })).status, 204);
+      assert.equal((await post({ of: 'accept', wait: 0, server: 12, data: 30, draw: 4210, hidden: true })).status, 204);
       assert.deepEqual(lines, [
         'candidate accepted: earlier saves 830ms, server call 12ms, data refetch 340ms, redraw 26ms',
         'candidate accepted: earlier saves 0ms, server call 12ms, data refetch failed, redraw 4ms',
+        'candidate accepted: earlier saves 0ms, server call 12ms, data refetch 30ms, redraw 4210ms (page was hidden)',
       ]);
+      assert.equal((await post({ of: 'accept', wait: 0, server: 1, data: 1, draw: 3, hidden: 'yes' })).status, 400);
       assert.equal((await post({ of: 'accept', wait: 0, server: 1, data: 'slow', draw: 3 })).status, 400);
       assert.equal((await post({ of: 'accept', wait: 0, server: -1, data: 1, draw: 3 })).status, 400);
       assert.equal((await post({ of: 'accept', server: 1, data: 1, draw: 3 })).status, 400);
@@ -331,7 +334,7 @@ test('the page reports how long accepting a candidate took, and the server hands
       assert.equal((await post({ of: 'accept', wait: 0, server: null, data: 1, draw: 3 })).status, 400);
       assert.equal((await post({ of: 'other', wait: 0, server: 1, data: 1, draw: 3 })).status, 400);
       assert.equal((await post({ of: 'accept', wait: 0, server: 1, data: 1, draw: 3 }, 'text/plain')).status, 415);
-      assert.equal(lines.length, 2);
+      assert.equal(lines.length, 3);
     } finally {
       server.close();
     }

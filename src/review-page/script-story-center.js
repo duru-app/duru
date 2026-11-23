@@ -482,6 +482,10 @@ async function writeStories(url, body, timing = {}) {
 const storyIdProblem = (id) => (state.data.stories.list.some((st) => st.id === id) ? '같은 ID 의 스토리가 이미 있습니다.' : STORY_ID.test(id) ? null : '영문 소문자, 숫자, -, _ 만 쓸 수 있습니다.');
 
 let accepting = false;
+let lastHidden = -Infinity;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) lastHidden = performance.now();
+});
 
 async function acceptAs(c, id, name, pressed = performance.now()) {
   await lineWrites;
@@ -508,7 +512,7 @@ async function acceptAs(c, id, name, pressed = performance.now()) {
   // requestAnimationFrame 은 그리기 직전에 불리므로, 화면이 실제로 그려진 뒤까지 재도록 한 번 더 미룬다.
   requestAnimationFrame(() => setTimeout(() => {
     timing.draw = performance.now() - drawing;
-    reportTiming(timing);
+    reportTiming({ ...timing, hidden: lastHidden >= pressed });
   }));
   return true;
 }

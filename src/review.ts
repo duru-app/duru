@@ -689,10 +689,10 @@ export async function startReviewServer(config: any, { port = 0, author = review
         } catch (err: any) {
           return send(res, 400, 'text/plain', err.message);
         }
-        const { of, wait, server: call, data, draw } = isPlainObject(input) ? input : ({} as Record<string, unknown>);
+        const { of, wait, server: call, data, draw, hidden } = isPlainObject(input) ? input : ({} as Record<string, unknown>);
         const ms = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
-        if (of !== 'accept' || !ms(wait) || !ms(call) || !(data === null || ms(data)) || !ms(draw)) return send(res, 400, 'text/plain', 'expected { "of": "accept", "wait", "server", "data", "draw" } with the times in milliseconds, and "data" null when fetching the data again failed');
-        onTiming(`candidate accepted: earlier saves ${Math.round(wait)}ms, server call ${Math.round(call)}ms, data refetch ${data === null ? 'failed' : `${Math.round(data)}ms`}, redraw ${Math.round(draw)}ms`);
+        if (of !== 'accept' || !ms(wait) || !ms(call) || !(data === null || ms(data)) || !ms(draw) || !(hidden === undefined || typeof hidden === 'boolean')) return send(res, 400, 'text/plain', 'expected { "of": "accept", "wait", "server", "data", "draw", "hidden"? } with the times in milliseconds, "data" null when fetching the data again failed and "hidden" true when the page was hidden after the press');
+        onTiming(`candidate accepted: earlier saves ${Math.round(wait)}ms, server call ${Math.round(call)}ms, data refetch ${data === null ? 'failed' : `${Math.round(data)}ms`}, redraw ${Math.round(draw)}ms${hidden ? ' (page was hidden)' : ''}`);
         res.writeHead(204);
         return res.end();
       }

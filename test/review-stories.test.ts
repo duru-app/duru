@@ -340,6 +340,39 @@ test('in a browser, accepting while a line switched off is still being saved cou
   });
 });
 
+test('in a browser, a candidate accepted while the page was hidden for a moment hands the line marked as hidden after the redraw', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, async (config) => {
+    const lines: string[] = [];
+    const server = await startReviewServer(config, { author: signer('reviewer'), onTiming: (line) => lines.push(line) });
+    try {
+      const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      await withPage(base, async (p) => {
+        await postAgentCandidate(base);
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#candidate-list li:has-text("로그인해 실험을 연다")');
+        let held: Route | null = null;
+        await p.route('**/api/candidates/accept', (route) => { held = route; });
+        await p.click('#center button.accept');
+        const accept = (await untilSet(() => held, 'the accept request held'))!;
+        await p.evaluate(() => {
+          for (const hidden of [true, false]) {
+            Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+            document.dispatchEvent(new Event('visibilitychange'));
+          }
+          delete (document as { hidden?: boolean }).hidden;
+        });
+        await accept.continue();
+        await untilSet(() => lines.length, 'the timing line');
+        assert.equal(lines.length, 1);
+        assert.match(lines[0], /^candidate accepted: earlier saves \d+ms, server call \d+ms, data refetch \d+ms, redraw \d+ms \(page was hidden\)$/);
+      });
+    } finally {
+      server.close();
+    }
+  });
+});
+
 test('in a browser, a candidate accepted whose data could not be fetched again still hands the line, with the data refetch as failed', { skip: browserMissing }, async () => {
   await withRebuiltFixture(CANDIDATES, async (config) => {
     const lines: string[] = [];
