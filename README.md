@@ -596,11 +596,12 @@ listing the places whose value the source does not show in full.
   none of the `routeElements` (joined with `or`) and no redirect, such as a file that only keeps the list of routes
   another file draws. List the file that draws the routes, and when it draws them from a list kept in this file,
   name this file in `routeTables` (`emptyRouteFiles`).
-- `link address not read ← <file>:<line>: its values give more than 64 combinations, in screen <screen>` — a link or a
-  move written at that line whose address could be built from more than 64 combinations of values. duru stops
-  there and gives one `{?}` link for it; the rest of the map is built. `<screen>` is the screen whose sources hold
-  that line, or `<n> screens, the first is <screen>` when several do, so a file shared by many screens is one line.
-  A line in a file no screen uses has no screen part.
+- `link address not read ← <file>:<line>: its values give more than 64 combinations, in screen <screen>` — duru
+  stopped reading where the link or move at that line goes once the values it follows gave more than 64
+  combinations. The map has one `{?}` link from that line instead, and the rest of the map is built
+  (`manyLinkBranches`). `<screen>` is the screen whose links hold that `{?}` link. When several screens hold it, the
+  line ends `in <n> screens, the first is <screen>` instead, naming the first of them in the map; when none does, it
+  ends after `combinations`.
 - `route path not read ← <route file>:<line>: stopped at <piece>` — a route whose path duru could not read in full.
   `<piece>` is the first part of the path whose value it could not read, as written where duru stopped: in the
   route file, or, followed by `in <file>:<line>`, in another file when duru followed a name into that file. When the

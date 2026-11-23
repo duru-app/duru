@@ -4977,7 +4977,7 @@ export default function Home({ flag }) {
   assert.deepEqual(map.manyLinkBranches, [{ file: 'Home.js', line: at('to="/login"'), screens: 1, firstScreen: '/home#Home' }]);
 });
 
-test('the line for a link left unread because its values give too many combinations names the screen that draws it, or the number of screens and the first one when several do', async () => {
+test('the line for a link left unread because its values give too many combinations names the screen that draws it, the number of screens and the first one when several do, and no screen when none does, with one line for each place in a file', async () => {
   const links = `import { Link } from 'react-router-dom';
 
 export function Item({ to }) {
@@ -4988,7 +4988,18 @@ export function Item({ to }) {
   const manyAt = (name: string) => `import { Item } from './links';
 
 export default function ${name}({ flag }) {
-  return <Item to="/login" ${attributes} />;
+  return (
+    <>
+      <Item to="/login" ${attributes} />
+      <Item to="/start" ${attributes} />
+    </>
+  );
+}
+`;
+  const frame = `import { Item } from './links';
+
+export function Frame({ flag }) {
+  return <Item to="/team" ${attributes} />;
 }
 `;
   const shared = `import { Item } from './links';
@@ -5003,12 +5014,17 @@ export default function ${name}({ flag }) {
   return <Shared flag={flag} />;
 }
 `;
-  const configFile = writeApp({ 'Home.js': manyAt('Home'), 'Team.js': using('Team'), 'Help.js': using('Help'), 'links.js': links, 'shared.js': shared });
+  const configFile = writeApp(
+    { 'Home.js': manyAt('Home'), 'Team.js': using('Team'), 'Help.js': using('Help'), 'links.js': links, 'shared.js': shared, 'Frame.js': frame },
+    { appWideComponents: [{ import: './Frame', name: 'Frame' }] },
+  );
   const result = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8', timeout: 60000 });
   assert.equal(result.status, 0, result.stderr);
   const printed = result.stdout.split('\n').filter((line) => line.includes('link address not read'));
   assert.deepEqual(printed, [
+    `  link address not read ← Frame.js:${lineOf(frame, 'to="/team"')}: its values give more than 64 combinations`,
     `  link address not read ← Home.js:${lineOf(manyAt('Home'), 'to="/login"')}: its values give more than 64 combinations, in screen /home#Home`,
+    `  link address not read ← Home.js:${lineOf(manyAt('Home'), 'to="/start"')}: its values give more than 64 combinations, in screen /home#Home`,
     `  link address not read ← shared.js:${lineOf(shared, 'to="/start"')}: its values give more than 64 combinations, in 2 screens, the first is /help/:page?#Help`,
   ]);
 });
