@@ -305,7 +305,6 @@ test('in a browser, accepting a candidate hands one line with the three times to
         await untilSet(() => lines.length, 'the timing line');
         assert.equal(lines.length, 1);
         assert.match(lines[0], /^candidate accepted: server call \d+ms, data refetch \d+ms, redraw \d+ms$/);
-        console.log(lines[0]);
       });
     } finally {
       server.close();
